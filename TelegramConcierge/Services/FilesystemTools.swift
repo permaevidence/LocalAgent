@@ -107,6 +107,16 @@ actor FilesystemTools {
                     truncatedLongLines += 1
                 }
             }
+            // Prepend 1-indexed line numbers so the agent can reference exact lines
+            // when editing. Format: right-aligned to the width of the last line number, then "→".
+            // Example: "  42→let x = 1".
+            let lastLineNumber = startLine + slice.count
+            let numWidth = String(lastLineNumber).count
+            for i in slice.indices {
+                let n = startLine + i + 1
+                let padded = String(repeating: " ", count: max(0, numWidth - String(n).count)) + String(n)
+                slice[i] = "\(padded)→\(slice[i])"
+            }
             var joined = slice.joined(separator: "\n")
             var bytesTruncated = false
             if joined.utf8.count > Self.maxBytes {
