@@ -52,6 +52,9 @@
 		DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISCOVERY0123456789AB1B /* DiscoveryTools.swift */; };
 		BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BASHTOOLS0123456789AB1B /* BashTools.swift */; };
 		TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */; };
+		LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPTYPES00123456789AB1B /* LSPTypes.swift */; };
+		LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */; };
+		LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPCLIENT0123456789AB1B /* LSPClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -100,6 +103,9 @@
 		DISCOVERY0123456789AB1B /* DiscoveryTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryTools.swift; sourceTree = "<group>"; };
 		BASHTOOLS0123456789AB1B /* BashTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BashTools.swift; sourceTree = "<group>"; };
 		TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ToolExecutor+Filesystem.swift"; sourceTree = "<group>"; };
+		LSPTYPES00123456789AB1B /* LSPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
+		LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONRPCFraming.swift; sourceTree = "<group>"; };
+		LSPCLIENT0123456789AB1B /* LSPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +180,9 @@
 				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
 				BASHTOOLS0123456789AB1B /* BashTools.swift */,
 				TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */,
+				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
+				LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */,
+				LSPCLIENT0123456789AB1B /* LSPClient.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -328,6 +337,9 @@
 				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,
 				BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */,
 				TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */,
+				LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */,
+				LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */,
+				LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
