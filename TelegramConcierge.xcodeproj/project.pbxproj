@@ -47,6 +47,8 @@
 		FILETIME012345678901234A /* FileTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILETIME012345678901234B /* FileTimeTracker.swift */; };
 		FILELDGR012345678901234A /* FilesLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILELDGR012345678901234B /* FilesLedger.swift */; };
 		LANDZONE012345678901234A /* LandingZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANDZONE012345678901234B /* LandingZone.swift */; };
+		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
+		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -90,6 +92,8 @@
 		FILETIME012345678901234B /* FileTimeTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileTimeTracker.swift; sourceTree = "<group>"; };
 		FILELDGR012345678901234B /* FilesLedger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesLedger.swift; sourceTree = "<group>"; };
 		LANDZONE012345678901234B /* LandingZone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandingZone.swift; sourceTree = "<group>"; };
+		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
+		APPLYPATCH0123456789AB1B /* ApplyPatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApplyPatch.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +163,8 @@
 				FILETIME012345678901234B /* FileTimeTracker.swift */,
 				FILELDGR012345678901234B /* FilesLedger.swift */,
 				LANDZONE012345678901234B /* LandingZone.swift */,
+				FSTOOLS0012345678901234B /* FilesystemTools.swift */,
+				APPLYPATCH0123456789AB1B /* ApplyPatch.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -308,6 +314,8 @@
 				FILETIME012345678901234A /* FileTimeTracker.swift in Sources */,
 				FILELDGR012345678901234A /* FilesLedger.swift in Sources */,
 				LANDZONE012345678901234A /* LandingZone.swift in Sources */,
+				FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */,
+				APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
