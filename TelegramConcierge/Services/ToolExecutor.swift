@@ -81,6 +81,8 @@ actor ToolExecutor {
         
         // Special cases for tools that return ToolResultMessage with file attachment for multimodal injection
         switch call.function.name {
+        case "read_file":
+            return await executeReadFile(call)
         case "read_document":
             return await executeReadDocument(call)
         case "read_project_file":
@@ -110,6 +112,28 @@ actor ToolExecutor {
         let content: String
         
         switch call.function.name {
+        // Filesystem tool surface
+        case "write_file":
+            content = await executeWriteFile(call)
+        case "edit_file":
+            content = await executeEditFile(call)
+        case "apply_patch":
+            content = await executeApplyPatch(call)
+        case "grep":
+            content = await executeGrep(call)
+        case "glob":
+            content = await executeGlob(call)
+        case "list_dir":
+            content = await executeListDir(call)
+        case "list_recent_files":
+            content = await executeListRecentFiles(call)
+        case "bash":
+            content = await executeBash(call)
+        case "bash_output":
+            content = await executeBashOutput(call)
+        case "bash_kill":
+            content = await executeBashKill(call)
+
         case "show_project_deployment_tools":
             content = await executeShowProjectDeploymentTools(call)
             
