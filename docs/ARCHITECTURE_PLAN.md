@@ -100,9 +100,13 @@ This is OpenCode's pattern for non-Anthropic providers and is the only thing tha
 
 ## Breadcrumb migration
 
-Current breadcrumbs in chat history show filename + short description. New format includes absolute path. The chat-history plugin's summarization prompt (upstream repo: Claude-Code-Long-Term-Memory) gets an explicit rule: **"Preserve every absolute file path verbatim when summarizing."**
+Phase 6 (shipped):
+- Both FractalMind summarization prompts (chunk-level in `summarizeConversationChunk`, meta-summary in `generateHistoricalMetaSummary`) now include an explicit rule: **"If the conversation mentions files by absolute path, preserve every absolute path verbatim — do not abbreviate, truncate, or replace with filenames alone."**
+- The downloaded-files breadcrumb in `OpenRouterService` now references `read_file` instead of the removed `read_document`, and handles both legacy filenames and absolute paths (the field stores whichever was recorded).
+- `list_recent_files` is advertised alongside the breadcrumb so the agent knows how to locate a file it can't resolve directly.
 
-Applies to both the local LTM used by Claude Code AND the FractalMind summarizer used by LocalAgent itself.
+Deferred (future cleanup):
+- Routing the remaining file-download call sites (`queueFileForDescription` from email, URL download, image gen, etc.) through `FilesLedger.record` with an absolute path and a specific origin (`.email`, `.download`, `.generated`). Currently these paths are discoverable via `list_recent_files` only for files written through the new tools; email and URL attachments remain on the legacy filename-only breadcrumb until this migration happens. Low risk, medium effort.
 
 ## Counterintuitive decisions
 
