@@ -49,6 +49,7 @@
 		LANDZONE012345678901234A /* LandingZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANDZONE012345678901234B /* LandingZone.swift */; };
 		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
 		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
+		DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISCOVERY0123456789AB1B /* DiscoveryTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -94,6 +95,7 @@
 		LANDZONE012345678901234B /* LandingZone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandingZone.swift; sourceTree = "<group>"; };
 		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
 		APPLYPATCH0123456789AB1B /* ApplyPatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApplyPatch.swift; sourceTree = "<group>"; };
+		DISCOVERY0123456789AB1B /* DiscoveryTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryTools.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +167,7 @@
 				LANDZONE012345678901234B /* LandingZone.swift */,
 				FSTOOLS0012345678901234B /* FilesystemTools.swift */,
 				APPLYPATCH0123456789AB1B /* ApplyPatch.swift */,
+				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -316,6 +319,7 @@
 				LANDZONE012345678901234A /* LandingZone.swift in Sources */,
 				FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */,
 				APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */,
+				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
