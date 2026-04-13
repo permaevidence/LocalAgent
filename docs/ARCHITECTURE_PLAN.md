@@ -68,7 +68,7 @@ JSON file at `~/Library/Application Support/LocalAgent/files_ledger.json`. Schem
 
 ## Landing zone
 
-`~/LocalAgent/` (default — can move later) with subfolders:
+`~/Documents/LocalAgent/` with subfolders:
 
 - `telegram/` — incoming Telegram attachments
 - `email/` — email attachment downloads

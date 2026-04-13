@@ -6,6 +6,7 @@ struct TelegramConciergeApp: App {
     @State private var onboardingComplete = !OnboardingView.shouldShowOnboarding
 
     init() {
+        LandingZone.bootstrap()
         ProjectsZipAutoExtractor.shared.start()
     }
 
