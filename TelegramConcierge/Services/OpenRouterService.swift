@@ -823,17 +823,19 @@ actor OpenRouterService {
                 // Standard text message (may include downloaded file hints for assistant messages)
                 var textContent = message.content
                 
-                // Add hints for downloaded files (email attachments, etc.) on assistant messages
+                // Add hints for downloaded files (email attachments, etc.) on assistant messages.
+                // Entries may be bare filenames (legacy) or absolute paths (new surface).
                 if !message.downloadedDocumentFileNames.isEmpty {
                     var parts: [String] = []
-                    for filename in message.downloadedDocumentFileNames {
-                        if let desc = await FileDescriptionService.shared.get(filename: filename) {
-                            parts.append("\(filename) — \"\(desc)\"")
+                    for entry in message.downloadedDocumentFileNames {
+                        let lookupKey = (entry as NSString).lastPathComponent
+                        if let desc = await FileDescriptionService.shared.get(filename: lookupKey) {
+                            parts.append("\(entry) — \"\(desc)\"")
                         } else {
-                            parts.append(filename)
+                            parts.append(entry)
                         }
                     }
-                    textContent = textContent + "\n[Downloaded from email: \(parts.joined(separator: "; ")) — use read_document to view again]"
+                    textContent = textContent + "\n[Downloaded files: \(parts.joined(separator: "; ")) — use read_file with the absolute path, or list_recent_files to find where they live]"
                 }
                 
                 // Add permanent but silent log for accessed projects

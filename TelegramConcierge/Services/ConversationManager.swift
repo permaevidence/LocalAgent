@@ -288,7 +288,10 @@ class ConversationManager: ObservableObject {
                 do {
                     // Check for due reminders first
                     await checkDueReminders()
-                    
+
+                    // Check for completed background bash processes
+                    await checkBackgroundBashCompletions()
+
                     let updates = try await telegramService.getUpdates()
                     
                     for update in updates {
@@ -2484,7 +2487,89 @@ class ConversationManager: ObservableObject {
         
         statusMessage = "Listening... (Last check: \(formattedTime()))"
     }
-    
+
+    // MARK: - Background bash completion handling
+
+    /// Drain completed background bash processes and inject each one as a synthetic user
+    /// message, triggering a new agent turn so the agent can react (e.g. Telegram the user).
+    private func checkBackgroundBashCompletions() async {
+        guard activeRunId == nil else { return }
+        let completions = await BackgroundProcessRegistry.shared.drainCompletions()
+        guard !completions.isEmpty else { return }
+
+        for completion in completions {
+            let statusLabel: String
+            switch completion.status {
+            case .exited:  statusLabel = completion.exitCode == 0 ? "exited cleanly" : "exited with code \(completion.exitCode)"
+            case .killed:  statusLabel = "killed"
+            case .crashed: statusLabel = "crashed with signal"
+            case .running: statusLabel = "unexpectedly still running"
+            }
+
+            let durationStr: String = {
+                let secs = completion.durationSeconds
+                if secs < 60 { return "\(secs)s" }
+                if secs < 3600 { return "\(secs / 60)m \(secs % 60)s" }
+                return "\(secs / 3600)h \((secs % 3600) / 60)m"
+            }()
+
+            var body = """
+            [BACKGROUND BASH COMPLETE]
+
+            handle: \(completion.handleId)
+            command: \(completion.command)
+            status: \(statusLabel)
+            duration: \(durationStr)
+            """
+            if let desc = completion.description, !desc.isEmpty {
+                body += "\ndescription: \(desc)"
+            }
+            body += "\n\n--- stdout (tail) ---\n\(completion.stdoutTail)"
+            if !completion.stderrTail.isEmpty {
+                body += "\n\n--- stderr (tail) ---\n\(completion.stderrTail)"
+            }
+            body += "\n\n[END OF BACKGROUND TASK - If the user asked you to notify them when this finished, do so now.]"
+
+            let userMessage = Message(role: .user, content: body)
+            messages.append(userMessage)
+            saveConversation()
+
+            do {
+                let turnStartDate = Date()
+                let response = try await generateResponseWithTools(currentUserMessageId: userMessage.id, turnStartDate: turnStartDate)
+
+                if let toolLog = response.compactToolLog, !toolLog.isEmpty {
+                    messages.append(Message(role: .assistant, content: toolLog))
+                    pruneOldToolLogMessages()
+                }
+
+                let finalResponseRaw = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Background task \(completion.handleId) finished."
+                    : response.finalText
+                let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
+                let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
+                let assistantMessage = Message(
+                    role: .assistant,
+                    content: finalResponse,
+                    downloadedDocumentFileNames: downloadedFilenames,
+                    accessedProjectIds: response.accessedProjects ?? []
+                )
+                messages.append(assistantMessage)
+                saveConversation()
+
+                if let chatId = pairedChatId {
+                    try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
+                }
+                print("[ConversationManager] Background completion \(completion.handleId) processed")
+            } catch {
+                self.error = "Failed to process bash completion: \(error.localizedDescription)"
+                print("[ConversationManager] Failed to process bash completion: \(error)")
+            }
+        }
+
+        statusMessage = "Listening... (Last check: \(formattedTime()))"
+    }
+
     // MARK: - Smart Email Notifications
     
     /// Process new emails: use Gemini with full context to decide if notification-worthy

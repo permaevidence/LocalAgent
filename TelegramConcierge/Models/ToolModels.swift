@@ -1472,8 +1472,173 @@ enum AvailableTools {
         )
     )
     
+    // MARK: - Filesystem Tools (new surface)
+
+    static let readFile = ToolDefinition(
+        function: FunctionDefinition(
+            name: "read_file",
+            description: "Read a file by absolute path. Text files return up to 2000 lines / 50 KB per call; use offset and limit to page. Image and PDF files are attached as multimodal content — they become visible to you as a user-role attachment on the next turn (you do NOT see them inside the tool result). Use list_recent_files or glob/list_dir to discover paths first.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path (starts with '/' or '~'). Relative paths are rejected."),
+                    "offset": ParameterProperty(type: "integer", description: "Optional 1-indexed starting line for text files. Omit to start from line 1."),
+                    "limit": ParameterProperty(type: "integer", description: "Optional line limit (default 2000, also capped at 50 KB of output).")
+                ],
+                required: ["path"]
+            )
+        )
+    )
+
+    static let writeFile = ToolDefinition(
+        function: FunctionDefinition(
+            name: "write_file",
+            description: "Create a new file or overwrite an existing one. If the file exists, you MUST have called read_file on it this session first (freshness check). Parent directories are created automatically. Prefer edit_file for small changes — write_file rewrites the whole file.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path to write."),
+                    "content": ParameterProperty(type: "string", description: "Full file contents as a string."),
+                    "description": ParameterProperty(type: "string", description: "Optional short description of the file's purpose. Stored in the ledger for later list_recent_files queries.")
+                ],
+                required: ["path", "content"]
+            )
+        )
+    )
+
+    static let editFile = ToolDefinition(
+        function: FunctionDefinition(
+            name: "edit_file",
+            description: "Surgical find-and-replace on an existing file. old_string must appear EXACTLY ONCE in the file (matching whitespace and indentation) unless replace_all=true. Requires a prior read_file this session. Much cheaper than write_file for targeted changes.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path to the file."),
+                    "old_string": ParameterProperty(type: "string", description: "Exact substring to find. Include enough surrounding context to make the match unique. Must match whitespace and indentation exactly."),
+                    "new_string": ParameterProperty(type: "string", description: "Replacement text. Must differ from old_string."),
+                    "replace_all": ParameterProperty(type: "boolean", description: "Optional. When true, replaces every occurrence of old_string; otherwise old_string must be unique.")
+                ],
+                required: ["path", "old_string", "new_string"]
+            )
+        )
+    )
+
+    static let applyPatch = ToolDefinition(
+        function: FunctionDefinition(
+            name: "apply_patch",
+            description: "Apply a multi-file Codex-style patch atomically. Use when you need to make coordinated edits across several files in one step. All operations are validated against current file contents before any disk write; on failure, nothing is modified.\n\nEnvelope format:\n*** Begin Patch\n*** Update File: /abs/path\n@@ optional anchor (e.g. a function signature)\n context line\n-removed line\n+added line\n*** Add File: /abs/path\n+new file line 1\n+new file line 2\n*** Delete File: /abs/path\n*** End Patch\n\nFor Update with rename, add '*** Move to: /new/abs/path' directly after the Update File header.",
+            parameters: FunctionParameters(
+                properties: [
+                    "patch_text": ParameterProperty(type: "string", description: "The full patch text including the Begin/End Patch markers.")
+                ],
+                required: ["patch_text"]
+            )
+        )
+    )
+
+    static let grep = ToolDefinition(
+        function: FunctionDefinition(
+            name: "grep",
+            description: "Regex content search over files under a directory. Uses ripgrep when available, otherwise a native Swift scan. 100-match cap, 2000-char-per-line cap, results sorted by mtime descending. Common project ignores (.git, node_modules, DerivedData, etc.) are always applied.",
+            parameters: FunctionParameters(
+                properties: [
+                    "pattern": ParameterProperty(type: "string", description: "Regex pattern to search for (ripgrep/ECMAScript-compatible)."),
+                    "path": ParameterProperty(type: "string", description: "Absolute directory path to search under."),
+                    "include": ParameterProperty(type: "string", description: "Optional filename glob to filter, e.g. '*.swift' or '*.{ts,tsx}'."),
+                    "max_results": ParameterProperty(type: "integer", description: "Optional. Maximum matching lines to return (default 100, hard cap 100).")
+                ],
+                required: ["pattern", "path"]
+            )
+        )
+    )
+
+    static let glob = ToolDefinition(
+        function: FunctionDefinition(
+            name: "glob",
+            description: "Find files by filename pattern. Supports *, ?, and '**/' for recursive. 100-file cap, sorted by mtime descending. Use instead of bash find.",
+            parameters: FunctionParameters(
+                properties: [
+                    "pattern": ParameterProperty(type: "string", description: "Glob pattern, e.g. '**/*.swift', 'README.md', 'src/*.ts'."),
+                    "path": ParameterProperty(type: "string", description: "Optional absolute directory to search under. Defaults to the user's home directory."),
+                    "max_results": ParameterProperty(type: "integer", description: "Optional. Maximum file paths to return (default 100, hard cap 100).")
+                ],
+                required: ["pattern"]
+            )
+        )
+    )
+
+    static let listDir = ToolDefinition(
+        function: FunctionDefinition(
+            name: "list_dir",
+            description: "List the immediate contents of a directory with sizes and mtimes. Honors a baked-in ignore list for common junk (.git, node_modules, DerivedData, etc.). 100-entry cap. Use this for on-demand filesystem inspection; use list_recent_files to see what you've touched recently.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute directory path."),
+                    "ignore": ParameterProperty(type: "string", description: "Optional JSON array of additional names to skip, e.g. '[\"tmp\",\"logs\"]'.")
+                ],
+                required: ["path"]
+            )
+        )
+    )
+
+    static let listRecentFiles = ToolDefinition(
+        function: FunctionDefinition(
+            name: "list_recent_files",
+            description: "Show files you've recently written, generated, or received (from Telegram, email, or downloads). This reads an in-app ledger — not the disk — so it spans the whole filesystem. Sorted by last-touched descending. Use this to re-find something the user sent earlier without knowing where on disk it lives.",
+            parameters: FunctionParameters(
+                properties: [
+                    "limit": ParameterProperty(type: "integer", description: "Optional page size (default 20)."),
+                    "offset": ParameterProperty(type: "integer", description: "Optional pagination offset (default 0)."),
+                    "filter_origin": ParameterProperty(type: "string", description: "Optional filter by origin.", enumValues: ["edited", "generated", "telegram", "email", "download"])
+                ],
+                required: []
+            )
+        )
+    )
+
+    static let bash = ToolDefinition(
+        function: FunctionDefinition(
+            name: "bash",
+            description: "Run a shell command via /bin/zsh -lc. Supports ~ and $VAR expansion. Default 120s timeout, 600s hard max, 30 KB output cap per stream.\n\nForeground (default): waits for the command to finish, returns stdout/stderr/exit_code.\n\nBackground (run_in_background=true): returns immediately with a handle like 'bash_1' and the process keeps running. You will be notified automatically when it exits. Use bash_output to peek at live output, bash_kill to stop it. Use background mode for dev servers, long builds, and any command that may exceed the foreground timeout.",
+            parameters: FunctionParameters(
+                properties: [
+                    "command": ParameterProperty(type: "string", description: "The shell command to run."),
+                    "timeout_ms": ParameterProperty(type: "integer", description: "Optional foreground timeout in milliseconds (max 600000). Ignored when run_in_background=true."),
+                    "workdir": ParameterProperty(type: "string", description: "Optional absolute working directory. Must exist."),
+                    "description": ParameterProperty(type: "string", description: "Short 5-10 word description of what the command does (for your own future reference in background mode)."),
+                    "run_in_background": ParameterProperty(type: "boolean", description: "Optional. When true, spawn detached and return a handle immediately.")
+                ],
+                required: ["command"]
+            )
+        )
+    )
+
+    static let bashOutput = ToolDefinition(
+        function: FunctionDefinition(
+            name: "bash_output",
+            description: "Read the current accumulated stdout/stderr of a background bash handle without stopping it. Returns status (running/exited/killed/crashed), exit_code when finished, and bytes-so-far. Use the 'since' byte offset for incremental reads across polls.",
+            parameters: FunctionParameters(
+                properties: [
+                    "handle": ParameterProperty(type: "string", description: "The handle returned by bash(run_in_background=true), e.g. 'bash_1'."),
+                    "since": ParameterProperty(type: "integer", description: "Optional byte offset into the stdout stream. Omit or pass 0 for the full accumulated output.")
+                ],
+                required: ["handle"]
+            )
+        )
+    )
+
+    static let bashKill = ToolDefinition(
+        function: FunctionDefinition(
+            name: "bash_kill",
+            description: "Terminate a background bash handle. Sends SIGTERM, then SIGKILL after a short grace period if still running. Use when a background process is no longer needed or is misbehaving.",
+            parameters: FunctionParameters(
+                properties: [
+                    "handle": ParameterProperty(type: "string", description: "The handle to kill, e.g. 'bash_1'.")
+                ],
+                required: ["handle"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
-    
+
     /// IMAP email tools (8 tools - used when email_mode is "imap")
     static var imapEmailTools: [ToolDefinition] {
         [readEmails, searchEmails, sendEmail, replyEmail, forwardEmail, getEmailThread, sendEmailWithAttachment, downloadEmailAttachment]
@@ -1484,9 +1649,16 @@ enum AvailableTools {
         [gmailReader, gmailComposer]
     }
     
-    /// Non-email tools that do not depend on web search credentials
+    /// New filesystem tool surface (replaces the sandboxed document tools).
+    static var filesystemTools: [ToolDefinition] {
+        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill]
+    }
+
+    /// Non-email tools that do not depend on web search credentials.
+    /// Removed (superseded by filesystemTools): list_documents, read_document, browse_project,
+    /// read_project_file, add_project_files, generate_document.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        [manageReminders, manageCalendar, viewConversationChunk, listDocuments, readDocument, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, generateDocument, shortcuts, showProjectDeploymentTools, manageProjects, browseProject, readProjectFile, addProjectFiles, viewProjectHistory, runClaudeCode, sendProjectResult]
+        filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, showProjectDeploymentTools, manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
     }
     
     static var gatedProjectDeploymentTools: [ToolDefinition] {

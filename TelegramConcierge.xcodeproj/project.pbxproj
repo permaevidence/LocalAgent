@@ -44,6 +44,14 @@
 		GEMINIIMG012345678901234A /* GeminiImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GEMINIIMG012345678901234B /* GeminiImageService.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
+		FILETIME012345678901234A /* FileTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILETIME012345678901234B /* FileTimeTracker.swift */; };
+		FILELDGR012345678901234A /* FilesLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILELDGR012345678901234B /* FilesLedger.swift */; };
+		LANDZONE012345678901234A /* LandingZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANDZONE012345678901234B /* LandingZone.swift */; };
+		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
+		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
+		DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISCOVERY0123456789AB1B /* DiscoveryTools.swift */; };
+		BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BASHTOOLS0123456789AB1B /* BashTools.swift */; };
+		TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +92,14 @@
 		GEMINIIMG012345678901234B /* GeminiImageService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiImageService.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
+		FILETIME012345678901234B /* FileTimeTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileTimeTracker.swift; sourceTree = "<group>"; };
+		FILELDGR012345678901234B /* FilesLedger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesLedger.swift; sourceTree = "<group>"; };
+		LANDZONE012345678901234B /* LandingZone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandingZone.swift; sourceTree = "<group>"; };
+		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
+		APPLYPATCH0123456789AB1B /* ApplyPatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApplyPatch.swift; sourceTree = "<group>"; };
+		DISCOVERY0123456789AB1B /* DiscoveryTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryTools.swift; sourceTree = "<group>"; };
+		BASHTOOLS0123456789AB1B /* BashTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BashTools.swift; sourceTree = "<group>"; };
+		TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ToolExecutor+Filesystem.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,6 +166,14 @@
 				F6F41BFCEF3C81A6A0A64255 /* FileDescriptionService.swift */,
 				MINDEXP0123456789ABCDEF2 /* MindExportService.swift */,
 				PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */,
+				FILETIME012345678901234B /* FileTimeTracker.swift */,
+				FILELDGR012345678901234B /* FilesLedger.swift */,
+				LANDZONE012345678901234B /* LandingZone.swift */,
+				FSTOOLS0012345678901234B /* FilesystemTools.swift */,
+				APPLYPATCH0123456789AB1B /* ApplyPatch.swift */,
+				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
+				BASHTOOLS0123456789AB1B /* BashTools.swift */,
+				TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -296,6 +320,14 @@
 				31B7CF7E140CC51F1318A043 /* FileDescriptionService.swift in Sources */,
 				MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */,
 				PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */,
+				FILETIME012345678901234A /* FileTimeTracker.swift in Sources */,
+				FILELDGR012345678901234A /* FilesLedger.swift in Sources */,
+				LANDZONE012345678901234A /* LandingZone.swift in Sources */,
+				FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */,
+				APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */,
+				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,
+				BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */,
+				TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
