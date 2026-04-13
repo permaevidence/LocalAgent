@@ -50,6 +50,7 @@
 		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
 		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
 		DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISCOVERY0123456789AB1B /* DiscoveryTools.swift */; };
+		BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BASHTOOLS0123456789AB1B /* BashTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -96,6 +97,7 @@
 		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
 		APPLYPATCH0123456789AB1B /* ApplyPatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApplyPatch.swift; sourceTree = "<group>"; };
 		DISCOVERY0123456789AB1B /* DiscoveryTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryTools.swift; sourceTree = "<group>"; };
+		BASHTOOLS0123456789AB1B /* BashTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BashTools.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -168,6 +170,7 @@
 				FSTOOLS0012345678901234B /* FilesystemTools.swift */,
 				APPLYPATCH0123456789AB1B /* ApplyPatch.swift */,
 				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
+				BASHTOOLS0123456789AB1B /* BashTools.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -320,6 +323,7 @@
 				FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */,
 				APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */,
 				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,
+				BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
