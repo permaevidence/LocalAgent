@@ -426,7 +426,7 @@ actor OpenRouterService {
             The user communicates with you via Telegram. They may send text messages, voice messages (which are automatically transcribed before you receive them), images, and documents.
 
             **Today's date**: \(currentDate) (\(timezone))
-            For the exact current time, check the most recent message timestamp or tool result time note in the conversation below.
+            For the exact current time, check the most recent user message timestamp or tool result time note in the conversation below. Do NOT prefix your own replies with timestamps like "[HH:mm]" — those prefixes are added by the system only to user messages; if you emit them yourself, they appear twice and look broken.
             Reply with short direct messages, like all humans do via Telegram.
             Do not use Markdown syntax in user-facing replies (no headings like ###, no **bold**, no backticks, no markdown links).
 
@@ -502,7 +502,7 @@ actor OpenRouterService {
             The user communicates with you via Telegram. They may send text messages, voice messages (which are automatically transcribed before you receive them), images, and documents.
 
             **Today's date**: \(currentDate) (\(timezone))
-            For the exact current time, check the most recent message timestamp or tool result time note in the conversation below.
+            For the exact current time, check the most recent user message timestamp or tool result time note in the conversation below. Do NOT prefix your own replies with timestamps like "[HH:mm]" — those prefixes are added by the system only to user messages; if you emit them yourself, they appear twice and look broken.
             Reply with short direct messages, like all humans do via Telegram.
             Do not use Markdown syntax in user-facing replies (no headings like ###, no **bold**, no backticks, no markdown links).
             """
@@ -719,7 +719,12 @@ actor OpenRouterService {
                     textContent = (hasDocuments || hasReferencedDocuments) ? "Please analyze this document." : "What's in this image?"
                 }
                 // Add date header (if new day) and time prefix
-                textContent = dateHeader + timePrefix + textContent
+                // Only prefix user messages with the time. Prefixing assistant
+                // messages causes the model to imitate the pattern and emit
+                // "[HH:mm] ..." at the start of its own replies. Date header
+                // still applies to both to mark day boundaries consistently.
+                let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
+                textContent = rolePrefix + textContent
                 contentParts.append(.text(textContent))
 
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .parts(contentParts)))
@@ -779,7 +784,12 @@ actor OpenRouterService {
                     textContent = (hasDocuments || hasReferencedDocuments) ? "[User sent a document]" : "[User sent an image]"
                 }
                 // Add date header (if new day) and time prefix
-                textContent = dateHeader + timePrefix + textContent
+                // Only prefix user messages with the time. Prefixing assistant
+                // messages causes the model to imitate the pattern and emit
+                // "[HH:mm] ..." at the start of its own replies. Date header
+                // still applies to both to mark day boundaries consistently.
+                let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
+                textContent = rolePrefix + textContent
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .text(textContent)))
             } else {
                 // Standard text message (may include downloaded file hints for assistant messages)
@@ -807,7 +817,12 @@ actor OpenRouterService {
                 }
                 
                 // Add date header (if new day) and time prefix to text content
-                textContent = dateHeader + timePrefix + textContent
+                // Only prefix user messages with the time. Prefixing assistant
+                // messages causes the model to imitate the pattern and emit
+                // "[HH:mm] ..." at the start of its own replies. Date header
+                // still applies to both to mark day boundaries consistently.
+                let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
+                textContent = rolePrefix + textContent
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .text(textContent)))
             }
         }
