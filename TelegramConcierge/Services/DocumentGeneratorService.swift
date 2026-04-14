@@ -55,7 +55,7 @@ actor DocumentGeneratorService {
     /// Generate a fullscreen image PDF (no margins, one page per image)
     private func generateFullscreenImagePDF(imageFilenames: [String]) throws -> Data {
         let documentsDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("TelegramConcierge")
+            .appendingPathComponent("LocalAgent")
         
         let pageWidth: CGFloat = 612  // US Letter
         let pageHeight: CGFloat = 792
@@ -400,7 +400,7 @@ actor DocumentGeneratorService {
         
         // Try to find the image in documents or images directories
         let documentsDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("TelegramConcierge")
+            .appendingPathComponent("LocalAgent")
         
         let possiblePaths = [
             documentsDir.appendingPathComponent("documents").appendingPathComponent(imageRef.filename),

@@ -337,7 +337,7 @@ struct ContentView: View {
 
     private var claudeProjectsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge/projects", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent/projects", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
