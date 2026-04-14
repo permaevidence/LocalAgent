@@ -160,6 +160,89 @@ extension ToolExecutor {
         return result.content
     }
 
+    // MARK: - todo_write
+
+    func executeTodoWrite(_ call: ToolCall) async -> String {
+        guard let data = call.function.arguments.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawTodos = obj["todos"] as? [[String: Any]]
+        else {
+            return "{\"error\": \"todo_write requires 'todos' as an array of {content, activeForm, status}\"}"
+        }
+        var parsed: [Todo] = []
+        parsed.reserveCapacity(rawTodos.count)
+        for (i, t) in rawTodos.enumerated() {
+            guard let content = t["content"] as? String,
+                  let activeForm = t["activeForm"] as? String,
+                  let status = t["status"] as? String else {
+                return "{\"error\": \"todos[\(i)] must have content, activeForm, status\"}"
+            }
+            parsed.append(Todo(content: content, activeForm: activeForm, status: status))
+        }
+        do {
+            let updated = try await TodoStore.shared.replace(with: parsed)
+            return serializeTodos(updated, message: "todo list updated (\(updated.count) item\(updated.count == 1 ? "" : "s"))")
+        } catch {
+            return "{\"error\": \"\(escapeJSON(String(describing: error)))\"}"
+        }
+    }
+
+    private func serializeTodos(_ todos: [Todo], message: String) -> String {
+        let payload: [String: Any] = [
+            "success": true,
+            "message": message,
+            "todos": todos.map { [
+                "content": $0.content,
+                "activeForm": $0.activeForm,
+                "status": $0.status
+            ] }
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode todo result\"}"
+    }
+
+    // MARK: - lsp_hover / lsp_definition / lsp_references
+
+    func executeLSPHover(_ call: ToolCall) async -> String {
+        let args = parseArgs(call.function.arguments)
+        guard let path = args.string("path"),
+              let line = args.int("line"),
+              let column = args.int("column") else {
+            return "{\"error\": \"lsp_hover requires 'path', 'line', 'column' (all 1-indexed like read_file output)\"}"
+        }
+        return await LSPRegistry.shared.hover(path: path, line: line, column: column)
+    }
+
+    func executeLSPDefinition(_ call: ToolCall) async -> String {
+        let args = parseArgs(call.function.arguments)
+        guard let path = args.string("path"),
+              let line = args.int("line"),
+              let column = args.int("column") else {
+            return "{\"error\": \"lsp_definition requires 'path', 'line', 'column'\"}"
+        }
+        return await LSPRegistry.shared.definition(path: path, line: line, column: column)
+    }
+
+    func executeLSPReferences(_ call: ToolCall) async -> String {
+        let args = parseArgs(call.function.arguments)
+        guard let path = args.string("path"),
+              let line = args.int("line"),
+              let column = args.int("column") else {
+            return "{\"error\": \"lsp_references requires 'path', 'line', 'column'\"}"
+        }
+        let includeDeclaration = args.bool("include_declaration") ?? true
+        return await LSPRegistry.shared.references(path: path, line: line, column: column, includeDeclaration: includeDeclaration)
+    }
+
+    private func escapeJSON(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
     // MARK: - Argument parsing helper
 
     private func parseArgs(_ jsonString: String) -> ArgDict {

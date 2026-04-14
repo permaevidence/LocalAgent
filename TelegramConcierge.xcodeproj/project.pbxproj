@@ -58,6 +58,7 @@
 		LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPLANG000123456789AB1B /* LSPLanguages.swift */; };
 		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
 		LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */; };
+		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -112,6 +113,7 @@
 		LSPLANG000123456789AB1B /* LSPLanguages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPLanguages.swift; sourceTree = "<group>"; };
 		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
 		LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPDiagnosticsReporter.swift; sourceTree = "<group>"; };
+		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +194,7 @@
 				LSPLANG000123456789AB1B /* LSPLanguages.swift */,
 				LSPREGISTRY0123456789A1B /* LSPRegistry.swift */,
 				LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */,
+				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -352,6 +355,7 @@
 				LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */,
 				LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */,
 				LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */,
+				TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
