@@ -1458,7 +1458,22 @@ enum AvailableTools {
     /// Removed (superseded by filesystemTools): list_documents, read_document, browse_project,
     /// read_project_file, add_project_files, generate_document.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
+        var tools: [ToolDefinition] = filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts]
+        // Code CLI sub-agent tools (manage_projects, view_project_history,
+        // run_claude_code, send_project_result) are gated on the same
+        // "Use selected Code CLI for document generation" toggle that controls
+        // their system-prompt section in OpenRouterService. When the toggle
+        // is OFF, the agent has no awareness of the Code CLI flow at all —
+        // it relies entirely on its native filesystem tools (bash, write_file,
+        // edit_file, apply_patch, etc.) for everything.
+        let codeCLIEnabled =
+            (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "true"
+        if codeCLIEnabled {
+            tools += [manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
+        }
+        return tools
     }
 
     /// All available tools - dynamically selects email tools and optionally web search

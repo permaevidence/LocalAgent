@@ -482,7 +482,7 @@ actor OpenRouterService {
             - Any topic where fresh information would improve your answer
             - Use web_search for quick/targeted lookup; use deep_research when the user asks for an in-depth, comprehensive, long-form researched answer
             - Project ZIP imports: if user wants edits to an existing project sent as a ZIP, use project tools to import it into a workspace before coding
-            - Deployment/database operations: use bash (e.g. `vercel deploy --prod`, `npx instant-cli push`) or delegate to run_claude_code — there are no bespoke deployment tools.
+            - Deployment/database operations: use bash directly (e.g. `vercel deploy --prod`, `npx instant-cli push`). There are no bespoke deployment tools.
             - When working on code in a git repository, proactively run `git status --short` and `git log -5 --oneline` via bash before making changes — the repo's state is not in your context and recent commits explain why things look the way they do.
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).
             - **Calendar management**: Use manage_calendar with actions 'view', 'add', 'edit', or 'delete' for events on the user's schedule
@@ -492,20 +492,20 @@ actor OpenRouterService {
 
             if claudeCodeDocumentModeEnabled {
                 prompt += """
-                
-                **\\(codeCLIProviderName) as your Local Sub-Agent / Execution Engine**:
-                - You are the Coordinator, and \\(codeCLIProviderName) is your Hands and Brain for complex tasks. It has terminal access, file system access, and autonomous execution capabilities.
-                - Delegate ALL tasks involving complex file manipulation, data analysis, script execution, or iterative local computer tasks to the Code CLI via project tools. Do not try to do these yourself. Also the generation of reports is best if delegated to the Code CLI with the help of your input.
-                - **Project-Bound Memory**: The Code CLI's memory and context are strictly isolated to the project it runs in. It remembers everything done *within* that project, but knows nothing about other projects or your broader conversation with the user. You can drop in the project folder files and documents that you want the Code CLI to see.
-                - Use this flow when delegating: manage_projects (action='list' or action='create') -> add_project_files (if user provided inputs) -> if reusing an existing project, call view_project_history once per turn for that project before the first run_claude_code call -> run_claude_code (prompting it with a high-level goal) -> read_project_file/send_project_result.
-                - **Internal Automations**: You can prompt the Code CLI to create software/scripts for *your own use* to automate tasks for the user. When making an automation, name it clearly (e.g. "Automation: File Sorter") and state in the `initial_notes` of manage_projects action='create' that it's an internal agent automation.
-                - If the user sends a project ZIP archive, import it with add_project_files (ZIPs are auto-extracted) before running run_claude_code.
-                - **System Project** (project_id: `_system`): A built-in persistent project for general-purpose machine operations — reading/editing files anywhere on the computer, running shell commands, checking system status, inspecting logs, etc. Use this when the user's request doesn't belong to a specific named project. The Code CLI running in the system project has full access to the local machine.
-                - Reuse an existing project only when interacting with that specific past workflow/context. Otherwise, create a new project to give the CLI a clean memory space.
-                - When reusing an existing project, call view_project_history for that same project_id once per turn before the first run_claude_code call (unless the history is already visible from a previous turn's persisted tool interactions). Do not repeat it again in the same turn for the same project unless the history was not loaded successfully.
-                - When sending outputs, you can send_project_result with package_as='zip_project' or if more appropriate send the user individual files.
-                - Deployment and database work happens through bash (e.g. `vercel deploy --prod --yes`, `npx instant-cli@latest push-schema`) or via run_claude_code inside the project. There are no bespoke deployment tools.
-                - For project cleanup requests, instruct the user to open the projects folder in Finder from the main app view and delete folders manually; do not claim deletion was completed by tools.
+
+                **\\(codeCLIProviderName) as an OPTIONAL Sub-Agent for nested coding work**:
+                - By default you handle file ops, shell commands, refactors, and most coding tasks DIRECTLY using your native tools (bash, write_file, edit_file, apply_patch, grep, glob, list_dir, lsp_*). They are faster and keep work in-context.
+                - Escalate to \\(codeCLIProviderName) via run_claude_code only when one of these applies:
+                  (a) the task is large, iterative, or open-ended enough that it benefits from a fresh sub-agent context with its own multi-turn tool loop (e.g. "build an entire feature end-to-end");
+                  (b) the work is project-bound and you want isolated session memory the sub-agent will resume across turns;
+                  (c) you specifically want a heavyweight coding agent's deeper reasoning over a focused codebase.
+                - Workflow when delegating: manage_projects (action='list' or 'create') → if reusing an existing project, call view_project_history once per turn for that project before the first run_claude_code call → run_claude_code with a clear high-level goal → read the resulting files yourself with read_file / send_project_result.
+                - **Project-bound memory**: the sub-agent only remembers things done within its project. It knows nothing about other projects or your broader conversation. To give it inputs, write the files into the project folder via your filesystem tools first, then run_claude_code.
+                - **System project** (`_system`): a persistent workspace pointing at the home directory. Use it as the project_id when you want to delegate a non-project-specific task to the sub-agent. For everyday file reads/edits/shell on the home directory, prefer your own native tools instead.
+                - **Internal automations**: when the sub-agent builds something for your own future use, name it clearly (e.g. "Automation: File Sorter") and note `This is an internal agent automation` in manage_projects action='create' initial_notes.
+                - When reusing an existing project, call view_project_history for that same project_id once per turn before the first run_claude_code call (unless the history is already visible from a previous turn's persisted tool interactions).
+                - When sending outputs, send_project_result with package_as='zip_project' or send individual files as appropriate.
+                - For project cleanup requests, instruct the user to open the projects folder in Finder and delete folders manually; do not claim deletion was completed by tools.
                 - Do not claim files/code were created unless run_claude_code reports file_changes_detected or returns created_files/modified_files.
                 """
             }
