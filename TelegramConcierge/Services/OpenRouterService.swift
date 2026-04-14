@@ -375,7 +375,8 @@ actor OpenRouterService {
         turnStartDate: Date? = nil,
         finalResponseInstruction: String? = nil,
         modelOverride: String? = nil,
-        providerOverride: [String]? = nil
+        providerOverride: [String]? = nil,
+        reasoningEffortOverride: String? = nil
     ) async throws -> LLMResponse {
         guard isLMStudio || !apiKey.isEmpty else {
             throw OpenRouterError.notConfigured
@@ -915,8 +916,13 @@ actor OpenRouterService {
         }
 
         var reasoningConfig: ReasoningConfig? = nil
-        if !usingLMStudio, let effort = reasoningEffort {
-            reasoningConfig = ReasoningConfig(effort: effort)
+        if !usingLMStudio {
+            if let override = reasoningEffortOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !override.isEmpty {
+                reasoningConfig = ReasoningConfig(effort: override)
+            } else if let effort = reasoningEffort {
+                reasoningConfig = ReasoningConfig(effort: effort)
+            }
         }
 
         let effectiveModel: String = {

@@ -81,10 +81,14 @@ actor SubagentRunner {
         //    - .cheapFast → gpt-oss-120b via Groq/Vertex (cost + cache isolation).
         //    - .inherit  → parent's configured model.
         //    - Agent-tool `model` param ("sonnet"/"opus"/"haiku") overrides .inherit when mappable.
-        let typeLevelOverride: (model: String, providers: [String])?
+        let typeLevelOverride: (model: String, providers: [String]?, reasoning: String?)?
         switch subagentType.preferredModel {
         case .cheapFast:
-            typeLevelOverride = (SubagentModelProfile.cheapFastModel, SubagentModelProfile.cheapFastProviders)
+            typeLevelOverride = (
+                SubagentModelProfile.cheapFastModel,
+                SubagentModelProfile.cheapFastProviders,
+                SubagentModelProfile.cheapFastReasoningEffort
+            )
         case .inherit:
             typeLevelOverride = nil
         }
@@ -99,15 +103,19 @@ actor SubagentRunner {
 
         let effectiveModelOverride: String?
         let effectiveProviderOverride: [String]?
+        let effectiveReasoningOverride: String?
         if let perCallSlug {
             effectiveModelOverride = perCallSlug
             effectiveProviderOverride = nil
+            effectiveReasoningOverride = nil
         } else if let typeLevelOverride {
             effectiveModelOverride = typeLevelOverride.model
             effectiveProviderOverride = typeLevelOverride.providers
+            effectiveReasoningOverride = typeLevelOverride.reasoning
         } else {
             effectiveModelOverride = nil
             effectiveProviderOverride = nil
+            effectiveReasoningOverride = nil
         }
 
         // 5. Capture a pre-run snapshot of the FilesLedger to diff after the run.
@@ -143,7 +151,8 @@ actor SubagentRunner {
                     turnStartDate: turnStartDate,
                     finalResponseInstruction: subagentType.systemPromptSuffix,
                     modelOverride: effectiveModelOverride,
-                    providerOverride: effectiveProviderOverride
+                    providerOverride: effectiveProviderOverride,
+                    reasoningEffortOverride: effectiveReasoningOverride
                 )
 
                 switch response {
