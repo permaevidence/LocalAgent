@@ -55,6 +55,8 @@
 		LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPTYPES00123456789AB1B /* LSPTypes.swift */; };
 		LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */; };
 		LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPCLIENT0123456789AB1B /* LSPClient.swift */; };
+		LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPLANG000123456789AB1B /* LSPLanguages.swift */; };
+		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -106,6 +108,8 @@
 		LSPTYPES00123456789AB1B /* LSPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
 		LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONRPCFraming.swift; sourceTree = "<group>"; };
 		LSPCLIENT0123456789AB1B /* LSPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
+		LSPLANG000123456789AB1B /* LSPLanguages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPLanguages.swift; sourceTree = "<group>"; };
+		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,6 +187,8 @@
 				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
 				LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */,
 				LSPCLIENT0123456789AB1B /* LSPClient.swift */,
+				LSPLANG000123456789AB1B /* LSPLanguages.swift */,
+				LSPREGISTRY0123456789A1B /* LSPRegistry.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -340,6 +346,8 @@
 				LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */,
 				LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */,
 				LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */,
+				LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */,
+				LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
