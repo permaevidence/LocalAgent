@@ -728,36 +728,40 @@ enum AvailableTools {
     )
     
     // MARK: - URL Viewing and Download Tools
-    
-    static let viewUrl = ToolDefinition(
+
+    static let webFetch = ToolDefinition(
         function: FunctionDefinition(
-            name: "view_url",
-            description: "Read and view the content of a URL directly. Use AFTER web_search or deep_research when you need to see the full content of a page, not just snippets. Returns markdown content with image descriptions (captions and URLs) and all links. If you want to actually SEE an image from the page, use view_page_image with the image URL returned in the images array. Ideal for: reading articles, documentation, product pages, or any URL from search results that you need more detail on.",
+            name: "web_fetch",
+            description: "Fetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or deep_research when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, GitHub READMEs, API references, or any URL from search results where you need targeted information.",
             parameters: FunctionParameters(
                 properties: [
                     "url": ParameterProperty(
                         type: "string",
-                        description: "The full URL to read (e.g., 'https://example.com/article'). Use URLs from web_search/deep_research results or user-provided URLs."
+                        description: "The full URL to fetch (e.g., 'https://example.com/article'). Must be http:// or https://."
+                    ),
+                    "prompt": ParameterProperty(
+                        type: "string",
+                        description: "What you want to know from this page. Be specific — the tool extracts only the relevant excerpt using this prompt. Examples: 'How do I configure the X option?', 'Summarize the migration steps', 'What is the pricing for the pro plan?'. Vague prompts like 'summarize' produce noisier results."
                     )
                 ],
-                required: ["url"]
+                required: ["url", "prompt"]
             )
         )
     )
-    
-    static let viewPageImage = ToolDefinition(
+
+    static let webFetchImage = ToolDefinition(
         function: FunctionDefinition(
-            name: "view_page_image",
-            description: "Download and view a specific image from a webpage. Use AFTER view_url when you want to actually see and analyze an image. The images array from view_url contains captions and URLs - use the caption to decide which image is relevant, then call this tool with the image_url. The downloaded image will be visible to you for analysis.",
+            name: "web_fetch_image",
+            description: "Download and view a specific image from a webpage. Use AFTER web_fetch when you want to actually see and analyze an image. The images array from web_fetch contains captions and URLs - use the caption to decide which image is relevant, then call this tool with the image_url. The downloaded image will be visible to you for analysis.",
             parameters: FunctionParameters(
                 properties: [
                     "image_url": ParameterProperty(
                         type: "string",
-                        description: "Direct URL to the image to download and view. Use the url field from an image in the images array returned by view_url."
+                        description: "Direct URL to the image to download and view. Use the url field from an image in the images array returned by web_fetch."
                     ),
                     "caption": ParameterProperty(
                         type: "string",
-                        description: "Optional caption or description for the image (from the view_url response). Helps with context."
+                        description: "Optional caption or description for the image (from the web_fetch response). Helps with context."
                     )
                 ],
                 required: ["image_url"]
@@ -1484,7 +1488,7 @@ enum AvailableTools {
             (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() == "true"
-        let webTools = includeWebSearch ? [webSearch, deepResearch, viewUrl, viewPageImage] : []
+        let webTools = includeWebSearch ? [webSearch, deepResearch, webFetch, webFetchImage] : []
         var coreTools = webTools + coreToolsWithoutWebSearch
 
         if disableLegacyDocumentGeneration {
