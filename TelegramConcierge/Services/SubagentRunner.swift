@@ -14,7 +14,7 @@ actor SubagentRunner {
     }
 
     struct RunResult {
-        let finalMessage: String          // capped at 8 KB
+        let finalMessage: String          // capped at 32 KB
         let turnsUsed: Int
         let toolsCalled: [String]         // unique tool names in call order
         let filesTouched: [String]        // paths that appeared/advanced in FilesLedger during the run
@@ -38,7 +38,11 @@ actor SubagentRunner {
         }
     }
 
-    private static let finalMessageByteCap = 8 * 1024
+    /// Hard cap on the subagent's final message returned to the parent. Claude Code
+    /// has no documented cap; 32 KB covers its typical envelope (long Plans,
+    /// comprehensive general-purpose analyses) while retaining a runaway-protection
+    /// backstop. Truncation adds a `[...truncated]` marker on a UTF-8 boundary.
+    private static let finalMessageByteCap = 32 * 1024
 
     func run(
         invocation: Invocation,
@@ -225,7 +229,7 @@ actor SubagentRunner {
         let postSnapshot = await Self.snapshotLedger()
         let filesTouched = Self.diffLedger(pre: preSnapshot, post: postSnapshot)
 
-        // 8. Cap the final message at 8 KB.
+        // 8. Cap the final message at 32 KB (runaway-protection backstop).
         let cappedFinal = Self.capToBytes(finalText, limit: Self.finalMessageByteCap)
 
         return RunResult(
