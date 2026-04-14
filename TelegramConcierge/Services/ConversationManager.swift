@@ -703,41 +703,25 @@ class ConversationManager: ObservableObject {
         startActiveProcessing(for: userMessage)
     }
 
-    private func startActiveProcessing(
-        for userMessage: Message,
-        postRunUserMessageContent: String? = nil
-    ) {
+    private func startActiveProcessing(for userMessage: Message) {
         guard activeRunId == nil, activeProcessingTask == nil else {
             print("[ConversationManager] Ignoring startActiveProcessing because a run is already active")
             return
         }
-        
+
         let runId = UUID()
         activeRunId = runId
-        
+
         activeProcessingTask = Task { [weak self] in
-            await self?.runActiveProcessing(
-                for: userMessage,
-                runId: runId,
-                postRunUserMessageContent: postRunUserMessageContent
-            )
+            await self?.runActiveProcessing(for: userMessage, runId: runId)
         }
     }
-    
+
     private func runActiveProcessing(
         for userMessage: Message,
-        runId: UUID,
-        postRunUserMessageContent: String?
+        runId: UUID
     ) async {
-        func compactStoredEmailPromptIfNeeded() -> Bool {
-            guard let compacted = postRunUserMessageContent else { return false }
-            return replaceMessageContent(for: userMessage.id, with: compacted)
-        }
-
         defer {
-            if compactStoredEmailPromptIfNeeded() {
-                saveConversation()
-            }
             if activeRunId == runId {
                 activeRunId = nil
                 activeProcessingTask = nil
@@ -771,9 +755,6 @@ class ConversationManager: ObservableObject {
             messages.append(assistantMessage)
             didMutateHistory = true
 
-            if compactStoredEmailPromptIfNeeded() {
-                didMutateHistory = true
-            }
             if didMutateHistory {
                 saveConversation()
             }
@@ -1680,13 +1661,21 @@ class ConversationManager: ObservableObject {
             prunedCount += 1
         }
 
+        // Parallel pass: collapse stale synthetic user messages (emails, subagent
+        // completions, reminders) into one-line metadata stubs. This is the same
+        // cache-invalidation event as the tool-interaction collapse, so piggy-backing
+        // avoids extra cache misses. `.userText` and `.bashComplete` are skipped.
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: messages.count)
+
         if prunedCount > 0 {
             pruneOldCompactToolLogs()
+        }
+        if prunedCount > 0 || compressedCount > 0 {
             saveConversation()
-            print("[ConversationManager] Pruned tool interactions from \(prunedCount) turn(s). New estimate: ~\(totalTokens) tokens")
+            print("[ConversationManager] Pruned tool interactions from \(prunedCount) turn(s); compressed \(compressedCount) synthetic user message(s). New estimate: ~\(totalTokens) tokens")
         }
 
-        return prunedCount > 0
+        return prunedCount > 0 || compressedCount > 0
     }
 
     /// Mid-loop variant: prunes stored tool interactions from historical turns when the
@@ -1754,11 +1743,208 @@ class ConversationManager: ObservableObject {
                     messagesForLLM[i].compactToolLog = messages[i].compactToolLog
                 }
             }
-            saveConversation()
-            print("[ConversationManager] Mid-loop pruned \(prunedCount) turn(s). New estimate: ~\(totalTokens) tokens")
         }
 
-        return prunedCount > 0
+        // Parallel pass on the compressible synthetic user messages. Runs in the
+        // same cache-invalidation event as the tool-interaction collapse.
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: messages.count)
+        if compressedCount > 0 {
+            // Mirror the compressed content into the in-flight messagesForLLM slice so
+            // the current turn sees the stubbed form too.
+            for i in 0..<min(messagesForLLM.count, messages.count) {
+                if messagesForLLM[i].id == messages[i].id {
+                    messagesForLLM[i] = messages[i]
+                }
+            }
+        }
+
+        if prunedCount > 0 || compressedCount > 0 {
+            saveConversation()
+            print("[ConversationManager] Mid-loop pruned \(prunedCount) turn(s); compressed \(compressedCount) synthetic user message(s). New estimate: ~\(totalTokens) tokens")
+        }
+
+        return prunedCount > 0 || compressedCount > 0
+    }
+
+    // MARK: - Compressible synthetic-user-message pruning
+
+    /// Stable-history cutoff for compression. We don't touch the tail of the
+    /// conversation — compressing a message the model just reacted to is wasted
+    /// risk, and keeping a tail uncompressed matches the spirit of the "Low
+    /// Watermark" (hot region stays fully inflated).
+    private static let compressibleSyntheticTailProtection = 4
+
+    /// The set of message kinds that the Watermark pruner is allowed to collapse
+    /// into a one-line stub. Hard constraint: `.userText` and `.bashComplete`
+    /// are deliberately NOT in this set.
+    private static let compressibleSyntheticKinds: Set<MessageKind> = [
+        .emailArrived, .subagentComplete, .reminderFired
+    ]
+
+    /// Replace the `content` of stale synthetic user messages (emails, subagent
+    /// completions, reminders) with a one-line metadata stub. Called from inside
+    /// the Watermark pruners so it piggy-backs on the same cache-invalidation
+    /// event as the tool-interaction collapse.
+    ///
+    /// - `upToIndex` is exclusive — messages at indices `[0, upToIndex - tailProtection)`
+    ///   are considered stable history. The last few messages stay fully inflated.
+    /// - Already-compressed messages are skipped via the `[... archived]` prefix check.
+    /// - Only touches indices into `self.messages`; callers that also hold an
+    ///   `inout [Message]` mirror should sync afterwards.
+    ///
+    /// Returns the number of messages actually rewritten.
+    @discardableResult
+    private func pruneCompressibleUserMessages(upToIndex: Int) -> Int {
+        let tail = Self.compressibleSyntheticTailProtection
+        let end = min(upToIndex, messages.count)
+        let stableEnd = max(0, end - tail)
+        guard stableEnd > 0 else { return 0 }
+
+        var count = 0
+        for i in 0..<stableEnd {
+            let msg = messages[i]
+            guard msg.role == .user else { continue }
+            guard Self.compressibleSyntheticKinds.contains(msg.kind) else { continue }
+            // Safety: never compress twice. Cheap prefix check matches the stub format.
+            if msg.content.hasPrefix("[Email archived]")
+                || msg.content.hasPrefix("[Subagent archived]")
+                || msg.content.hasPrefix("[Reminder archived]") {
+                continue
+            }
+
+            let stub: String
+            switch msg.kind {
+            case .emailArrived:     stub = Self.compactEmailStub(from: msg.content)
+            case .subagentComplete: stub = Self.compactSubagentStub(from: msg.content)
+            case .reminderFired:    stub = Self.compactReminderStub(from: msg.content)
+            case .userText, .bashComplete:
+                continue // defensive — filtered above
+            }
+
+            messages[i].content = stub
+            count += 1
+        }
+        return count
+    }
+
+    // MARK: Stub builders (inline parsers for the three compressible kinds)
+
+    /// Extract `from:`/`subject:` headers from the original email-arrival body and
+    /// build a one-line stub. Falls back to a generic message if parsing fails.
+    private static func compactEmailStub(from body: String) -> String {
+        let (from, subject, snippet) = parseEmailHeaders(body)
+        if from == nil && subject == nil {
+            return "[Email archived] (compressed; body no longer in context)"
+        }
+        var parts = ["[Email archived]"]
+        if let from = from { parts.append("from: \(from)") }
+        if let subject = subject { parts.append("subject: \(subject)") }
+        if let snippet = snippet, !snippet.isEmpty {
+            parts.append("snippet: \(snippet)")
+        }
+        return parts.joined(separator: ", ")
+            .replacingOccurrences(of: "[Email archived],", with: "[Email archived]")
+    }
+
+    /// Parse the first `From:`/`Subject:` pair (and body snippet) from a
+    /// `[SYSTEM: NEW EMAILS ARRIVED]` block. Headers are case-insensitive and
+    /// may appear after a `---` separator line.
+    private static func parseEmailHeaders(_ body: String) -> (from: String?, subject: String?, snippet: String?) {
+        var from: String?
+        var subject: String?
+        var snippet: String?
+        var sawBody = false
+        for rawLine in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let lower = trimmed.lowercased()
+            if from == nil, lower.hasPrefix("from:") {
+                from = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            } else if subject == nil, lower.hasPrefix("subject:") {
+                subject = String(trimmed.dropFirst(8)).trimmingCharacters(in: .whitespaces)
+            } else if snippet == nil, lower.hasPrefix("body:") {
+                sawBody = true
+                let rest = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                if !rest.isEmpty { snippet = String(rest.prefix(80)) }
+            } else if sawBody, snippet == nil, !trimmed.isEmpty {
+                snippet = String(trimmed.prefix(80))
+            }
+            if from != nil && subject != nil && snippet != nil { break }
+        }
+        return (from, subject, snippet)
+    }
+
+    /// Parse the `[SUBAGENT COMPLETE]` block up to the `final_message:` line and
+    /// emit a one-line stub. The final_message body is discarded.
+    private static func compactSubagentStub(from body: String) -> String {
+        var handle: String?
+        var subagentType: String?
+        var description: String?
+        var turns: String?
+        var spend: String?
+        var filesTouched: String?
+
+        for rawLine in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("final_message") { break }
+            if let value = Self.keyValue(line, key: "handle") { handle = value }
+            else if let value = Self.keyValue(line, key: "subagent_type") { subagentType = value }
+            else if let value = Self.keyValue(line, key: "description") { description = value }
+            else if let value = Self.keyValue(line, key: "turns_used") { turns = value }
+            else if let value = Self.keyValue(line, key: "spend_usd") { spend = value }
+            else if let value = Self.keyValue(line, key: "files_touched") { filesTouched = value }
+        }
+
+        var parts = ["[Subagent archived]"]
+        if let handle = handle { parts.append("handle: \(handle)") }
+        if let subagentType = subagentType { parts.append("type: \(subagentType)") }
+        if let description = description { parts.append("description: \(description)") }
+        if let turns = turns { parts.append("turns: \(turns)") }
+        if let spend = spend { parts.append("spend_usd: \(spend)") }
+        if let filesTouched = filesTouched {
+            // `(none)` → 0; otherwise count comma-separated entries.
+            let count: Int
+            if filesTouched == "(none)" {
+                count = 0
+            } else {
+                count = filesTouched.split(separator: ",").count
+            }
+            parts.append("files_touched: \(count)")
+        }
+        if parts.count == 1 {
+            // Fallback when parsing yields nothing useful.
+            return "[Subagent archived] (compressed; details no longer in context)"
+        }
+        return parts.joined(separator: ", ")
+            .replacingOccurrences(of: "[Subagent archived],", with: "[Subagent archived]")
+    }
+
+    /// Emit a one-line stub for a `reminderFired` message. The original body is a
+    /// framed `[SCHEDULED REMINDER ...]` block; pull out the inner prompt and
+    /// truncate it to 80 chars.
+    private static func compactReminderStub(from body: String) -> String {
+        // Strip the leading/trailing frame lines if present, then truncate.
+        var lines = body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        lines = lines.filter {
+            let t = $0.trimmingCharacters(in: .whitespaces)
+            return !t.hasPrefix("[SCHEDULED REMINDER")
+                && !t.hasPrefix("[END OF REMINDER")
+                && !t.isEmpty
+        }
+        let inner = lines.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        let snippet = String(inner.prefix(80))
+        if snippet.isEmpty {
+            return "[Reminder archived] (compressed; prompt no longer in context)"
+        }
+        return "[Reminder archived] \(snippet)"
+    }
+
+    /// Parse a `key: value` line case-sensitively. Returns nil if the line does
+    /// not match the requested key.
+    private static func keyValue(_ line: String, key: String) -> String? {
+        let prefix = "\(key):"
+        guard line.hasPrefix(prefix) else { return nil }
+        return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
     }
 
     /// Keep at most 5 active compact tool logs (messages where interactions were pruned but log remains).
@@ -2104,7 +2290,7 @@ class ConversationManager: ObservableObject {
             """
             
             // Add the reminder as a user message
-            let userMessage = Message(role: .user, content: reminderPrompt)
+            let userMessage = Message(role: .user, content: reminderPrompt, kind: .reminderFired)
             messages.append(userMessage)
             saveConversation()
             
@@ -2190,7 +2376,7 @@ class ConversationManager: ObservableObject {
             }
             body += "\n\n[END OF BACKGROUND TASK - If the user asked you to notify them when this finished, do so now.]"
 
-            let userMessage = Message(role: .user, content: body)
+            let userMessage = Message(role: .user, content: body, kind: .bashComplete)
             messages.append(userMessage)
             saveConversation()
 
@@ -2271,7 +2457,7 @@ class ConversationManager: ObservableObject {
             }
             body += "\n\(completion.result.finalMessage)"
 
-            let userMessage = Message(role: .user, content: body)
+            let userMessage = Message(role: .user, content: body, kind: .subagentComplete)
             messages.append(userMessage)
             saveConversation()
 
@@ -2355,17 +2541,14 @@ class ConversationManager: ObservableObject {
         New emails:
         \(emailDetails.joined(separator: "\n"))
         """
-        
-        let userMessage = Message(role: .user, content: emailContent)
+
+        let userMessage = Message(role: .user, content: emailContent, kind: .emailArrived)
         messages.append(userMessage)
-        
+
         statusMessage = "Processing new emails..."
-        startActiveProcessing(
-            for: userMessage,
-            postRunUserMessageContent: compactedEmailNotificationContent(from: emails)
-        )
+        startActiveProcessing(for: userMessage)
     }
-    
+
     /// Process new Gmail emails (Gmail API version of processNewEmails)
     private func processNewGmailEmails(_ emails: [GmailMessage]) async {
         guard pairedChatId != nil, !emails.isEmpty else { return }
@@ -2412,103 +2595,14 @@ class ConversationManager: ObservableObject {
         New emails:
         \(emailDetails.joined(separator: "\n"))
         """
-        
-        let userMessage = Message(role: .user, content: emailContent)
+
+        let userMessage = Message(role: .user, content: emailContent, kind: .emailArrived)
         messages.append(userMessage)
-        
+
         statusMessage = "Processing new Gmail emails..."
-        startActiveProcessing(
-            for: userMessage,
-            postRunUserMessageContent: compactedGmailNotificationContent(from: emails)
-        )
+        startActiveProcessing(for: userMessage)
     }
 
-    private func compactedEmailNotificationContent(from emails: [EmailMessage]) -> String {
-        var lines: [String] = [
-            "[SYSTEM: NEW EMAILS ARRIVED - CONTENT PURGED]",
-            "Body removed to save context.",
-            "Before acting/replying: fetch full text with email/Gmail tools first; never act blindly.",
-            "",
-            "Metadata:"
-        ]
-        
-        for email in emails {
-            lines.append("---")
-            lines.append("From: \(email.from)")
-            lines.append("Subject: \(email.subject)")
-            lines.append("Date: \(email.date)")
-            lines.append("UID: \(email.id)")
-            if !email.messageId.isEmpty {
-                lines.append("Message-ID: \(email.messageId)")
-            }
-            if let inReplyTo = email.inReplyTo, !inReplyTo.isEmpty {
-                lines.append("In-Reply-To: \(inReplyTo)")
-            }
-            if let references = email.references, !references.isEmpty {
-                lines.append("References: \(references)")
-            }
-            if !email.attachments.isEmpty {
-                let names = email.attachments.map { "\($0.filename) (\($0.mimeType))" }.joined(separator: ", ")
-                lines.append("Attachments: \(names)")
-            }
-        }
-        
-        return lines.joined(separator: "\n")
-    }
-
-    private func compactedGmailNotificationContent(from emails: [GmailMessage]) -> String {
-        var lines: [String] = [
-            "[SYSTEM: NEW EMAILS ARRIVED - CONTENT PURGED]",
-            "Body removed to save context.",
-            "Before acting/replying: fetch full text with Gmail tools first; never act blindly.",
-            "",
-            "Metadata:"
-        ]
-        
-        for email in emails {
-            let from = email.getHeader("From") ?? "Unknown"
-            let subject = email.getHeader("Subject") ?? "(No subject)"
-            let date = email.getHeader("Date") ?? ""
-            lines.append("---")
-            lines.append("From: \(from)")
-            lines.append("Subject: \(subject)")
-            lines.append("Date: \(date)")
-            lines.append("Message ID: \(email.id)")
-            lines.append("Thread ID: \(email.threadId)")
-            let attachments = email.payload?.getAttachmentParts() ?? []
-            if !attachments.isEmpty {
-                let names = attachments.compactMap { "\($0.filename ?? "file") (\($0.mimeType ?? "unknown"))" }.joined(separator: ", ")
-                lines.append("Attachments: \(names)")
-            }
-        }
-        
-        return lines.joined(separator: "\n")
-    }
-
-    @discardableResult
-    private func replaceMessageContent(for messageId: UUID, with content: String) -> Bool {
-        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return false }
-        let existing = messages[index]
-        guard existing.content != content else { return false }
-        
-        messages[index] = Message(
-            id: existing.id,
-            role: existing.role,
-            content: content,
-            timestamp: existing.timestamp,
-            imageFileNames: existing.imageFileNames,
-            documentFileNames: existing.documentFileNames,
-            imageFileSizes: existing.imageFileSizes,
-            documentFileSizes: existing.documentFileSizes,
-            referencedImageFileNames: existing.referencedImageFileNames,
-            referencedDocumentFileNames: existing.referencedDocumentFileNames,
-            referencedDocumentFileSizes: existing.referencedDocumentFileSizes,
-            downloadedDocumentFileNames: existing.downloadedDocumentFileNames,
-            accessedProjectIds: existing.accessedProjectIds
-        )
-        return true
-    }
-    
     // MARK: - Persistence
     
     private func loadConversation() {

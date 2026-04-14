@@ -1,9 +1,23 @@
 import Foundation
 
+/// Classifies how a message entered the conversation.
+/// Used by the Watermark pruner to decide whether a stored user message can be
+/// replaced by a compact metadata stub when context pressure demands compression.
+///
+/// `.userText` is sacred — it represents content the human actually typed and must
+/// NEVER be compressed or rewritten.
+enum MessageKind: String, Codable {
+    case userText         // User actually typed this (default; NEVER compressed)
+    case emailArrived     // Email monitor injected
+    case subagentComplete // Background subagent finished
+    case bashComplete     // Background bash finished (NOT compressed — too small)
+    case reminderFired    // Scheduled reminder fired
+}
+
 struct Message: Identifiable, Codable, Equatable {
     let id: UUID
     let role: Role
-    let content: String
+    var content: String
     let timestamp: Date
     
     // Multiple attachments support (primary storage)
@@ -28,7 +42,11 @@ struct Message: Identifiable, Codable, Equatable {
 
     // Compact tool log — generated at turn end, used as fallback when toolInteractions are pruned
     var compactToolLog: String?
-    
+
+    // Origin classification for synthetic user messages — drives Watermark-time compression.
+    // Default `.userText` means the user actually typed this and it must NEVER be compressed.
+    var kind: MessageKind
+
     enum Role: String, Codable {
         case user
         case assistant
@@ -62,7 +80,8 @@ struct Message: Identifiable, Codable, Equatable {
         downloadedDocumentFileNames: [String] = [],
         accessedProjectIds: [String] = [],
         toolInteractions: [ToolInteraction] = [],
-        compactToolLog: String? = nil
+        compactToolLog: String? = nil,
+        kind: MessageKind = .userText
     ) {
         self.id = id
         self.role = role
@@ -79,6 +98,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.accessedProjectIds = accessedProjectIds
         self.toolInteractions = toolInteractions
         self.compactToolLog = compactToolLog
+        self.kind = kind
     }
     
     // MARK: - Codable (with backward compatibility)
@@ -89,7 +109,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, accessedProjectIds, toolInteractions, compactToolLog
+        case downloadedDocumentFileNames, accessedProjectIds, toolInteractions, compactToolLog, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -173,6 +193,10 @@ struct Message: Identifiable, Codable, Equatable {
 
         // Compact tool log (new field, default nil for old messages)
         compactToolLog = try? container.decodeIfPresent(String.self, forKey: .compactToolLog)
+
+        // Message kind (new field, default to `.userText` for old stored messages so
+        // legacy data is never accidentally treated as compressible).
+        kind = (try? container.decodeIfPresent(MessageKind.self, forKey: .kind)) ?? .userText
     }
     
     func encode(to encoder: Encoder) throws {
@@ -197,6 +221,10 @@ struct Message: Identifiable, Codable, Equatable {
             try container.encode(toolInteractions, forKey: .toolInteractions)
         }
         try container.encodeIfPresent(compactToolLog, forKey: .compactToolLog)
+        // Only encode kind when non-default, mirroring the conditional-encode pattern above.
+        if kind != .userText {
+            try container.encode(kind, forKey: .kind)
+        }
     }
 
     // Manual Equatable — excludes toolInteractions (ToolInteraction is not Equatable)
@@ -213,6 +241,7 @@ struct Message: Identifiable, Codable, Equatable {
         lhs.referencedDocumentFileNames == rhs.referencedDocumentFileNames &&
         lhs.referencedDocumentFileSizes == rhs.referencedDocumentFileSizes &&
         lhs.downloadedDocumentFileNames == rhs.downloadedDocumentFileNames &&
-        lhs.accessedProjectIds == rhs.accessedProjectIds
+        lhs.accessedProjectIds == rhs.accessedProjectIds &&
+        lhs.kind == rhs.kind
     }
 }
