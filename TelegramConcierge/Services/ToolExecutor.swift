@@ -3652,6 +3652,24 @@ struct RunShortcutArguments: Codable {
 
 // MARK: - URL Viewing and Download Tool Implementations
 
+/// JSON-escape a string for safe inline interpolation into a JSON object literal.
+/// Returns the value with surrounding quotes (e.g. `"hello\nworld"`).
+fileprivate func jsonStringLit(_ s: String) -> String {
+    if let data = try? JSONSerialization.data(withJSONObject: [s], options: []),
+       let str = String(data: data, encoding: .utf8),
+       str.count >= 2 {
+        return String(str.dropFirst().dropLast())
+    }
+    // Fallback: manual minimal escaping.
+    let escaped = s
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+        .replacingOccurrences(of: "\n", with: "\\n")
+        .replacingOccurrences(of: "\r", with: "\\r")
+        .replacingOccurrences(of: "\t", with: "\\t")
+    return "\"\(escaped)\""
+}
+
 extension ToolExecutor {
     func executeWebFetch(_ call: ToolCall) async -> String {
         guard let argsData = call.function.arguments.data(using: .utf8),
@@ -3693,21 +3711,45 @@ extension ToolExecutor {
             return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid URL format. URL must start with http:// or https://\"}")
         }
         
-        // Download the image
-        guard let downloadedImage = await webOrchestrator.downloadImage(url: args.imageUrl, caption: args.caption ?? "") else {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to download image from URL. It may be inaccessible, too large, or not an image.\"}")
+        // Download the image, surfacing a precise error so the agent doesn't silently hang.
+        let downloadedImage: DownloadedImage
+        do {
+            downloadedImage = try await webOrchestrator.downloadImageOrThrow(url: args.imageUrl, caption: args.caption ?? "")
+        } catch WebOrchestrator.ImageDownloadFailure.unsupportedFormat(let mime) {
+            let msg = "Vision models cannot read \(mime) images (e.g. SVG badges, PDFs). Supported formats: jpeg, png, gif, webp. Use web_fetch with a specific prompt to describe the content, or download_from_url to save the file locally."
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
+        } catch WebOrchestrator.ImageDownloadFailure.notAnImage(let mime) {
+            let msg = "URL did not return an image (Content-Type: \(mime)). Use web_fetch or download_from_url for non-image content."
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
+        } catch WebOrchestrator.ImageDownloadFailure.httpError(let code) {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Image fetch failed with HTTP \(code). The URL may be expired (common for GitHub camo proxies) or require auth.\"}")
+        } catch WebOrchestrator.ImageDownloadFailure.tooLarge(let bytes) {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Image too large: \(bytes) bytes. Max supported size is 10 MB.\"}")
+        } catch WebOrchestrator.ImageDownloadFailure.invalidURL {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid URL.\"}")
+        } catch WebOrchestrator.ImageDownloadFailure.network(let reason) {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit("Network error downloading image: \(reason)"))}")
+        } catch {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit("Failed to download image: \(error.localizedDescription)"))}")
         }
-        
-        // Create file attachment for multimodal injection
-        let filename = "page_image_\(UUID().uuidString.prefix(8)).jpg"
+
+        // Create file attachment for multimodal injection. Filename extension reflects the real mime.
+        let ext: String
+        switch downloadedImage.mimeType {
+        case "image/png": ext = "png"
+        case "image/gif": ext = "gif"
+        case "image/webp": ext = "webp"
+        default: ext = "jpg"
+        }
+        let filename = "page_image_\(UUID().uuidString.prefix(8)).\(ext)"
         let attachment = FileAttachment(data: downloadedImage.data, mimeType: downloadedImage.mimeType, filename: filename)
-        
+
         print("[ToolExecutor] Downloaded page image for multimodal injection: \(downloadedImage.data.count) bytes from \(args.imageUrl)")
-        
+
         let result = """
         {"success": true, "mimeType": "\(downloadedImage.mimeType)", "sizeBytes": \(downloadedImage.data.count), "message": "Image downloaded successfully. You can now see and analyze it."}
         """
-        
+
         return ToolResultMessage(toolCallId: call.id, content: result, fileAttachment: attachment)
     }
     
