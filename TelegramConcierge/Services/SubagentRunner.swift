@@ -123,7 +123,7 @@ actor SubagentRunner {
         }
 
         // 5. Capture a pre-run snapshot of the FilesLedger to diff after the run.
-        let preSnapshot = await Self.snapshotLedger()
+        let preSnapshot = await FilesLedgerDiff.snapshot()
 
         // 6. Tool loop
         var toolInteractions: [ToolInteraction] = []
@@ -226,8 +226,8 @@ actor SubagentRunner {
         }
 
         // 7. Diff FilesLedger for files touched during the run.
-        let postSnapshot = await Self.snapshotLedger()
-        let filesTouched = Self.diffLedger(pre: preSnapshot, post: postSnapshot)
+        let postSnapshot = await FilesLedgerDiff.snapshot()
+        let filesTouched = FilesLedgerDiff.diff(pre: preSnapshot, post: postSnapshot).allTouched
 
         // 8. Cap the final message at 32 KB (runaway-protection backstop).
         let cappedFinal = Self.capToBytes(finalText, limit: Self.finalMessageByteCap)
@@ -262,30 +262,4 @@ actor SubagentRunner {
         return marker
     }
 
-    private struct LedgerSnapshot {
-        let byPath: [String: (lastTouched: Date, touchCount: Int)]
-    }
-
-    private static func snapshotLedger() async -> LedgerSnapshot {
-        // Request a generous page; FilesLedger is in-memory so this is cheap.
-        let entries = await FilesLedger.shared.recentFiles(limit: 100_000, offset: 0, filterOrigin: nil)
-        var map: [String: (Date, Int)] = [:]
-        for e in entries { map[e.path] = (e.last_touched, e.touch_count) }
-        return LedgerSnapshot(byPath: map.mapValues { (lastTouched: $0.0, touchCount: $0.1) })
-    }
-
-    private static func diffLedger(pre: LedgerSnapshot, post: LedgerSnapshot) -> [String] {
-        var changed: [String] = []
-        for (path, postVal) in post.byPath {
-            if let preVal = pre.byPath[path] {
-                if postVal.touchCount > preVal.touchCount || postVal.lastTouched > preVal.lastTouched {
-                    changed.append(path)
-                }
-            } else {
-                changed.append(path)
-            }
-        }
-        changed.sort()
-        return changed
-    }
 }

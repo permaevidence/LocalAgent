@@ -43,6 +43,10 @@ class ConversationManager: ObservableObject {
         let compactToolLog: String?
         let toolInteractions: [ToolInteraction]
         let accessedProjects: [String]?
+        /// Absolute paths of pre-existing files modified during the turn (FilesLedger diff).
+        let editedFilePaths: [String]
+        /// Absolute paths of files newly created during the turn (FilesLedger diff).
+        let generatedFilePaths: [String]
     }
 
     private struct SpendLimitStatus {
@@ -751,6 +755,8 @@ class ConversationManager: ObservableObject {
                 role: .assistant,
                 content: finalResponse,
                 downloadedDocumentFileNames: downloadedFilenames,
+                editedFilePaths: response.editedFilePaths,
+                generatedFilePaths: response.generatedFilePaths,
                 accessedProjectIds: response.accessedProjects ?? [],
                 toolInteractions: response.toolInteractions,
                 compactToolLog: response.compactToolLog
@@ -1113,7 +1119,22 @@ class ConversationManager: ObservableObject {
     
     private func generateResponseWithTools(currentUserMessageId: UUID, turnStartDate: Date) async throws -> ToolAwareResponse {
         try Task.checkCancellation()
-        
+
+        // Snapshot FilesLedger up-front so we can report the set of files that were
+        // edited/generated during the turn on the resulting assistant Message. This
+        // is surfaced in the UI (MessageBubbleView) and in archived summaries.
+        let ledgerPreSnapshot = await FilesLedgerDiff.snapshot()
+
+        // Local helper: compute the diff now. Closure-captured so every return path
+        // below produces the same `editedFilePaths` / `generatedFilePaths` pair.
+        // NB: any ledger writes that happen AFTER this call (none are expected —
+        // all tool writes are recorded synchronously via FilesLedger.shared.record)
+        // will bleed into the next turn's snapshot rather than this one.
+        @Sendable func computeLedgerDiff() async -> FilesLedgerDiff.Changed {
+            let post = await FilesLedgerDiff.snapshot()
+            return FilesLedgerDiff.diff(pre: ledgerPreSnapshot, post: post)
+        }
+
         // Check if tools are available
         let serperKey = KeychainHelper.load(key: KeychainHelper.serperApiKeyKey) ?? ""
 
@@ -1218,11 +1239,14 @@ class ConversationManager: ObservableObject {
             monthlyLimitUSD: toolSpendLimitMonthlyUSD
         ) {
             print("[ConversationManager] Daily/monthly spend limit already reached before tool loop: \(exceededMessage)")
+            let changed = await computeLedgerDiff()
             return ToolAwareResponse(
                 finalText: exceededMessage,
                 compactToolLog: nil,
                 toolInteractions: [],
-                accessedProjects: []
+                accessedProjects: [],
+                editedFilePaths: changed.edited,
+                generatedFilePaths: changed.generated
             )
         }
         
@@ -1270,13 +1294,16 @@ class ConversationManager: ObservableObject {
                     print("[ConversationManager] LLM returned text response after \(round) round(s)")
                 }
                 let accessedProjects = extractAccessedProjects(from: toolInteractions)
+                let changed = await computeLedgerDiff()
                 return ToolAwareResponse(
                     finalText: content,
                     compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                     toolInteractions: toolInteractions,
-                    accessedProjects: accessedProjects
+                    accessedProjects: accessedProjects,
+                    editedFilePaths: changed.edited,
+                    generatedFilePaths: changed.generated
                 )
-                
+
             case .toolCalls(let assistantMessage, let calls, _, _):
                 // Model wants to use more tools
                 print("[ConversationManager] Round \(round): LLM requested \(calls.count) tool(s): \(calls.map { $0.function.name })")
@@ -1295,14 +1322,17 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached during tool loop: \(exceededMessage)")
+                    let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
                         compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                         toolInteractions: toolInteractions,
-                        accessedProjects: extractAccessedProjects(from: toolInteractions)
+                        accessedProjects: extractAccessedProjects(from: toolInteractions),
+                        editedFilePaths: changed.edited,
+                        generatedFilePaths: changed.generated
                     )
                 }
-                
+
                 let (executableCalls, blockedResults) = partitionToolCallsForExecution(
                     calls,
                     allowedToolNames: allowedToolNames,
@@ -1396,11 +1426,14 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached after tool execution: \(exceededMessage)")
+                    let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
                         compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                         toolInteractions: toolInteractions,
-                        accessedProjects: extractAccessedProjects(from: toolInteractions)
+                        accessedProjects: extractAccessedProjects(from: toolInteractions),
+                        editedFilePaths: changed.edited,
+                        generatedFilePaths: changed.generated
                     )
                 }
                 
@@ -1447,21 +1480,26 @@ class ConversationManager: ObservableObject {
         }
         
         let accessedProjects = extractAccessedProjects(from: toolInteractions)
-        
+        let changed = await computeLedgerDiff()
+
         switch finalResponse {
         case .text(let content, _, _):
             return ToolAwareResponse(
                 finalText: content,
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
-                accessedProjects: accessedProjects
+                accessedProjects: accessedProjects,
+                editedFilePaths: changed.edited,
+                generatedFilePaths: changed.generated
             )
         case .toolCalls(_, _, _, _):
             return ToolAwareResponse(
                 finalText: "I completed the requested actions but had trouble summarizing the results.",
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
-                accessedProjects: accessedProjects
+                accessedProjects: accessedProjects,
+                editedFilePaths: changed.edited,
+                generatedFilePaths: changed.generated
             )
         }
     }
@@ -2314,19 +2352,21 @@ class ConversationManager: ObservableObject {
                 let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
                 let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
                 let assistantMessage = Message(
-                    role: .assistant, 
-                    content: finalResponse, 
+                    role: .assistant,
+                    content: finalResponse,
                     downloadedDocumentFileNames: downloadedFilenames,
+                    editedFilePaths: response.editedFilePaths,
+                    generatedFilePaths: response.generatedFilePaths,
                     accessedProjectIds: response.accessedProjects ?? []
                 )
                 messages.append(assistantMessage)
                 saveConversation()
-                
+
                 // Send reply via Telegram
                 if let chatId = pairedChatId {
                     try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
                 }
-                
+
                 print("[ConversationManager] Reminder \(reminder.id) processed successfully")
             } catch {
                 self.error = "Failed to process reminder: \(error.localizedDescription)"
@@ -2401,6 +2441,8 @@ class ConversationManager: ObservableObject {
                     role: .assistant,
                     content: finalResponse,
                     downloadedDocumentFileNames: downloadedFilenames,
+                    editedFilePaths: response.editedFilePaths,
+                    generatedFilePaths: response.generatedFilePaths,
                     accessedProjectIds: response.accessedProjects ?? []
                 )
                 messages.append(assistantMessage)
@@ -2491,6 +2533,8 @@ class ConversationManager: ObservableObject {
                     role: .assistant,
                     content: finalResponse,
                     downloadedDocumentFileNames: downloadedFilenames,
+                    editedFilePaths: response.editedFilePaths,
+                    generatedFilePaths: response.generatedFilePaths,
                     accessedProjectIds: response.accessedProjects ?? []
                 )
                 messages.append(assistantMessage)
@@ -2599,6 +2643,8 @@ class ConversationManager: ObservableObject {
                         role: .assistant,
                         content: finalResponse,
                         downloadedDocumentFileNames: downloadedFilenames,
+                        editedFilePaths: response.editedFilePaths,
+                        generatedFilePaths: response.generatedFilePaths,
                         accessedProjectIds: response.accessedProjects ?? []
                     )
                     messages.append(assistantMessage)

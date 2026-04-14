@@ -1549,6 +1549,15 @@ actor ConversationArchiveService {
             tags.append("Downloaded file: \(fileName)\(descPart)")
         }
 
+        // Edited / generated file paths captured via FilesLedger diff at turn end.
+        // Compact one-line-per-kind form so a week of summaries still fits in context.
+        if !message.editedFilePaths.isEmpty {
+            tags.append("edited: \(message.editedFilePaths.joined(separator: ", "))")
+        }
+        if !message.generatedFilePaths.isEmpty {
+            tags.append("generated: \(message.generatedFilePaths.joined(separator: ", "))")
+        }
+
         guard !tags.isEmpty else { return baseContent }
         let prefix = tags.map { "[\($0)]" }.joined(separator: " ")
         return "\(prefix) \(baseContent)"

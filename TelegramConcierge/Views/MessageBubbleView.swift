@@ -51,7 +51,18 @@ struct MessageBubbleView: View {
                 if !message.downloadedDocumentFileNames.isEmpty {
                     downloadedFilesView
                 }
-                
+
+                // Files the agent edited during this turn (write_file / edit_file / apply_patch
+                // on pre-existing files). Populated from FilesLedger diff.
+                if !message.editedFilePaths.isEmpty {
+                    editedFilesView
+                }
+
+                // Files the agent newly created during this turn. Populated from FilesLedger diff.
+                if !message.generatedFilePaths.isEmpty {
+                    generatedFilesView
+                }
+
                 // Accessed projects (permanent log)
                 if !message.accessedProjectIds.isEmpty {
                     accessedProjectsView
@@ -203,6 +214,67 @@ struct MessageBubbleView: View {
         }
     }
     
+    // MARK: - Edited Files
+
+    private var editedFilesView: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
+            ForEach(message.editedFilePaths, id: \.self) { path in
+                fullPathChip(
+                    icon: "pencil",
+                    color: .yellow,
+                    label: "Edited",
+                    path: path
+                )
+            }
+        }
+    }
+
+    // MARK: - Generated Files
+
+    private var generatedFilesView: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
+            ForEach(message.generatedFilePaths, id: \.self) { path in
+                fullPathChip(
+                    icon: "sparkles",
+                    color: .green,
+                    label: "Generated",
+                    path: path
+                )
+            }
+        }
+    }
+
+    /// Chip variant that shows the full absolute path verbatim (no truncation).
+    /// Used for edited/generated files where the absolute path is the point.
+    private func fullPathChip(
+        icon: String,
+        color: Color,
+        label: String,
+        path: String
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundColor(color)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+                Text(path)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.08))
+        .cornerRadius(8)
+    }
+
     // MARK: - Accessed Projects
     
     private var accessedProjectsView: some View {

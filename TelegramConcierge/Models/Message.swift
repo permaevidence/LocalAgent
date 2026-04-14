@@ -34,6 +34,12 @@ struct Message: Identifiable, Codable, Equatable {
     // Files downloaded via tools (email attachments, URL downloads, etc.)
     var downloadedDocumentFileNames: [String]
 
+    // Files the agent modified during this turn (write_file / edit_file / apply_patch on pre-existing files)
+    var editedFilePaths: [String]
+
+    // Files the agent newly created during this turn (write_file / apply_patch / image gen etc.)
+    var generatedFilePaths: [String]
+
     // Project workspaces accessed during the turn
     var accessedProjectIds: [String]
 
@@ -78,6 +84,8 @@ struct Message: Identifiable, Codable, Equatable {
         referencedDocumentFileNames: [String] = [],
         referencedDocumentFileSizes: [Int] = [],
         downloadedDocumentFileNames: [String] = [],
+        editedFilePaths: [String] = [],
+        generatedFilePaths: [String] = [],
         accessedProjectIds: [String] = [],
         toolInteractions: [ToolInteraction] = [],
         compactToolLog: String? = nil,
@@ -95,6 +103,8 @@ struct Message: Identifiable, Codable, Equatable {
         self.referencedDocumentFileNames = referencedDocumentFileNames
         self.referencedDocumentFileSizes = referencedDocumentFileSizes
         self.downloadedDocumentFileNames = downloadedDocumentFileNames
+        self.editedFilePaths = editedFilePaths
+        self.generatedFilePaths = generatedFilePaths
         self.accessedProjectIds = accessedProjectIds
         self.toolInteractions = toolInteractions
         self.compactToolLog = compactToolLog
@@ -109,7 +119,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, accessedProjectIds, toolInteractions, compactToolLog, kind
+        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, toolInteractions, compactToolLog, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -184,7 +194,11 @@ struct Message: Identifiable, Codable, Equatable {
         
         // Downloaded files (new field, default to empty for old messages)
         downloadedDocumentFileNames = (try? container.decode([String].self, forKey: .downloadedDocumentFileNames)) ?? []
-        
+
+        // Edited/generated file paths (new fields, default to empty for old messages)
+        editedFilePaths = (try? container.decode([String].self, forKey: .editedFilePaths)) ?? []
+        generatedFilePaths = (try? container.decode([String].self, forKey: .generatedFilePaths)) ?? []
+
         // Accessed projects (new field, default to empty for old messages)
         accessedProjectIds = (try? container.decode([String].self, forKey: .accessedProjectIds)) ?? []
 
@@ -216,6 +230,12 @@ struct Message: Identifiable, Codable, Equatable {
         try container.encode(referencedDocumentFileNames, forKey: .referencedDocumentFileNames)
         try container.encode(referencedDocumentFileSizes, forKey: .referencedDocumentFileSizes)
         try container.encode(downloadedDocumentFileNames, forKey: .downloadedDocumentFileNames)
+        if !editedFilePaths.isEmpty {
+            try container.encode(editedFilePaths, forKey: .editedFilePaths)
+        }
+        if !generatedFilePaths.isEmpty {
+            try container.encode(generatedFilePaths, forKey: .generatedFilePaths)
+        }
         try container.encode(accessedProjectIds, forKey: .accessedProjectIds)
         if !toolInteractions.isEmpty {
             try container.encode(toolInteractions, forKey: .toolInteractions)
@@ -241,6 +261,8 @@ struct Message: Identifiable, Codable, Equatable {
         lhs.referencedDocumentFileNames == rhs.referencedDocumentFileNames &&
         lhs.referencedDocumentFileSizes == rhs.referencedDocumentFileSizes &&
         lhs.downloadedDocumentFileNames == rhs.downloadedDocumentFileNames &&
+        lhs.editedFilePaths == rhs.editedFilePaths &&
+        lhs.generatedFilePaths == rhs.generatedFilePaths &&
         lhs.accessedProjectIds == rhs.accessedProjectIds &&
         lhs.kind == rhs.kind
     }
