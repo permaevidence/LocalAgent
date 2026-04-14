@@ -62,6 +62,7 @@
 		TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */; };
 		SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */; };
 		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
+		SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */; };
 		USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = USERAGNTL0123456789AB1B /* UserAgentLoader.swift */; };
 /* End PBXBuildFile section */
 
@@ -121,6 +122,7 @@
 		TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ToolExecutor+Filesystem.swift"; sourceTree = "<group>"; };
 		SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentTypes.swift; sourceTree = "<group>"; };
 		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
+		SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentBackgroundRegistry.swift; sourceTree = "<group>"; };
 		USERAGNTL0123456789AB1B /* UserAgentLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UserAgentLoader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -198,6 +200,7 @@
 				TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */,
 				SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */,
 				SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */,
+				SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */,
 				USERAGNTL0123456789AB1B /* UserAgentLoader.swift */,
 				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
 				LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */,
@@ -363,6 +366,7 @@
 				TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */,
 				SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */,
 				SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */,
+				SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */,
 				USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */,
 				LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */,
 				LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */,

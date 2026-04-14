@@ -4162,7 +4162,7 @@ extension ToolExecutor {
         // Same tool surface the parent sees this session — the subagent's type filter will narrow it.
         let parentTools = AvailableTools.all(includeWebSearch: true)
 
-        let runInBg = (args.run_in_background?.lowercased() == "true")
+        let runInBg = Self.parseBoolFlag(args.run_in_background)
         let invocation = SubagentRunner.Invocation(
             subagentType: args.subagent_type,
             description: args.description,
@@ -4170,6 +4170,29 @@ extension ToolExecutor {
             modelOverride: args.model,
             runInBackground: runInBg
         )
+
+        if runInBg {
+            let handle = await SubagentBackgroundRegistry.shared.spawn(
+                invocation: invocation,
+                parentTools: parentTools,
+                openRouterService: openRouter,
+                toolExecutor: self,
+                imagesDirectory: imagesDir,
+                documentsDirectory: documentsDir
+            )
+            let payload: [String: Any] = [
+                "background": true,
+                "handle": handle.id,
+                "subagent_type": handle.subagentType,
+                "description": handle.description,
+                "note": "Subagent is running in the background. You will receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Continue with other work or wait."
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{\"error\": \"Failed to encode background handle response\"}"
+        }
 
         let runner = SubagentRunner()
         let result = await runner.run(
@@ -4181,5 +4204,13 @@ extension ToolExecutor {
             parentTools: parentTools
         )
         return result.asJSON()
+    }
+
+    private static func parseBoolFlag(_ raw: String?) -> Bool {
+        guard let raw else { return false }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "true", "yes", "1": return true
+        default: return false
+        }
     }
 }

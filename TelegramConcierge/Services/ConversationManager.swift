@@ -290,6 +290,9 @@ class ConversationManager: ObservableObject {
                     // Check for completed background bash processes
                     await checkBackgroundBashCompletions()
 
+                    // Check for completed background subagents
+                    await checkBackgroundSubagentCompletions()
+
                     let updates = try await telegramService.getUpdates()
                     
                     for update in updates {
@@ -2221,6 +2224,87 @@ class ConversationManager: ObservableObject {
             } catch {
                 self.error = "Failed to process bash completion: \(error.localizedDescription)"
                 print("[ConversationManager] Failed to process bash completion: \(error)")
+            }
+        }
+
+        statusMessage = "Listening... (Last check: \(formattedTime()))"
+    }
+
+    // MARK: - Background subagent completion handling
+
+    /// Drain completed background subagents and inject each as a synthetic user message,
+    /// triggering a new agent turn so the parent can react (e.g. notify the user, continue
+    /// work that depended on the subagent's findings). Mirrors the bash completion flow.
+    private func checkBackgroundSubagentCompletions() async {
+        guard activeRunId == nil else { return }
+        let completions = await SubagentBackgroundRegistry.shared.drainCompletions()
+        guard !completions.isEmpty else { return }
+
+        for completion in completions {
+            let duration = completion.completedAt.timeIntervalSince(completion.handle.startedAt)
+            let durationStr = String(format: "%.1fs", duration)
+
+            let toolsStr = completion.result.toolsCalled.isEmpty
+                ? "(none)"
+                : completion.result.toolsCalled.joined(separator: ", ")
+            let filesStr = completion.result.filesTouched.isEmpty
+                ? "(none)"
+                : completion.result.filesTouched.joined(separator: ", ")
+            let spendStr = String(format: "%.4f", completion.result.spendUSD)
+
+            var body = """
+            [SUBAGENT COMPLETE]
+            handle: \(completion.handle.id)
+            subagent_type: \(completion.handle.subagentType)
+            description: \(completion.handle.description)
+            turns_used: \(completion.result.turnsUsed)
+            tools_called: \(toolsStr)
+            files_touched: \(filesStr)
+            spend_usd: \(spendStr)
+            duration: \(durationStr)
+            """
+            if let err = completion.result.error, !err.isEmpty {
+                body += "\nerror: \(err)"
+                body += "\nfinal_message (possibly partial):"
+            } else {
+                body += "\nfinal_message:"
+            }
+            body += "\n\(completion.result.finalMessage)"
+
+            let userMessage = Message(role: .user, content: body)
+            messages.append(userMessage)
+            saveConversation()
+
+            do {
+                let turnStartDate = Date()
+                let response = try await generateResponseWithTools(currentUserMessageId: userMessage.id, turnStartDate: turnStartDate)
+
+                if let toolLog = response.compactToolLog, !toolLog.isEmpty {
+                    messages.append(Message(role: .assistant, content: toolLog))
+                    pruneOldToolLogMessages()
+                }
+
+                let finalResponseRaw = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Background subagent \(completion.handle.id) finished."
+                    : response.finalText
+                let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
+                let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
+                let assistantMessage = Message(
+                    role: .assistant,
+                    content: finalResponse,
+                    downloadedDocumentFileNames: downloadedFilenames,
+                    accessedProjectIds: response.accessedProjects ?? []
+                )
+                messages.append(assistantMessage)
+                saveConversation()
+
+                if let chatId = pairedChatId {
+                    try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
+                }
+                print("[ConversationManager] Background subagent \(completion.handle.id) processed")
+            } catch {
+                self.error = "Failed to process subagent completion: \(error.localizedDescription)"
+                print("[ConversationManager] Failed to process subagent completion: \(error)")
             }
         }
 

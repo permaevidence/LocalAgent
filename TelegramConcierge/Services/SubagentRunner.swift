@@ -9,8 +9,8 @@ actor SubagentRunner {
         let subagentType: String
         let description: String
         let taskPrompt: String
-        let modelOverride: String?        // "sonnet"/"opus"/"haiku"/"inherit"/nil — Phase 1 ignores except to note
-        let runInBackground: Bool         // Accepted in Phase 1, always runs synchronously
+        let modelOverride: String?        // "sonnet"/"opus"/"haiku"/"inherit"/nil
+        let runInBackground: Bool         // Informational; actual routing happens in ToolExecutor.executeAgent
     }
 
     struct RunResult {
@@ -219,18 +219,13 @@ actor SubagentRunner {
         // 8. Cap the final message at 8 KB.
         let cappedFinal = Self.capToBytes(finalText, limit: Self.finalMessageByteCap)
 
-        var note: String? = runError
-        if invocation.runInBackground && note == nil {
-            note = "run_in_background accepted but ignored — background mode ships in Phase 3."
-        }
-
         return RunResult(
             finalMessage: cappedFinal,
             turnsUsed: turnsUsed,
             toolsCalled: toolsCalledOrdered,
             filesTouched: filesTouched,
             spendUSD: totalSpendUSD,
-            error: note
+            error: runError
         )
     }
 

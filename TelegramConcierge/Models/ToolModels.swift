@@ -1236,7 +1236,7 @@ enum AvailableTools {
                         ),
                         "run_in_background": ParameterProperty(
                             type: "string",
-                            description: "Pass 'true' to run the subagent in the background and get notified when it completes. Default 'false'. NOTE: Phase 2 accepts this parameter but always runs synchronously; background mode ships in Phase 3."
+                            description: "Pass 'true' to run the subagent in the background and receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Useful for long-running Explore or Plan tasks so the parent can continue in parallel. Default 'false' (synchronous)."
                         ),
                         "model": ParameterProperty(
                             type: "string",
