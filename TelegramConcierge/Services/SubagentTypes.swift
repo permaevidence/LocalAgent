@@ -2,14 +2,14 @@ import Foundation
 
 // MARK: - Subagent Type Registry
 
-/// Model-selection hint for a subagent run. Phase 1 only uses `.inherit` in practice;
-/// `.cheapFast` will be wired in Phase 2 to a Groq-hosted gpt-oss-120b route.
+/// Model-selection hint for a subagent run. `.cheapFast` routes to gpt-oss-120b via
+/// Groq/Vertex for both cost isolation and prompt-cache isolation from the parent.
 enum SubagentModelChoice {
     case inherit
     case cheapFast
 }
 
-/// Describes a built-in subagent kind. Mirrors Claude Code's Agent/Task tool conventions.
+/// Describes a subagent kind (built-in or user-defined).
 struct SubagentType {
     let name: String
     let description: String
@@ -19,6 +19,13 @@ struct SubagentType {
     let allowedToolNames: Set<String>?
     let defaultMaxTurns: Int
     let preferredModel: SubagentModelChoice
+}
+
+/// Model/provider targets for `.cheapFast` subagent runs. Matches the pattern
+/// used in WebOrchestrator for its gpt-oss-120b web pipeline.
+enum SubagentModelProfile {
+    static let cheapFastModel = "openai/gpt-oss-120b"
+    static let cheapFastProviders = ["groq", "google-vertex"]
 }
 
 enum SubagentTypes {
@@ -60,11 +67,51 @@ enum SubagentTypes {
         preferredModel: .inherit
     )
 
-    static let all: [SubagentType] = [generalPurpose, explore, plan]
+    static let builtIns: [SubagentType] = [generalPurpose, explore, plan]
 
-    /// Case-insensitive lookup by name.
+    /// Built-ins plus any user-defined agents from `~/LocalAgent/agents/*.md`.
+    /// Built-ins win on name collision.
+    static func all() -> [SubagentType] {
+        let user = UserAgentLoader.loadAll()
+        let builtInNames = Set(builtIns.map { $0.name.lowercased() })
+        let filteredUser = user.filter { !builtInNames.contains($0.name.lowercased()) }
+        return builtIns + filteredUser
+    }
+
+    /// All subagent names for tool-schema enum values.
+    static func allNames() -> [String] {
+        return all().map { $0.name }
+    }
+
+    /// Case-insensitive lookup by name. Built-ins first, then user-defined.
     static func find(name: String) -> SubagentType? {
         let lowered = name.lowercased()
-        return all.first { $0.name.lowercased() == lowered }
+        if let builtIn = builtIns.first(where: { $0.name.lowercased() == lowered }) {
+            return builtIn
+        }
+        return UserAgentLoader.loadAll().first { $0.name.lowercased() == lowered }
+    }
+}
+
+/// Maps the short model hints accepted by the Agent tool's `model` parameter
+/// to concrete OpenRouter model slugs. Returns nil for "inherit"/unknown values,
+/// which means "keep the parent's configured model".
+enum SubagentModelHintMapper {
+    static func openRouterSlug(for hint: String?) -> String? {
+        guard let raw = hint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty,
+              raw != "inherit" else {
+            return nil
+        }
+        switch raw {
+        case "sonnet":
+            return "anthropic/claude-sonnet-4.5"
+        case "opus":
+            return "anthropic/claude-opus-4.1"
+        case "haiku":
+            return "anthropic/claude-haiku-4.5"
+        default:
+            return nil
+        }
     }
 }

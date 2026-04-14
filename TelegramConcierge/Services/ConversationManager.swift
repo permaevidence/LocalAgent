@@ -70,11 +70,6 @@ class ConversationManager: ObservableObject {
         }
     }
 
-    private struct ProjectToolTurnState {
-        var createdProjectIDs: Set<String> = []
-        var projectsWithSuccessfulHistory: Set<String> = []
-    }
-    
     private let appFolder: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
@@ -101,9 +96,6 @@ class ConversationManager: ObservableObject {
     init() {
         isPrivacyModeEnabled = UserDefaults.standard.bool(forKey: privacyModeDefaultsKey)
         loadConversation()
-
-        // Ensure the system project exists for general-purpose machine operations
-        Task { await toolExecutor.ensureSystemProject() }
 
         // Wire up archive status notifications to Telegram
         let telegramSvc = telegramService
@@ -885,15 +877,6 @@ class ConversationManager: ObservableObject {
         case "/more10":
             await increaseSpendLimitIfNeeded(by: 10)
             return true
-        case "/claude":
-            await switchCodeCLIProvider(to: "claude")
-            return true
-        case "/gemini":
-            await switchCodeCLIProvider(to: "gemini")
-            return true
-        case "/codex":
-            await switchCodeCLIProvider(to: "codex")
-            return true
         case "/hide":
             await setPrivacyMode(enabled: true)
             return true
@@ -970,54 +953,6 @@ class ConversationManager: ObservableObject {
         }
     }
     
-    private func switchCodeCLIProvider(to provider: String) async {
-        let normalizedProvider = provider
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        
-        guard ["claude", "gemini", "codex"].contains(normalizedProvider) else {
-            return
-        }
-        
-        let currentProvider = (KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? KeychainHelper.defaultCodeCLIProvider)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        
-        let providerDisplayName: String
-        switch normalizedProvider {
-        case "gemini":
-            providerDisplayName = "Gemini CLI"
-        case "codex":
-            providerDisplayName = "Codex CLI"
-        default:
-            providerDisplayName = "Claude Code"
-        }
-        
-        let message: String
-        if currentProvider == normalizedProvider {
-            message = "✅ Code CLI already set to \(providerDisplayName)."
-        } else {
-            do {
-                try KeychainHelper.save(key: KeychainHelper.codeCLIProviderKey, value: normalizedProvider)
-                if activeRunId != nil {
-                    message = "✅ Switched Code CLI to \(providerDisplayName). It will apply to the next delegated run."
-                } else {
-                    message = "✅ Switched Code CLI to \(providerDisplayName)."
-                }
-            } catch {
-                message = "❌ Failed to switch Code CLI to \(providerDisplayName): \(error.localizedDescription)"
-            }
-        }
-        
-        if let chatId = pairedChatId {
-            try? await telegramService.sendMessage(chatId: chatId, text: message)
-        }
-        
-        if activeRunId == nil {
-            statusMessage = "Listening... (Last check: \(formattedTime()))"
-        }
-    }
-
     private func switchVoiceTranscriptionProvider(to provider: VoiceTranscriptionProvider) async {
         let currentProvider = currentVoiceTranscriptionProvider()
         let providerDisplayName = provider.displayName
@@ -1871,37 +1806,11 @@ class ConversationManager: ObservableObject {
     }
     
     private func extractAccessedProjects(from interactions: [ToolInteraction]) -> [String] {
-        var projectIds = Set<String>()
-        let projectTools = Set(["manage_projects", "browse_project", "read_project_file", "add_project_files", "view_project_history", "run_claude_code", "send_project_result"])
-        
-        for interaction in interactions {
-            for call in interaction.assistantMessage.toolCalls {
-                guard projectTools.contains(call.function.name) else { continue }
-                
-                if let data = call.function.arguments.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    if let projectId = json["project_id"] as? String {
-                        projectIds.insert(projectId)
-                    } else if let projectName = json["project_name"] as? String {
-                        let isCreateProjectCall = call.function.name == "create_project"
-                        let isManageProjectsCreate = call.function.name == "manage_projects"
-                            && ((json["action"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "create")
-
-                        guard isCreateProjectCall || isManageProjectsCreate else { continue }
-
-                        // For project creation, the ID is derived from the name
-                        let generatedId = projectName
-                            .lowercased()
-                            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-                            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-                        projectIds.insert(generatedId)
-                    }
-                }
-            }
-        }
-        return Array(projectIds).sorted()
+        // Legacy project-tools removed in Phase 2; nothing to extract.
+        return []
     }
-    
+
+
     private func blockedToolResult(for call: ToolCall) -> ToolResultMessage {
         blockedToolResult(for: call, errorMessage: "Tool '\(call.function.name)' is not available in this turn.")
     }
@@ -1919,158 +1828,21 @@ class ConversationManager: ObservableObject {
         priorInteractions: [ToolInteraction],
         historicalMessages: [Message] = []
     ) -> (executableCalls: [ToolCall], blockedResults: [ToolResultMessage]) {
-        let turnState = buildProjectToolTurnState(from: priorInteractions, historicalMessages: historicalMessages)
         var executableCalls: [ToolCall] = []
         var blockedResults: [ToolResultMessage] = []
-        var historyRequestedThisRound = Set<String>()
 
         for call in calls {
-            guard allowedToolNames.contains(call.function.name) else {
-                blockedResults.append(blockedToolResult(for: call))
-                continue
-            }
-
-            switch call.function.name {
-            case "view_project_history":
-                guard let projectID = projectIDFromArguments(of: call) else {
-                    executableCalls.append(call)
-                    continue
-                }
-
-                if turnState.projectsWithSuccessfulHistory.contains(projectID) {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "view_project_history was already loaded successfully for project '\(projectID)' earlier in this turn. Reuse that context instead of calling it again."
-                        )
-                    )
-                } else if historyRequestedThisRound.contains(projectID) {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "view_project_history was already requested for project '\(projectID)' in this round. Call it at most once per turn per project unless a prior history load failed."
-                        )
-                    )
-                } else {
-                    historyRequestedThisRound.insert(projectID)
-                    executableCalls.append(call)
-                }
-
-            case "run_claude_code":
-                guard let projectID = projectIDFromArguments(of: call) else {
-                    executableCalls.append(call)
-                    continue
-                }
-
-                if turnState.createdProjectIDs.contains(projectID) || turnState.projectsWithSuccessfulHistory.contains(projectID) {
-                    executableCalls.append(call)
-                } else {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "Before reusing existing project '\(projectID)', call view_project_history for that same project_id in an earlier tool round of this turn. After that result is returned, call run_claude_code."
-                        )
-                    )
-                }
-
-            default:
+            if allowedToolNames.contains(call.function.name) {
                 executableCalls.append(call)
+            } else {
+                blockedResults.append(blockedToolResult(for: call))
             }
         }
 
         return (executableCalls, blockedResults)
     }
 
-    private func buildProjectToolTurnState(from interactions: [ToolInteraction], historicalMessages: [Message] = []) -> ProjectToolTurnState {
-        var state = ProjectToolTurnState()
 
-        // Scan stored tool interactions from previous turns (visible to the model via persistence)
-        for message in historicalMessages where message.role == .assistant {
-            for interaction in message.toolInteractions {
-                processInteractionForTurnState(interaction, state: &state)
-            }
-        }
-
-        // Scan current turn's interactions
-        for interaction in interactions {
-            processInteractionForTurnState(interaction, state: &state)
-        }
-
-        return state
-    }
-
-    private func processInteractionForTurnState(_ interaction: ToolInteraction, state: inout ProjectToolTurnState) {
-        var resultByCallID: [String: ToolResultMessage] = [:]
-        for result in interaction.results {
-            resultByCallID[result.toolCallId] = result
-        }
-
-        for call in interaction.assistantMessage.toolCalls {
-            guard let result = resultByCallID[call.id],
-                  let resultDictionary = parseJSONDictionary(from: result.content) else {
-                continue
-            }
-
-            switch call.function.name {
-            case "create_project":
-                guard (resultDictionary["success"] as? Bool) == true,
-                      let projectID = resultDictionary["project_id"] as? String,
-                      !projectID.isEmpty else {
-                    continue
-                }
-                state.createdProjectIDs.insert(projectID)
-
-            case "manage_projects":
-                guard manageProjectsAction(from: call) == "create",
-                      (resultDictionary["success"] as? Bool) == true,
-                      let projectID = resultDictionary["project_id"] as? String,
-                      !projectID.isEmpty else {
-                    continue
-                }
-                state.createdProjectIDs.insert(projectID)
-
-            case "view_project_history":
-                guard (resultDictionary["success"] as? Bool) == true else {
-                    continue
-                }
-
-                if let projectID = resultDictionary["projectId"] as? String, !projectID.isEmpty {
-                    state.projectsWithSuccessfulHistory.insert(projectID)
-                } else if let projectID = resultDictionary["project_id"] as? String, !projectID.isEmpty {
-                    state.projectsWithSuccessfulHistory.insert(projectID)
-                } else if let projectID = projectIDFromArguments(of: call) {
-                    state.projectsWithSuccessfulHistory.insert(projectID)
-                }
-
-            default:
-                continue
-            }
-        }
-    }
-
-    private func projectIDFromArguments(of call: ToolCall) -> String? {
-        guard let data = call.function.arguments.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let projectID = object["project_id"] as? String else {
-            return nil
-        }
-
-        let normalized = projectID.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? nil : normalized
-    }
-
-    private func manageProjectsAction(from call: ToolCall) -> String? {
-        guard call.function.name == "manage_projects",
-              let data = call.function.arguments.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let action = object["action"] as? String else {
-            return nil
-        }
-
-        let normalized = action.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ? nil : normalized
-    }
-    
     /// Get appropriate progress message for tool calls
     private func getProgressMessage(for calls: [ToolCall]) -> String {
         let toolNames = Set(calls.map { $0.function.name })
@@ -2103,22 +1875,8 @@ class ConversationManager: ObservableObject {
             return "🔍📅 Searching the web and managing calendar..."
         } else if hasWebSearchOp {
             return "🔍 Searching the web..."
-        } else if toolNames.contains("run_claude_code") {
-            let provider = (KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? KeychainHelper.defaultCodeCLIProvider)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-            switch provider {
-            case "gemini":
-                return "🤖 Running Gemini CLI..."
-            case "codex":
-                return "🤖 Running Codex CLI..."
-            default:
-                return "🤖 Running Claude Code..."
-            }
-        } else if toolNames.contains("manage_projects") || toolNames.contains("browse_project") || toolNames.contains("read_project_file") || toolNames.contains("add_project_files") {
-            return "📁 Managing project workspace..."
-        } else if toolNames.contains("send_project_result") {
-            return "📤 Sending project result..."
+        } else if toolNames.contains("Agent") {
+            return "🤖 Running subagent..."
         } else if hasReminderOp {
             return "⏰ Managing reminders..."
         } else if hasCalendarOp {

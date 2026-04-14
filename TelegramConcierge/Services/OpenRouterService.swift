@@ -155,7 +155,7 @@ actor OpenRouterService {
     private func fallbackDescriptionForUnsupportedFile(filename: String, mimeType: String) -> String {
         let normalized = normalizeMimeType(mimeType)
         if normalized == "application/zip" || filename.lowercased().hasSuffix(".zip") {
-            return "ZIP archive received and saved locally. Import into a project with add_project_files to extract contents."
+            return "ZIP archive received and saved locally. Use the bash tool (e.g. `unzip`) to extract contents if needed."
         }
         return "File received and saved locally. This file type is not viewable inline."
     }
@@ -373,7 +373,9 @@ actor OpenRouterService {
         totalChunkCount: Int = 0,
         currentUserMessageId: UUID? = nil,
         turnStartDate: Date? = nil,
-        finalResponseInstruction: String? = nil
+        finalResponseInstruction: String? = nil,
+        modelOverride: String? = nil,
+        providerOverride: [String]? = nil
     ) async throws -> LLMResponse {
         guard isLMStudio || !apiKey.isEmpty else {
             throw OpenRouterError.notConfigured
@@ -400,23 +402,7 @@ actor OpenRouterService {
         let assistantName = KeychainHelper.load(key: KeychainHelper.assistantNameKey)
         let userName = KeychainHelper.load(key: KeychainHelper.userNameKey)
         let structuredUserContext = KeychainHelper.load(key: KeychainHelper.structuredUserContextKey)
-        let claudeCodeDocumentModeEnabled =
-            (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "true"
-        let codeCLIProvider = (KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? KeychainHelper.defaultCodeCLIProvider)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let codeCLIProviderName: String
-        switch codeCLIProvider {
-        case "gemini":
-            codeCLIProviderName = "Gemini CLI"
-        case "codex":
-            codeCLIProviderName = "Codex CLI"
-        default:
-            codeCLIProviderName = "Claude Code"
-        }
-        
+
         // Build persona intro
         var personaIntro: String
         if let structured = structuredUserContext, !structured.isEmpty {
@@ -481,34 +467,14 @@ actor OpenRouterService {
             - Specific facts you're uncertain about
             - Any topic where fresh information would improve your answer
             - Use web_search for quick/targeted lookup; use deep_research when the user asks for an in-depth, comprehensive, long-form researched answer
-            - Project ZIP imports: if user wants edits to an existing project sent as a ZIP, use project tools to import it into a workspace before coding
             - Deployment/database operations: use bash directly (e.g. `vercel deploy --prod`, `npx instant-cli push`). There are no bespoke deployment tools.
             - When working on code in a git repository, proactively run `git status --short` and `git log -5 --oneline` via bash before making changes — the repo's state is not in your context and recent commits explain why things look the way they do.
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).
             - **Calendar management**: Use manage_calendar with actions 'view', 'add', 'edit', or 'delete' for events on the user's schedule
+            - **Subagent delegation via the `Agent` tool**: for broad codebase exploration, focused investigations, or architectural planning, spawn a subagent with the `Agent` tool rather than doing the work inline. Subagents have their own context window — they don't see your conversation and their tool calls don't bloat yours. Built-in types: `general-purpose` (full tools, open-ended), `Explore` (fast read-only search, parallel tool calls, cheap model), `Plan` (read-only planning, returns a step-by-step plan). Subagents CANNOT spawn other subagents.
 
             For simple questions you can answer directly, respond without using tools.
             """
-
-            if claudeCodeDocumentModeEnabled {
-                prompt += """
-
-                **\\(codeCLIProviderName) as an OPTIONAL Sub-Agent for nested coding work**:
-                - By default you handle file ops, shell commands, refactors, and most coding tasks DIRECTLY using your native tools (bash, write_file, edit_file, apply_patch, grep, glob, list_dir, lsp_*). They are faster and keep work in-context.
-                - Escalate to \\(codeCLIProviderName) via run_claude_code only when one of these applies:
-                  (a) the task is large, iterative, or open-ended enough that it benefits from a fresh sub-agent context with its own multi-turn tool loop (e.g. "build an entire feature end-to-end");
-                  (b) the work is project-bound and you want isolated session memory the sub-agent will resume across turns;
-                  (c) you specifically want a heavyweight coding agent's deeper reasoning over a focused codebase.
-                - Workflow when delegating: manage_projects (action='list' or 'create') → if reusing an existing project, call view_project_history once per turn for that project before the first run_claude_code call → run_claude_code with a clear high-level goal → read the resulting files yourself with read_file / send_project_result.
-                - **Project-bound memory**: the sub-agent only remembers things done within its project. It knows nothing about other projects or your broader conversation. To give it inputs, write the files into the project folder via your filesystem tools first, then run_claude_code.
-                - **System project** (`_system`): a persistent workspace pointing at the home directory. Use it as the project_id when you want to delegate a non-project-specific task to the sub-agent. For everyday file reads/edits/shell on the home directory, prefer your own native tools instead.
-                - **Internal automations**: when the sub-agent builds something for your own future use, name it clearly (e.g. "Automation: File Sorter") and note `This is an internal agent automation` in manage_projects action='create' initial_notes.
-                - When reusing an existing project, call view_project_history for that same project_id once per turn before the first run_claude_code call (unless the history is already visible from a previous turn's persisted tool interactions).
-                - When sending outputs, send_project_result with package_as='zip_project' or send individual files as appropriate.
-                - For project cleanup requests, instruct the user to open the projects folder in Finder and delete folders manually; do not claim deletion was completed by tools.
-                - Do not claim files/code were created unless run_claude_code reports file_changes_detected or returns created_files/modified_files.
-                """
-            }
 
             prompt += """
 
@@ -930,8 +896,12 @@ actor OpenRouterService {
         let usingLMStudio = isLMStudio
 
         var providerPrefs: ProviderPreferences? = nil
-        if !usingLMStudio, let providerOrder = providers, !providerOrder.isEmpty {
-            providerPrefs = ProviderPreferences(order: providerOrder)
+        if !usingLMStudio {
+            if let order = providerOverride, !order.isEmpty {
+                providerPrefs = ProviderPreferences(order: order)
+            } else if let providerOrder = providers, !providerOrder.isEmpty {
+                providerPrefs = ProviderPreferences(order: providerOrder)
+            }
         }
 
         var reasoningConfig: ReasoningConfig? = nil
@@ -939,8 +909,16 @@ actor OpenRouterService {
             reasoningConfig = ReasoningConfig(effort: effort)
         }
 
+        let effectiveModel: String = {
+            if let override = modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !override.isEmpty {
+                return override
+            }
+            return model
+        }()
+
         let body = OpenRouterRequest(
-            model: model,
+            model: effectiveModel,
             messages: apiMessages,
             tools: tools,
             provider: providerPrefs,
@@ -967,7 +945,7 @@ actor OpenRouterService {
         request.httpBody = try encoder.encode(body)
 
         let providerLabel = usingLMStudio ? "LMStudio" : "OpenRouter"
-        print("[OpenRouterService] Sending request to \(providerLabel) (\(model)) with \(apiMessages.count) messages")
+        print("[OpenRouterService] Sending request to \(providerLabel) (\(effectiveModel)) with \(apiMessages.count) messages")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         

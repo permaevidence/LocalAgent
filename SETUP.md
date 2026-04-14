@@ -110,45 +110,18 @@ The app uses `gemini-3-pro-image-preview` for generation. If you want to change 
 
 ---
 
-## 6 — Code CLI *(optional)*
+## 6 — Subagents & Remote Commands
 
-If you want the assistant to delegate coding tasks, configure one of the supported providers in Settings:
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-- Gemini CLI
-- [Codex CLI](https://developers.openai.com/codex/cli)
+For multi-step coding work, broad codebase exploration, and architectural planning, the assistant spawns native subagents via the `Agent` tool (no external CLI required). Three built-in types ship out of the box:
 
-### 6a — Install the CLI you want to use
+- `general-purpose` — full tool access, open-ended tasks
+- `Explore` — read-only, fast codebase search, parallel tool calls, cheap gpt-oss-120b model via Groq/Vertex
+- `Plan` — read-only, returns a step-by-step implementation plan
 
-| Provider | Install command |
-|---|---|
-| **Claude Code** | `curl -fsSL https://claude.ai/install.sh \| bash` |
-| **Codex CLI** | `npm i -g @openai/codex` |
+You can also drop user-defined subagents into `~/LocalAgent/agents/*.md` (YAML-frontmatter: `name`, `description`, optional `tools`/`model`/`max_turns`; body is the agent's system prompt suffix). They are picked up automatically and appear in the `Agent` tool's `subagent_type` enum.
 
-Then verify the installed binary in Terminal (for example: `claude --version` or `codex --version`).
+### 6a — Remote commands from Telegram
 
-### 6b — Authenticate in Terminal
-
-Complete the provider's first-run login flow in Terminal before using it from Telegram Concierge.
-
-### 6c — Configure in the app
-
-In Telegram Concierge, open **Settings → Code CLI** and pick a provider.
-
-| Provider | Default command | Default args | Notes |
-|---|---|---|---|
-| **Claude Code** | `claude` | `-p --permission-mode bypassPermissions` | Uses Claude's print mode for headless runs. |
-| **Gemini CLI** | `gemini` | `--yolo --output-format json` | Optional model override is supported in Settings. |
-| **Codex CLI** | `codex` | `exec --sandbox danger-full-access -c approval_policy="never" --skip-git-repo-check` | Uses non-interactive `codex exec` defaults with full-access parity vs Claude bypass mode. |
-
-All providers support timeout configuration (30–3600 seconds), and you can override CLI args per `run_claude_code` call.
-
-### 6d — Remote provider switch from Telegram
-
-You can switch provider remotely by sending one of these commands in Telegram:
-
-- `/claude` → use Claude Code
-- `/gemini` → use Gemini CLI
-- `/codex` → use Codex CLI
 - `/transcribe_local` → use local Whisper transcription
 - `/transcribe_openai` → use OpenAI transcription (`gpt-4o-transcribe`)
 - `/hide` → hide sensitive UI on the Mac
@@ -158,14 +131,9 @@ You can switch provider remotely by sending one of these commands in Telegram:
 - `/more5` → add $5 to the reached daily/monthly spend cap for the current day/month
 - `/more10` → add $10 to the reached daily/monthly spend cap for the current day/month
 
-The change is saved immediately and applies to the next delegated Code CLI run.
-
 `/hide` is a desktop privacy control. It is meant for situations where someone can physically access or look at your Mac and you do not want them to see your current or past conversations with the agent. While privacy mode is active, the app hides the conversation in the main window, disables the context viewer, hides the Persona section in Settings, and disables sensitive export actions like **Download Mind** and **Download Calendar**. Send `/show` to restore normal visibility.
 
-> [!TIP]
-> To view project working directories, click the **folder icon** in the main chat header (next to the Settings gear). This opens the projects folder directly in Finder, where you can delete project folders manually when needed.
-
-### 6e — Vercel API Token *(optional, for deploy tools)*
+### 6b — Vercel API Token *(optional, for deploy tools)*
 
 If you want the assistant to deploy projects to Vercel, configure a Vercel token in the app.
 

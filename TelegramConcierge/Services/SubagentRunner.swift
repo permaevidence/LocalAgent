@@ -78,9 +78,37 @@ actor SubagentRunner {
         var messagesForLLM: [Message] = [syntheticUser]
 
         // 4. Pick the model.
-        //    Phase 1: both .inherit and .cheapFast fall back to parent's configured model.
-        //    TODO(Phase 2): wire .cheapFast to gpt-oss-120b via Groq using a per-call
-        //    OpenRouterService override method.
+        //    - .cheapFast → gpt-oss-120b via Groq/Vertex (cost + cache isolation).
+        //    - .inherit  → parent's configured model.
+        //    - Agent-tool `model` param ("sonnet"/"opus"/"haiku") overrides .inherit when mappable.
+        let typeLevelOverride: (model: String, providers: [String])?
+        switch subagentType.preferredModel {
+        case .cheapFast:
+            typeLevelOverride = (SubagentModelProfile.cheapFastModel, SubagentModelProfile.cheapFastProviders)
+        case .inherit:
+            typeLevelOverride = nil
+        }
+
+        let perCallSlug = SubagentModelHintMapper.openRouterSlug(for: invocation.modelOverride)
+        if let hint = invocation.modelOverride,
+           !hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           hint.lowercased() != "inherit",
+           perCallSlug == nil {
+            print("[SubagentRunner] Ignoring unsupported model hint '\(hint)'; falling back to type default.")
+        }
+
+        let effectiveModelOverride: String?
+        let effectiveProviderOverride: [String]?
+        if let perCallSlug {
+            effectiveModelOverride = perCallSlug
+            effectiveProviderOverride = nil
+        } else if let typeLevelOverride {
+            effectiveModelOverride = typeLevelOverride.model
+            effectiveProviderOverride = typeLevelOverride.providers
+        } else {
+            effectiveModelOverride = nil
+            effectiveProviderOverride = nil
+        }
 
         // 5. Capture a pre-run snapshot of the FilesLedger to diff after the run.
         let preSnapshot = await Self.snapshotLedger()
@@ -113,7 +141,9 @@ actor SubagentRunner {
                     totalChunkCount: 0,
                     currentUserMessageId: syntheticUser.id,
                     turnStartDate: turnStartDate,
-                    finalResponseInstruction: subagentType.systemPromptSuffix
+                    finalResponseInstruction: subagentType.systemPromptSuffix,
+                    modelOverride: effectiveModelOverride,
+                    providerOverride: effectiveProviderOverride
                 )
 
                 switch response {

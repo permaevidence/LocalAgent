@@ -1,6 +1,6 @@
 # Telegram Concierge
 
-A native macOS AI assistant that lives inside a Telegram bot you control. It reads and sends emails, searches the web, generates images, manages your calendar, transcribes voice messages, runs macOS Shortcuts, delegates coding tasks to Claude Code/Gemini CLI/Codex CLI, and remembers everything — powered by any LLM available through OpenRouter.
+A native macOS AI assistant that lives inside a Telegram bot you control. It reads and sends emails, searches the web, generates images, manages your calendar, transcribes voice messages, runs macOS Shortcuts, spawns native subagents (`Explore`, `Plan`, `general-purpose`, or custom), and remembers everything — powered by any LLM available through OpenRouter.
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2014+-blue" alt="macOS 14+">
@@ -54,8 +54,8 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 - CoreML-optimized for Apple Silicon
 - Send voice messages in Telegram and the AI receives the transcript
 
-### 💻 Code CLI Integration
-- Delegate coding tasks to [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), Gemini CLI, or [Codex CLI](https://developers.openai.com/codex/cli)
+### 🤖 Native Subagents
+- Spawn isolated-context subagents via the `Agent` tool (`Explore`, `Plan`, `general-purpose`, or user-defined from `~/LocalAgent/agents/*.md`)
 - Project workspace management — create, browse, read, and add files to projects
 - Run the selected CLI provider with prompts and receive structured results
 - Send generated files back via Telegram or email
@@ -187,21 +187,13 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 </details>
 
 <details>
-<summary><strong>💻 Code CLI Projects (7 tools)</strong></summary>
+<summary><strong>🤖 Subagents (1 tool)</strong></summary>
 
 | Tool | Description |
 |------|-------------|
-| `manage_projects` | Create a new Code CLI project workspace or list existing ones |
-| `browse_project` | View project file tree |
-| `read_project_file` | Read a file from a project |
-| `add_project_files` | Copy local files into a project |
-| `run_claude_code` | Execute the selected Code CLI provider with a prompt in a project |
-| `send_project_result` | Send project files via Telegram or email |
+| `Agent` | Spawn a fresh-context subagent (`general-purpose`, `Explore`, `Plan`, or any user-defined type from `~/LocalAgent/agents/*.md`). Subagents have isolated context windows and return a single final message. |
 
 </details>
-
-> [!TIP]
-> To inspect Code CLI workspaces on disk, use the folder button in the main chat header (`ContentView`). It opens the projects folder directly in Finder, where you can also delete project folders manually.
 
 <details>
 <summary><strong>🧠 Memory & Context (4 tools)</strong></summary>
@@ -343,7 +335,6 @@ The architecture is designed to maximize prompt cache hit rates:
 | `/more1` `/more5` `/more10` | Temporarily raise spend limits |
 | `/prune` | Manually prune stored tool interactions to target context size |
 | `/hide` / `/show` | Toggle privacy mode (hide/show UI on Mac) |
-| `/claude` `/gemini` `/codex` | Switch Code CLI provider |
 | `/transcribe_local` `/transcribe_openai` | Switch voice transcription method |
 
 ---
