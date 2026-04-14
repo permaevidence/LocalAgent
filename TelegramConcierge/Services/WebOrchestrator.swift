@@ -1008,39 +1008,76 @@ actor WebOrchestrator {
     }
     
     /// Download a single image from URL - used by web_fetch_image tool
-    func downloadImage(url: String, caption: String = "") async -> DownloadedImage? {
-        guard let imageUrl = URL(string: url) else { return nil }
-        
+    enum ImageDownloadFailure: Error {
+        case invalidURL
+        case httpError(Int)
+        case notAnImage(String)
+        case unsupportedFormat(String)
+        case tooLarge(Int)
+        case network(String)
+    }
+
+    /// Vision providers (Anthropic/OpenRouter/OpenAI) accept only a small set of raster formats.
+    /// Sending anything else (notably SVG) can cause the vision API to hang or reject silently.
+    static let supportedVisionMimeTypes: Set<String> = [
+        "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"
+    ]
+
+    /// Download an image for multimodal injection. Throws with a structured reason so the caller
+    /// can report a clear error to the agent rather than a vague failure.
+    func downloadImageOrThrow(url: String, caption: String = "") async throws -> DownloadedImage {
+        guard let imageUrl = URL(string: url) else { throw ImageDownloadFailure.invalidURL }
+
+        var request = URLRequest(url: imageUrl)
+        request.timeoutInterval = 15
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("image/png,image/jpeg,image/webp,image/gif,image/*;q=0.8", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
         do {
-            var request = URLRequest(url: imageUrl)
-            request.timeoutInterval = 15 // Reasonable timeout for single image
-            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
-                return nil
-            }
-            
-            // Validate it's an image
-            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
-            guard contentType.hasPrefix("image/") else { return nil }
-            
-            // Limit image size to 10MB
-            guard data.count <= 10_000_000 else {
-                print("[WebOrchestrator] Image too large: \(data.count) bytes")
-                return nil
-            }
-            
-            return DownloadedImage(
-                data: data,
-                mimeType: contentType,
-                caption: caption,
-                sourceUrl: url
-            )
+            (data, response) = try await URLSession.shared.data(for: request)
         } catch {
-            print("[WebOrchestrator] Failed to download image: \(error.localizedDescription)")
+            throw ImageDownloadFailure.network(error.localizedDescription)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ImageDownloadFailure.network("no HTTP response")
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw ImageDownloadFailure.httpError(httpResponse.statusCode)
+        }
+
+        // Strip any parameters (e.g. "image/svg+xml;charset=utf-8" -> "image/svg+xml") and lowercase.
+        let rawContentType = (httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+        let baseMime = rawContentType
+            .components(separatedBy: ";").first?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+
+        guard baseMime.hasPrefix("image/") else {
+            throw ImageDownloadFailure.notAnImage(baseMime.isEmpty ? "unknown" : baseMime)
+        }
+        guard Self.supportedVisionMimeTypes.contains(baseMime) else {
+            throw ImageDownloadFailure.unsupportedFormat(baseMime)
+        }
+        guard data.count <= 10_000_000 else {
+            throw ImageDownloadFailure.tooLarge(data.count)
+        }
+
+        return DownloadedImage(
+            data: data,
+            mimeType: baseMime,
+            caption: caption,
+            sourceUrl: url
+        )
+    }
+
+    /// Legacy helper: returns nil on any failure. Prefer `downloadImageOrThrow` for new callers.
+    func downloadImage(url: String, caption: String = "") async -> DownloadedImage? {
+        do {
+            return try await downloadImageOrThrow(url: url, caption: caption)
+        } catch {
+            print("[WebOrchestrator] downloadImage failed url=\(url) reason=\(error)")
             return nil
         }
     }
