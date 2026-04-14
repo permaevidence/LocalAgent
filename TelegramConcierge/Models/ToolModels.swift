@@ -1492,7 +1492,7 @@ enum AvailableTools {
     static let writeFile = ToolDefinition(
         function: FunctionDefinition(
             name: "write_file",
-            description: "Create a new file or overwrite an existing one. If the file exists, you MUST have called read_file on it this session first (freshness check). Parent directories are created automatically. Prefer edit_file for small changes — write_file rewrites the whole file.",
+            description: "Create a new file or overwrite an existing one. If the file exists, you MUST have called read_file on it this session first (freshness check). Parent directories are created automatically. Prefer edit_file for small changes — write_file rewrites the whole file. After a successful write, the result may include a 'diagnostics' array (errors/warnings from sourcekit-lsp / typescript-language-server / pylsp / gopls / rust-analyzer) or 'diagnostics_skipped' if no server is available. Always re-read and fix before continuing if any diagnostic has severity='error'.",
             parameters: FunctionParameters(
                 properties: [
                     "path": ParameterProperty(type: "string", description: "Absolute path to write."),
@@ -1507,7 +1507,7 @@ enum AvailableTools {
     static let editFile = ToolDefinition(
         function: FunctionDefinition(
             name: "edit_file",
-            description: "Surgical find-and-replace on an existing file. old_string must appear EXACTLY ONCE in the file (matching whitespace and indentation) unless replace_all=true. Requires a prior read_file this session. Much cheaper than write_file for targeted changes.",
+            description: "Surgical find-and-replace on an existing file. old_string must appear EXACTLY ONCE in the file (matching whitespace and indentation) unless replace_all=true. Requires a prior read_file this session. Much cheaper than write_file for targeted changes. The result may include 'diagnostics' (language-server errors/warnings) or 'diagnostics_skipped'. Re-read and fix on severity='error'.",
             parameters: FunctionParameters(
                 properties: [
                     "path": ParameterProperty(type: "string", description: "Absolute path to the file."),
@@ -1523,7 +1523,7 @@ enum AvailableTools {
     static let applyPatch = ToolDefinition(
         function: FunctionDefinition(
             name: "apply_patch",
-            description: "Apply a multi-file Codex-style patch atomically. Use when you need to make coordinated edits across several files in one step. All operations are validated against current file contents before any disk write; on failure, nothing is modified.\n\nEnvelope format:\n*** Begin Patch\n*** Update File: /abs/path\n@@ optional anchor (e.g. a function signature)\n context line\n-removed line\n+added line\n*** Add File: /abs/path\n+new file line 1\n+new file line 2\n*** Delete File: /abs/path\n*** End Patch\n\nFor Update with rename, add '*** Move to: /new/abs/path' directly after the Update File header.",
+            description: "Apply a multi-file Codex-style patch atomically. Use when you need to make coordinated edits across several files in one step. All operations are validated against current file contents before any disk write; on failure, nothing is modified.\n\nEnvelope format:\n*** Begin Patch\n*** Update File: /abs/path\n@@ optional anchor (e.g. a function signature)\n context line\n-removed line\n+added line\n*** Add File: /abs/path\n+new file line 1\n+new file line 2\n*** Delete File: /abs/path\n*** End Patch\n\nFor Update with rename, add '*** Move to: /new/abs/path' directly after the Update File header.\n\nThe result includes 'diagnostics_by_file' — a per-path map with the same 'diagnostics' / 'diagnostics_skipped' / 'diagnostics_summary' shape returned by write_file. Inspect each entry and re-read + fix any file with severity='error' before continuing.",
             parameters: FunctionParameters(
                 properties: [
                     "patch_text": ParameterProperty(type: "string", description: "The full patch text including the Begin/End Patch markers.")
