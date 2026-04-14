@@ -26,7 +26,13 @@ actor LSPRegistry {
 
     private var entries: [String: Entry] = [:]
     private var spawnTasks: [String: Task<LSPClient?, Never>] = [:]
-    private var missingExecutables: Set<String> = []
+
+    /// Negative cache for missing executables. Entries expire after
+    /// `missingCacheTTL` so a server installed mid-session (e.g. user pip-
+    /// installs pylsp while chatting) eventually gets picked up without an
+    /// app relaunch.
+    private var missingExecutables: [String: Date] = [:]
+    private let missingCacheTTL: TimeInterval = 300   // 5 minutes
 
     /// Reap clients idle for longer than this. 10 minutes matches OpenCode's
     /// default — typescript-language-server is slow (~2-5s) to spawn so we
@@ -38,12 +44,14 @@ actor LSPRegistry {
     // MARK: - Public API
 
     /// Main entry: open/update the file in its language server, then wait
-    /// up to `timeout` seconds for publishDiagnostics. Transparently spawns
-    /// the server on first use.
+    /// up to the server's configured `diagnosticsTimeout` for
+    /// publishDiagnostics. The `waitFor` parameter is retained for override
+    /// but defaults to the per-server timeout from LSPLanguages.
+    /// Transparently spawns the server on first use.
     func diagnostics(
         forPath path: String,
         updatedText: String,
-        waitFor timeout: TimeInterval = 1.0
+        waitFor overrideTimeout: TimeInterval? = nil
     ) async -> DiagnosticsResult {
         reapIdleLocked()
 
@@ -54,15 +62,16 @@ actor LSPRegistry {
         guard let languageId = LSPLanguages.languageId(forExtension: ext) else {
             return .skipped(reason: "no languageId mapping for .\(ext)")
         }
-        if missingExecutables.contains(cfg.executable) {
+        if isMissingCacheHit(executable: cfg.executable) {
             return .skipped(reason: "\(cfg.executable) not installed")
         }
+        let timeout = overrideTimeout ?? cfg.diagnosticsTimeout
 
         let root = LSPLanguages.workspaceRoot(forFilePath: path, markers: cfg.workspaceMarkers)
         let key = entryKey(serverID: cfg.serverID, root: root)
 
         guard let client = await ensureClient(key: key, config: cfg, root: root) else {
-            missingExecutables.insert(cfg.executable)
+            markMissing(executable: cfg.executable)
             return .skipped(reason: "\(cfg.executable) not installed (install to enable diagnostics)")
         }
 
@@ -165,11 +174,11 @@ actor LSPRegistry {
               let languageId = LSPLanguages.languageId(forExtension: ext) else {
             return nil
         }
-        if missingExecutables.contains(cfg.executable) { return nil }
+        if isMissingCacheHit(executable: cfg.executable) { return nil }
         let root = LSPLanguages.workspaceRoot(forFilePath: path, markers: cfg.workspaceMarkers)
         let key = entryKey(serverID: cfg.serverID, root: root)
         guard let client = await ensureClient(key: key, config: cfg, root: root) else {
-            missingExecutables.insert(cfg.executable)
+            markMissing(executable: cfg.executable)
             return nil
         }
         let fileURL = URL(fileURLWithPath: path)
@@ -265,11 +274,12 @@ actor LSPRegistry {
 
         let executable = config.executable
         let arguments = config.arguments
+        let env = LSPLanguages.augmentedEnvironment()
         let task: Task<LSPClient?, Never> = Task {
             guard let exePath = LSPLanguages.locateExecutable(executable) else {
                 return nil
             }
-            let client = LSPClient(executable: exePath, arguments: arguments)
+            let client = LSPClient(executable: exePath, arguments: arguments, environment: env)
             do {
                 try await client.start()
                 try await client.initialize(rootURI: root)
@@ -306,5 +316,20 @@ actor LSPRegistry {
 
     private func entryKey(serverID: String, root: URL) -> String {
         "\(serverID)|\(root.standardizedFileURL.path)"
+    }
+
+    // MARK: - Missing-executable cache with TTL
+
+    private func isMissingCacheHit(executable: String) -> Bool {
+        guard let markedAt = missingExecutables[executable] else { return false }
+        if Date().timeIntervalSince(markedAt) > missingCacheTTL {
+            missingExecutables.removeValue(forKey: executable)
+            return false
+        }
+        return true
+    }
+
+    private func markMissing(executable: String) {
+        missingExecutables[executable] = Date()
     }
 }
