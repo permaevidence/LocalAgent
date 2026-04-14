@@ -483,6 +483,7 @@ actor OpenRouterService {
             - Use web_search for quick/targeted lookup; use deep_research when the user asks for an in-depth, comprehensive, long-form researched answer
             - Project ZIP imports: if user wants edits to an existing project sent as a ZIP, use project tools to import it into a workspace before coding
             - Deployment/database operations: use bash (e.g. `vercel deploy --prod`, `npx instant-cli push`) or delegate to run_claude_code — there are no bespoke deployment tools.
+            - When working on code in a git repository, proactively run `git status --short` and `git log -5 --oneline` via bash before making changes — the repo's state is not in your context and recent commits explain why things look the way they do.
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).
             - **Calendar management**: Use manage_calendar with actions 'view', 'add', 'edit', or 'delete' for events on the user's schedule
 
