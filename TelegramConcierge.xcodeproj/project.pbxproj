@@ -60,6 +60,8 @@
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
 		TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */; };
+		SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */; };
+		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -116,6 +118,8 @@
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ToolExecutor+Filesystem.swift"; sourceTree = "<group>"; };
+		SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentTypes.swift; sourceTree = "<group>"; };
+		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -190,6 +194,8 @@
 				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
 				BASHTOOLS0123456789AB1B /* BashTools.swift */,
 				TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */,
+				SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */,
+				SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */,
 				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
 				LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */,
 				LSPCLIENT0123456789AB1B /* LSPClient.swift */,
@@ -352,6 +358,8 @@
 				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,
 				BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */,
 				TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */,
+				SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */,
+				SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */,
 				LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */,
 				LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */,
 				LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */,

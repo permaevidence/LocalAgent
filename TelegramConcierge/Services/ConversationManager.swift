@@ -197,6 +197,13 @@ class ConversationManager: ObservableObject {
         if !serperKey.isEmpty {
             await toolExecutor.configure(openRouterKey: apiKey, serperKey: serperKey, jinaKey: jinaKey)
         }
+
+        // Wire the Agent (subagent) tool so it can drive its own LLM loop.
+        await toolExecutor.configureOpenRouter(
+            openRouterService,
+            imagesDirectory: imagesDirectory,
+            documentsDirectory: documentsDirectory
+        )
         
         // Configure archive service and recover any pending chunks from previous crash
         await archiveService.configure(apiKey: apiKey)

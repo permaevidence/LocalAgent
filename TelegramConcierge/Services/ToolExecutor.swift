@@ -8,15 +8,25 @@ import Foundation
 actor ToolExecutor {
     private let webOrchestrator = WebOrchestrator()
     private let archiveService = ConversationArchiveService()
-    
+    private var openRouterService: OpenRouterService?
+    private var subagentImagesDirectory: URL?
+    private var subagentDocumentsDirectory: URL?
+
     private static let runningProcessLock = NSLock()
     private static var runningProcesses: [ObjectIdentifier: Process] = [:]
-    
+
     // MARK: - Configuration
-    
+
     func configure(openRouterKey: String, serperKey: String, jinaKey: String) async {
         await webOrchestrator.configure(openRouterKey: openRouterKey, serperKey: serperKey, jinaKey: jinaKey)
         Task { await archiveService.configure(apiKey: openRouterKey) }
+    }
+
+    /// Inject the parent's OpenRouterService so the Agent tool can drive a subagent loop.
+    func configureOpenRouter(_ service: OpenRouterService, imagesDirectory: URL, documentsDirectory: URL) {
+        self.openRouterService = service
+        self.subagentImagesDirectory = imagesDirectory
+        self.subagentDocumentsDirectory = documentsDirectory
     }
     
     nonisolated func cancelAllRunningProcesses() async {
@@ -131,6 +141,8 @@ actor ToolExecutor {
             content = await executeBashKill(call)
         case "todo_write":
             content = await executeTodoWrite(call)
+        case "Agent":
+            content = await executeAgent(call)
         case "lsp_hover":
             content = await executeLSPHover(call)
         case "lsp_definition":
@@ -7706,10 +7718,59 @@ struct GmailAttachmentArguments: Codable {
     let messageId: String
     let attachmentId: String
     let filename: String
-    
+
     enum CodingKeys: String, CodingKey {
         case messageId = "message_id"
         case attachmentId = "attachment_id"
         case filename
+    }
+}
+
+// MARK: - Agent (subagent) Tool
+
+struct SubagentInvocationArguments: Codable {
+    let subagent_type: String
+    let description: String
+    let prompt: String
+    let run_in_background: String?
+    let model: String?
+}
+
+extension ToolExecutor {
+    func executeAgent(_ call: ToolCall) async -> String {
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(SubagentInvocationArguments.self, from: data) else {
+            return "{\"error\": \"Invalid Agent tool arguments\"}"
+        }
+
+        guard let openRouter = openRouterService else {
+            return "{\"error\": \"Agent tool not configured: OpenRouterService missing. ConversationManager must call toolExecutor.configureOpenRouter(...).\"}"
+        }
+
+        let imagesDir = subagentImagesDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/images", isDirectory: true)
+        let documentsDir = subagentDocumentsDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/documents", isDirectory: true)
+
+        // Same tool surface the parent sees this session — the subagent's type filter will narrow it.
+        let parentTools = AvailableTools.all(includeWebSearch: true)
+
+        let runInBg = (args.run_in_background?.lowercased() == "true")
+        let invocation = SubagentRunner.Invocation(
+            subagentType: args.subagent_type,
+            description: args.description,
+            taskPrompt: args.prompt,
+            modelOverride: args.model,
+            runInBackground: runInBg
+        )
+
+        let runner = SubagentRunner()
+        let result = await runner.run(
+            invocation: invocation,
+            openRouterService: openRouter,
+            toolExecutor: self,
+            imagesDirectory: imagesDir,
+            documentsDirectory: documentsDir,
+            parentTools: parentTools
+        )
+        return result.asJSON()
     }
 }

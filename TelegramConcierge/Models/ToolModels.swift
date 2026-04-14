@@ -1442,6 +1442,42 @@ enum AvailableTools {
         )
     )
 
+    // MARK: - Agent / Subagent Tool
+
+    static let agentTool = ToolDefinition(
+        function: FunctionDefinition(
+            name: "Agent",
+            description: "Launch a new subagent with a fresh, isolated context for focused work. Useful for broad codebase exploration, architectural planning, or focused investigations that would otherwise bloat your own context. The subagent has its own tools and returns only its final message to you. Available subagent_type values: 'general-purpose' (full tool access, open-ended tasks), 'Explore' (read-only, fast codebase search with parallel tool calls), 'Plan' (read-only, produces an implementation plan without executing). Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.",
+            parameters: FunctionParameters(
+                properties: [
+                    "subagent_type": ParameterProperty(
+                        type: "string",
+                        description: "Which subagent to spawn.",
+                        enumValues: ["general-purpose", "Explore", "Plan"]
+                    ),
+                    "description": ParameterProperty(
+                        type: "string",
+                        description: "A short (3-5 word) description of the task. Used for progress display."
+                    ),
+                    "prompt": ParameterProperty(
+                        type: "string",
+                        description: "The full task for the subagent. Must be self-contained — include all context the subagent needs, since it sees none of your conversation."
+                    ),
+                    "run_in_background": ParameterProperty(
+                        type: "string",
+                        description: "Pass 'true' to run the subagent in the background and get notified when it completes. Default 'false'. NOTE: Phase 1 accepts this parameter but always runs synchronously; background mode ships in Phase 3."
+                    ),
+                    "model": ParameterProperty(
+                        type: "string",
+                        description: "Optional per-task model override. Leave empty to inherit parent model.",
+                        enumValues: ["sonnet", "opus", "haiku", "inherit"]
+                    )
+                ],
+                required: ["subagent_type", "description", "prompt"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// IMAP email tools (8 tools - used when email_mode is "imap")
@@ -1463,7 +1499,7 @@ enum AvailableTools {
     /// Removed (superseded by filesystemTools): list_documents, read_document, browse_project,
     /// read_project_file, add_project_files, generate_document.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        var tools: [ToolDefinition] = filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts]
+        var tools: [ToolDefinition] = filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool]
         // Code CLI sub-agent tools (manage_projects, view_project_history,
         // run_claude_code, send_project_result) are gated on the same
         // "Use selected Code CLI for document generation" toggle that controls
