@@ -73,9 +73,12 @@ enum ApplyPatch {
         // Phase 2: apply all plans. No rollback needed because we didn't touch disk yet.
         // If a disk write itself fails midway, we attempt to revert prior writes using pre-images.
         var applied: [(path: String, preImage: Data?)] = []
+        var writtenFiles: [(path: String, text: String)] = []
         for plan in plans {
             do {
-                try await commitPlan(plan, applied: &applied)
+                if let written = try await commitPlan(plan, applied: &applied) {
+                    writtenFiles.append(written)
+                }
             } catch let e as PatchError {
                 // Attempt rollback.
                 rollback(applied: applied)
@@ -95,11 +98,15 @@ enum ApplyPatch {
             case .delete(let path): return ["op": "delete", "path": path]
             }
         }
-        return OpResult(content: jsonString([
+        var result: [String: Any] = [
             "success": true,
             "files_affected": operations.count,
             "operations": summary
-        ]))
+        ]
+        if !writtenFiles.isEmpty {
+            await LSPDiagnosticsReporter.attachBatch(to: &result, files: writtenFiles)
+        }
+        return OpResult(content: jsonString(result))
     }
 
     // MARK: - Parser
@@ -338,7 +345,10 @@ enum ApplyPatch {
 
     // MARK: - Commit
 
-    private static func commitPlan(_ plan: Plan, applied: inout [(path: String, preImage: Data?)]) async throws {
+    /// Commits a single plan to disk. Returns the (path, text) pair that was
+    /// written when applicable, so the caller can post-run LSP diagnostics
+    /// against the freshly-saved content. Deletes return nil.
+    private static func commitPlan(_ plan: Plan, applied: inout [(path: String, preImage: Data?)]) async throws -> (path: String, text: String)? {
         let fm = FileManager.default
         switch plan.kind {
         case .write(let path, let newContent, let preImage):
@@ -347,6 +357,7 @@ enum ApplyPatch {
             applied.append((path: path, preImage: preImage))
             await FileTimeTracker.shared.recordRead(path: path)
             await FilesLedger.shared.record(path: path, origin: .edited, description: nil)
+            return (path, String(data: newContent, encoding: .utf8) ?? "")
 
         case .add(let path, let content):
             try fm.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -354,12 +365,14 @@ enum ApplyPatch {
             applied.append((path: path, preImage: nil))  // nil preImage = delete on rollback
             await FileTimeTracker.shared.recordRead(path: path)
             await FilesLedger.shared.record(path: path, origin: .generated, description: nil)
+            return (path, String(data: content, encoding: .utf8) ?? "")
 
         case .delete(let path, let preImage):
             try fm.removeItem(atPath: path)
             applied.append((path: path, preImage: preImage))
             await FileTimeTracker.shared.forget(path: path)
             await FilesLedger.shared.remove(path: path)
+            return nil
 
         case .move(let fromPath, let toPath, let newContent, let preImage):
             try fm.createDirectory(at: URL(fileURLWithPath: toPath).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -371,6 +384,7 @@ enum ApplyPatch {
             await FileTimeTracker.shared.recordRead(path: toPath)
             await FilesLedger.shared.remove(path: fromPath)
             await FilesLedger.shared.record(path: toPath, origin: .edited, description: nil)
+            return (toPath, String(data: newContent, encoding: .utf8) ?? "")
         }
     }
 

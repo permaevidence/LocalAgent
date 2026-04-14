@@ -178,12 +178,14 @@ actor FilesystemTools {
             await FileTimeTracker.shared.recordRead(path: path)
             let origin: FilesLedger.Origin = fileExists ? .edited : .generated
             await FilesLedger.shared.record(path: path, origin: origin, description: description)
-            return OpResult(content: jsonString([
+            var result: [String: Any] = [
                 "success": true,
                 "path": path,
                 "bytes_written": content.utf8.count,
                 "operation": fileExists ? "overwrote" : "created"
-            ]))
+            ]
+            await LSPDiagnosticsReporter.attach(to: &result, path: path, updatedText: content)
+            return OpResult(content: jsonString(result))
         } catch {
             return OpResult(content: jsonError("failed to write \(path): \(error.localizedDescription)"))
         }
@@ -231,13 +233,15 @@ actor FilesystemTools {
                 try updated.data(using: .utf8)?.write(to: URL(fileURLWithPath: path), options: .atomic)
                 await FileTimeTracker.shared.recordRead(path: path)
                 await FilesLedger.shared.record(path: path, origin: .edited, description: nil)
-                return OpResult(content: jsonString([
+                var result: [String: Any] = [
                     "success": true,
                     "path": path,
                     "replacements": replacements,
                     "strategy": strategy,
                     "bytes_written": updated.utf8.count
-                ]))
+                ]
+                await LSPDiagnosticsReporter.attach(to: &result, path: path, updatedText: updated)
+                return OpResult(content: jsonString(result))
             } catch {
                 return OpResult(content: jsonError("failed to write \(path): \(error.localizedDescription)"))
             }

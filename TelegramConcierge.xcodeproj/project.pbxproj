@@ -57,6 +57,7 @@
 		LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPCLIENT0123456789AB1B /* LSPClient.swift */; };
 		LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPLANG000123456789AB1B /* LSPLanguages.swift */; };
 		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
+		LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -110,6 +111,7 @@
 		LSPCLIENT0123456789AB1B /* LSPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
 		LSPLANG000123456789AB1B /* LSPLanguages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPLanguages.swift; sourceTree = "<group>"; };
 		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
+		LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPDiagnosticsReporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -189,6 +191,7 @@
 				LSPCLIENT0123456789AB1B /* LSPClient.swift */,
 				LSPLANG000123456789AB1B /* LSPLanguages.swift */,
 				LSPREGISTRY0123456789A1B /* LSPRegistry.swift */,
+				LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -348,6 +351,7 @@
 				LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */,
 				LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */,
 				LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */,
+				LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
