@@ -59,6 +59,7 @@
 		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
 		LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
+		DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */ = {isa = PBXBuildFile; fileRef = DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -114,6 +115,7 @@
 		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
 		LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPDiagnosticsReporter.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
+		DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiffUtil.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -195,6 +197,7 @@
 				LSPREGISTRY0123456789A1B /* LSPRegistry.swift */,
 				LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */,
 				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
+				DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -356,6 +359,7 @@
 				LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */,
 				LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */,
 				TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */,
+				DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

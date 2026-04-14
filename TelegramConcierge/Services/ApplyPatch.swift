@@ -73,7 +73,7 @@ enum ApplyPatch {
         // Phase 2: apply all plans. No rollback needed because we didn't touch disk yet.
         // If a disk write itself fails midway, we attempt to revert prior writes using pre-images.
         var applied: [(path: String, preImage: Data?)] = []
-        var writtenFiles: [(path: String, text: String)] = []
+        var writtenFiles: [(path: String, oldText: String, newText: String)] = []
         for plan in plans {
             do {
                 if let written = try await commitPlan(plan, applied: &applied) {
@@ -104,7 +104,21 @@ enum ApplyPatch {
             "operations": summary
         ]
         if !writtenFiles.isEmpty {
-            await LSPDiagnosticsReporter.attachBatch(to: &result, files: writtenFiles)
+            await LSPDiagnosticsReporter.attachBatch(
+                to: &result,
+                files: writtenFiles.map { (path: $0.path, text: $0.newText) }
+            )
+            // Attach per-file unified diff so the agent can verify what changed
+            // without re-reading each file.
+            var diffsByPath: [String: Any] = [:]
+            for file in writtenFiles {
+                if let diff = DiffUtil.unifiedDiff(old: file.oldText, new: file.newText, path: file.path) {
+                    diffsByPath[file.path] = diff
+                }
+            }
+            if !diffsByPath.isEmpty {
+                result["diffs_by_file"] = diffsByPath
+            }
         }
         return OpResult(content: jsonString(result))
     }
@@ -345,10 +359,10 @@ enum ApplyPatch {
 
     // MARK: - Commit
 
-    /// Commits a single plan to disk. Returns the (path, text) pair that was
-    /// written when applicable, so the caller can post-run LSP diagnostics
-    /// against the freshly-saved content. Deletes return nil.
-    private static func commitPlan(_ plan: Plan, applied: inout [(path: String, preImage: Data?)]) async throws -> (path: String, text: String)? {
+    /// Commits a single plan to disk. Returns (path, oldText, newText) when
+    /// applicable so the caller can post-run LSP diagnostics and a unified
+    /// diff against the freshly-saved content. Deletes return nil.
+    private static func commitPlan(_ plan: Plan, applied: inout [(path: String, preImage: Data?)]) async throws -> (path: String, oldText: String, newText: String)? {
         let fm = FileManager.default
         switch plan.kind {
         case .write(let path, let newContent, let preImage):
@@ -357,7 +371,8 @@ enum ApplyPatch {
             applied.append((path: path, preImage: preImage))
             await FileTimeTracker.shared.recordRead(path: path)
             await FilesLedger.shared.record(path: path, origin: .edited, description: nil)
-            return (path, String(data: newContent, encoding: .utf8) ?? "")
+            let oldText = preImage.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            return (path, oldText, String(data: newContent, encoding: .utf8) ?? "")
 
         case .add(let path, let content):
             try fm.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -365,7 +380,7 @@ enum ApplyPatch {
             applied.append((path: path, preImage: nil))  // nil preImage = delete on rollback
             await FileTimeTracker.shared.recordRead(path: path)
             await FilesLedger.shared.record(path: path, origin: .generated, description: nil)
-            return (path, String(data: content, encoding: .utf8) ?? "")
+            return (path, "", String(data: content, encoding: .utf8) ?? "")
 
         case .delete(let path, let preImage):
             try fm.removeItem(atPath: path)
@@ -384,7 +399,8 @@ enum ApplyPatch {
             await FileTimeTracker.shared.recordRead(path: toPath)
             await FilesLedger.shared.remove(path: fromPath)
             await FilesLedger.shared.record(path: toPath, origin: .edited, description: nil)
-            return (toPath, String(data: newContent, encoding: .utf8) ?? "")
+            let oldText = preImage.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            return (toPath, oldText, String(data: newContent, encoding: .utf8) ?? "")
         }
     }
 

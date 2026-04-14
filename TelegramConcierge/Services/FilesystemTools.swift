@@ -162,12 +162,18 @@ actor FilesystemTools {
 
         let fm = FileManager.default
         let fileExists = fm.fileExists(atPath: path)
+        // Capture pre-image before overwriting so we can produce a unified
+        // diff in the tool result.
+        let previousContent: String?
         if fileExists {
             do {
                 try await FileTimeTracker.shared.assertFresh(path: path)
             } catch {
                 return OpResult(content: jsonError(error.localizedDescription))
             }
+            previousContent = try? String(contentsOfFile: path, encoding: .utf8)
+        } else {
+            previousContent = nil
         }
 
         do {
@@ -184,6 +190,9 @@ actor FilesystemTools {
                 "bytes_written": content.utf8.count,
                 "operation": fileExists ? "overwrote" : "created"
             ]
+            if let diff = DiffUtil.unifiedDiff(old: previousContent ?? "", new: content, path: path) {
+                result["diff"] = diff
+            }
             await LSPDiagnosticsReporter.attach(to: &result, path: path, updatedText: content)
             return OpResult(content: jsonString(result))
         } catch {
@@ -240,6 +249,9 @@ actor FilesystemTools {
                     "strategy": strategy,
                     "bytes_written": updated.utf8.count
                 ]
+                if let diff = DiffUtil.unifiedDiff(old: original, new: updated, path: path) {
+                    result["diff"] = diff
+                }
                 await LSPDiagnosticsReporter.attach(to: &result, path: path, updatedText: updated)
                 return OpResult(content: jsonString(result))
             } catch {
