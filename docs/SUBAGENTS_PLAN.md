@@ -245,6 +245,46 @@ the truncated state.
  "note": "Cancellation requested. Takes effect at the subagent's next turn boundary — you will still receive a [SUBAGENT COMPLETE] message."}
 ```
 
+## Mid-stream output monitoring (`bash_watch`)
+
+A sibling of the background-bash flow: the `bash_watch` tool lets the agent
+subscribe to a running bash handle with a regex, and get woken up the moment
+a matching line appears on stdout/stderr — without having to poll
+`bash_output` at intervals or wait for the process to finish.
+
+Use cases:
+
+- Tail a long `npm install` for `error:` lines and bail on the first one.
+- Watch a dev server for "Listening on :3000" to know when it's ready before
+  firing follow-up requests.
+- Gate a multi-step workflow on a progress milestone logged by a build.
+
+```
+bash_watch(handle="bash_3", pattern="(?i)(error|fail)", limit=5)
+  → {success: true, watch_id: "watch_1", ...}
+```
+
+Semantics:
+
+- **Line-oriented.** Watches match one complete line at a time. Trailing
+  partial lines are buffered per-stream until the next `\n`.
+- **Synthetic user message on match.** Pending matches drain once per poll
+  tick (~1s) and are injected as a `[BASH WATCH MATCH]` user message with
+  role `.user`, kind `.bashComplete` (piggybacks on the existing ephemeral
+  bash-completion message kind — never compressed).
+- **Coalescing.** If N matches arrive within a single drain tick for one
+  handle, they are batched into ONE wake-up, listing every line. This
+  prevents a flood of matches from re-entering the agentic loop N times.
+- **Auto-unsubscribe** on any of: `limit` matches reached (default 10,
+  clamp 1-50), process exited, or regex match exceeded a 10ms per-line
+  wall-clock budget (catastrophic-backtracking / ReDoS protection). In all
+  three cases the injected message notes the reason.
+- **Multiple watches per handle** allowed. Different regexes can observe
+  the same process independently.
+- **Zero-cost when idle.** Watches run inside the existing pipe-readability
+  callback — no polling timer, no extra threads. If the process is producing
+  no output, watches consume no CPU.
+
 ## What is intentionally NOT supported
 
 - **Nested subagents.** The Agent tool is removed from the subagent's own tool

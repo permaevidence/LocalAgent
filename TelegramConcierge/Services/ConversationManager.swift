@@ -293,6 +293,9 @@ class ConversationManager: ObservableObject {
                     // Check for completed background subagents
                     await checkBackgroundSubagentCompletions()
 
+                    // Check for pending bash_watch matches (mid-stream output triggers)
+                    await checkBashWatchMatches()
+
                     let updates = try await telegramService.getUpdates()
                     
                     for update in updates {
@@ -2500,6 +2503,114 @@ class ConversationManager: ObservableObject {
             } catch {
                 self.error = "Failed to process subagent completion: \(error.localizedDescription)"
                 print("[ConversationManager] Failed to process subagent completion: \(error)")
+            }
+        }
+
+        statusMessage = "Listening... (Last check: \(formattedTime()))"
+    }
+
+    // MARK: - Background bash_watch match handling
+
+    /// Drain pending `bash_watch` regex matches and inject them into the conversation as
+    /// synthetic user messages, coalesced by handle so that a burst of matches within a
+    /// single poll tick produces ONE wake-up (not N re-entries into the agentic loop).
+    /// Reuses the `.bashComplete` message kind — these are ephemeral notifications that
+    /// do not need history compression.
+    private func checkBashWatchMatches() async {
+        guard activeRunId == nil else { return }
+        let matches = await BackgroundProcessRegistry.shared.drainWatchMatches()
+        guard !matches.isEmpty else { return }
+
+        // Group by handle, preserving arrival order within each group.
+        var orderedHandles: [String] = []
+        var grouped: [String: [BackgroundProcessRegistry.WatchMatch]] = [:]
+        for m in matches {
+            if grouped[m.handle] == nil {
+                orderedHandles.append(m.handle)
+                grouped[m.handle] = []
+            }
+            grouped[m.handle]?.append(m)
+        }
+
+        for handle in orderedHandles {
+            guard let group = grouped[handle], !group.isEmpty else { continue }
+
+            // One coalesced message per handle. If multiple watches fired on the same
+            // handle in this tick, list all their matches; collapse pattern/watch
+            // metadata per line for the agent's benefit.
+            let first = group[0]
+            let totalCount = group.count
+            var body = "[BASH WATCH MATCH]\n"
+            body += "handle: \(first.handle)\n"
+
+            // If every match is from the same watch, show the pattern once.
+            let uniquePatterns = Set(group.map { $0.pattern })
+            if uniquePatterns.count == 1 {
+                body += "pattern: \"\(first.pattern)\"\n"
+            }
+            body += "matches (\(totalCount)):\n"
+            for m in group {
+                if uniquePatterns.count > 1 {
+                    body += "[\(m.stream)] <\(m.pattern)> \(m.line)\n"
+                } else {
+                    body += "[\(m.stream)] \(m.line)\n"
+                }
+            }
+
+            // Status footer: if ANY match in this tick flagged auto-unsubscribe, surface
+            // the first such reason; otherwise summarize remaining capacity.
+            if let terminal = group.first(where: { $0.autoUnsubscribed }) {
+                let reasonNote: String
+                switch terminal.unsubscribeReason {
+                case "process_exited":
+                    reasonNote = "Watch auto-unsubscribed — background process exited."
+                case "limit_reached":
+                    reasonNote = "Watch auto-unsubscribed — hit match limit (\(terminal.matchesSoFar)/\(terminal.limit))."
+                case "regex_timeout":
+                    reasonNote = "Watch auto-unsubscribed — regex pattern exceeded 10ms match timeout (possible catastrophic backtracking)."
+                default:
+                    reasonNote = "Watch auto-unsubscribed."
+                }
+                body += "\n\(reasonNote)"
+            } else {
+                let last = group.last!
+                let remaining = max(last.limit - last.matchesSoFar, 0)
+                body += "\nThe watch is still active (\(remaining) of \(last.limit) remaining). Use bash_output for full context or bash_kill to terminate."
+            }
+
+            let userMessage = Message(role: .user, content: body, kind: .bashComplete)
+            messages.append(userMessage)
+            saveConversation()
+
+            do {
+                let turnStartDate = Date()
+                let response = try await generateResponseWithTools(currentUserMessageId: userMessage.id, turnStartDate: turnStartDate)
+
+                if let toolLog = response.compactToolLog, !toolLog.isEmpty {
+                    messages.append(Message(role: .assistant, content: toolLog))
+                    pruneOldToolLogMessages()
+                }
+
+                let finalTextTrimmed = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !finalTextTrimmed.isEmpty {
+                    let finalResponse = capAssistantMessageForHistoryAndTelegram(response.finalText)
+                    let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
+                    let assistantMessage = Message(
+                        role: .assistant,
+                        content: finalResponse,
+                        downloadedDocumentFileNames: downloadedFilenames,
+                        accessedProjectIds: response.accessedProjects ?? []
+                    )
+                    messages.append(assistantMessage)
+                    saveConversation()
+                    if let chatId = pairedChatId {
+                        try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
+                    }
+                }
+                print("[ConversationManager] bash_watch match batch for \(handle) processed (\(totalCount) match\(totalCount == 1 ? "" : "es"))")
+            } catch {
+                self.error = "Failed to process bash_watch match: \(error.localizedDescription)"
+                print("[ConversationManager] Failed to process bash_watch match: \(error)")
             }
         }
 

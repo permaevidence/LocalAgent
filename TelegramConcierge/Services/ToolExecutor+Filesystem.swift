@@ -161,6 +161,39 @@ extension ToolExecutor {
         return result.content
     }
 
+    // MARK: - bash_watch
+
+    func executeBashWatch(_ call: ToolCall) async -> String {
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(BashWatchArguments.self, from: data) else {
+            return "{\"error\": \"Invalid bash_watch arguments — expected {handle, pattern, limit?}\"}"
+        }
+        let limit = max(1, min(args.limit ?? 10, 50))
+        let result = await BackgroundProcessRegistry.shared.registerWatch(
+            handle: args.handle,
+            pattern: args.pattern,
+            limit: limit
+        )
+        switch result {
+        case .success(let watchId):
+            let payload: [String: Any] = [
+                "success": true,
+                "watch_id": watchId,
+                "handle": args.handle,
+                "pattern": args.pattern,
+                "limit": limit,
+                "note": "Matches will arrive as synthetic [BASH WATCH MATCH] user messages. Watch auto-unsubscribes after \(limit) matches or on process exit."
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{\"error\": \"failed to encode bash_watch response\"}"
+        case .failure(let err):
+            return "{\"error\": \"\(escapeJSON(err.description))\"}"
+        }
+    }
+
     // MARK: - todo_write
 
     func executeTodoWrite(_ call: ToolCall) async -> String {

@@ -188,6 +188,27 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 </details>
 
 <details>
+<summary><strong>💻 Filesystem & Terminal (15 tools)</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read any file by absolute path (with optional line range) |
+| `write_file` | Create or overwrite a file |
+| `edit_file` | Targeted in-place edit by old_string / new_string |
+| `apply_patch` | Apply a unified-diff patch atomically across one or more files |
+| `grep` | Ripgrep-style regex search across the filesystem |
+| `glob` | Glob file pattern matching |
+| `list_dir` | List directory entries with file/dir distinction |
+| `list_recent_files` | Show recently written / received files via the in-app ledger |
+| `bash` | Run a shell command (foreground 120s default; `run_in_background=true` for detached + handle) |
+| `bash_output` | Peek at a background bash handle's accumulated stdout/stderr |
+| `bash_kill` | Terminate a background bash handle (SIGTERM → SIGKILL) |
+| `bash_watch` | Subscribe to a regex against a running bash handle's stdout/stderr — fires a synthetic `[BASH WATCH MATCH]` message when matched. Use to react mid-stream to dev-server logs, install errors, or progress milestones without polling. |
+| `lsp_hover` / `lsp_definition` / `lsp_references` | Sourcekit-LSP-backed code intelligence over Swift sources |
+
+</details>
+
+<details>
 <summary><strong>🤖 Subagents (3 tools)</strong></summary>
 
 | Tool | Description |

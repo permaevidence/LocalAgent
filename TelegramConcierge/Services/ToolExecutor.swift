@@ -141,6 +141,8 @@ actor ToolExecutor {
             content = await executeBashOutput(call)
         case "bash_kill":
             content = await executeBashKill(call)
+        case "bash_watch":
+            content = await executeBashWatch(call)
         case "todo_write":
             content = await executeTodoWrite(call)
         case "list_running_subagents":
@@ -826,6 +828,12 @@ private func allEmailAddressesAreValid(_ addresses: [String]) -> Bool {
 
 struct WebSearchArguments: Codable {
     let query: String
+}
+
+struct BashWatchArguments: Codable {
+    let handle: String
+    let pattern: String
+    let limit: Int?
 }
 
 struct ManageRemindersArguments: Codable {

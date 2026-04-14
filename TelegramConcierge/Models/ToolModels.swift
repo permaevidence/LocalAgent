@@ -1133,6 +1133,30 @@ enum AvailableTools {
         )
     )
 
+    static let bashWatch = ToolDefinition(
+        function: FunctionDefinition(
+            name: "bash_watch",
+            description: "Subscribe to output from a running background bash process. When a line matching the regex pattern appears on stdout OR stderr, a synthetic [BASH WATCH MATCH] user message is injected into the conversation — the agent wakes up and can react immediately (kill the process, run a fix, notify user, etc.). The watch auto-unsubscribes after `limit` matches or when the process exits. Use for tailing dev servers, catching errors during installs, progress-gated workflows. For simple wait-for-completion, just use `bash` with run_in_background and wait for the completion event.",
+            parameters: FunctionParameters(
+                properties: [
+                    "handle": ParameterProperty(
+                        type: "string",
+                        description: "The background bash handle returned from an earlier bash call (e.g. 'bash_3'). Process must still be running."
+                    ),
+                    "pattern": ParameterProperty(
+                        type: "string",
+                        description: "Regular expression (POSIX/NSRegularExpression syntax) matched against each line of stdout/stderr as it arrives. Case-sensitive by default — prefix with (?i) for case-insensitive. Keep it specific — broad patterns like '.' will flood the conversation and auto-unsubscribe on first match."
+                    ),
+                    "limit": ParameterProperty(
+                        type: "integer",
+                        description: "Maximum number of match events to emit before auto-unsubscribing. Default 10. Reasonable range 1-50."
+                    )
+                ],
+                required: ["handle", "pattern"]
+            )
+        )
+    )
+
     static let bashKill = ToolDefinition(
         function: FunctionDefinition(
             name: "bash_kill",
@@ -1285,7 +1309,7 @@ enum AvailableTools {
     
     /// New filesystem tool surface (replaces the sandboxed document tools).
     static var filesystemTools: [ToolDefinition] {
-        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill, todoWrite, lspHover, lspDefinition, lspReferences]
+        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill, bashWatch, todoWrite, lspHover, lspDefinition, lspReferences]
     }
 
     /// Non-email tools that do not depend on web search credentials.

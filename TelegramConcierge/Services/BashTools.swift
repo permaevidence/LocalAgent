@@ -214,6 +214,46 @@ actor BackgroundProcessRegistry {
         let durationSeconds: Int
     }
 
+    // MARK: - Watch
+
+    /// A live regex subscription on a running background process. Fires synthetic
+    /// `[BASH WATCH MATCH]` user messages into the conversation when matching lines
+    /// appear on stdout/stderr. See `registerWatch(handle:pattern:limit:)`.
+    struct Watch {
+        let id: String
+        let regex: NSRegularExpression
+        let patternSource: String
+        let limit: Int
+        var matchesSoFar: Int
+    }
+
+    struct WatchMatch {
+        let watchId: String
+        let handle: String
+        let pattern: String
+        let line: String
+        let stream: String           // "stdout" or "stderr"
+        let matchedAt: Date
+        let autoUnsubscribed: Bool   // true on limit reached, process exit, or ReDoS timeout
+        let unsubscribeReason: String?
+        let matchesSoFar: Int        // count including this match
+        let limit: Int
+    }
+
+    enum WatchError: Error, CustomStringConvertible {
+        case handleNotFound
+        case processAlreadyExited
+        case invalidRegex(String)
+
+        var description: String {
+            switch self {
+            case .handleNotFound:       return "unknown background handle"
+            case .processAlreadyExited: return "process has already exited; cannot attach a watch"
+            case .invalidRegex(let m):  return "invalid regex: \(m)"
+            }
+        }
+    }
+
     fileprivate final class Entry: @unchecked Sendable {
         let id: String
         let command: String
@@ -222,6 +262,10 @@ actor BackgroundProcessRegistry {
         let process: Process
         var stdout: String = ""
         var stderr: String = ""
+        /// Trailing partial line not yet terminated by \n — held until a newline arrives
+        /// so we only run watches against complete lines. Kept per-stream.
+        var stdoutLineBuf: String = ""
+        var stderrLineBuf: String = ""
         var status: Status = .running
         var exitCode: Int?
         let startedAt: Date
@@ -240,6 +284,9 @@ actor BackgroundProcessRegistry {
     private var entries: [String: Entry] = [:]
     private var nextCounter: Int = 1
     private var pendingCompletions: [Completion] = []
+    private var watches: [String: [Watch]] = [:]
+    private var nextWatchId: Int = 1
+    private var pendingMatchEvents: [WatchMatch] = []
 
     /// Serial queue coordinating writes to Entry buffers from pipe readability handlers.
     private let ioQueue = DispatchQueue(label: "LocalAgent.background-process-io")
@@ -274,6 +321,7 @@ actor BackgroundProcessRegistry {
         let ioQ = self.ioQueue
         // Strong capture of `entry` is fine: the entry is retained by the registry dictionary
         // until termination, at which point we nil out the readability handlers.
+        let entryId = id
         outPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
@@ -282,6 +330,17 @@ actor BackgroundProcessRegistry {
                 let cap = BashTools.outputCapBytes * 4
                 if entry.stdout.utf8.count > cap {
                     entry.stdout = String(entry.stdout.suffix(cap))
+                }
+                // Extract complete lines from the stream buffer and feed them to watches.
+                let lines = BackgroundProcessRegistry.extractCompleteLines(
+                    newChunk: s, buffer: &entry.stdoutLineBuf
+                )
+                if !lines.isEmpty {
+                    Task {
+                        await BackgroundProcessRegistry.shared.evaluateWatches(
+                            handleId: entryId, stream: "stdout", lines: lines
+                        )
+                    }
                 }
             }
         }
@@ -293,6 +352,16 @@ actor BackgroundProcessRegistry {
                 let cap = BashTools.outputCapBytes * 4
                 if entry.stderr.utf8.count > cap {
                     entry.stderr = String(entry.stderr.suffix(cap))
+                }
+                let lines = BackgroundProcessRegistry.extractCompleteLines(
+                    newChunk: s, buffer: &entry.stderrLineBuf
+                )
+                if !lines.isEmpty {
+                    Task {
+                        await BackgroundProcessRegistry.shared.evaluateWatches(
+                            handleId: entryId, stream: "stderr", lines: lines
+                        )
+                    }
                 }
             }
         }
@@ -441,6 +510,187 @@ actor BackgroundProcessRegistry {
             stderrTail: errTail,
             durationSeconds: duration
         ))
+
+        // Tear down any still-active watches for this handle, emitting one
+        // synthetic terminal match per watch so the agent knows they were
+        // auto-unsubscribed because the process exited.
+        if let activeWatches = watches[id], !activeWatches.isEmpty {
+            for w in activeWatches {
+                pendingMatchEvents.append(WatchMatch(
+                    watchId: w.id,
+                    handle: id,
+                    pattern: w.patternSource,
+                    line: "[watch auto-unsubscribed — process exited]",
+                    stream: "system",
+                    matchedAt: Date(),
+                    autoUnsubscribed: true,
+                    unsubscribeReason: "process_exited",
+                    matchesSoFar: w.matchesSoFar,
+                    limit: w.limit
+                ))
+            }
+            watches[id] = nil
+        }
+    }
+
+    // MARK: Watch API
+
+    func registerWatch(handle: String, pattern: String, limit: Int) -> Result<String, WatchError> {
+        guard let e = entries[handle] else { return .failure(.handleNotFound) }
+        if e.status != .running { return .failure(.processAlreadyExited) }
+        let regex: NSRegularExpression
+        do {
+            regex = try NSRegularExpression(pattern: pattern, options: [])
+        } catch {
+            return .failure(.invalidRegex(error.localizedDescription))
+        }
+        let clamped = max(1, min(limit, 50))
+        let watchId = "watch_\(nextWatchId)"
+        nextWatchId += 1
+        let watch = Watch(
+            id: watchId,
+            regex: regex,
+            patternSource: pattern,
+            limit: clamped,
+            matchesSoFar: 0
+        )
+        var arr = watches[handle] ?? []
+        arr.append(watch)
+        watches[handle] = arr
+        return .success(watchId)
+    }
+
+    /// Drain buffered watch match events. Called from the ConversationManager poll loop.
+    func drainWatchMatches() -> [WatchMatch] {
+        let out = pendingMatchEvents
+        pendingMatchEvents.removeAll(keepingCapacity: true)
+        return out
+    }
+
+    /// Called from pipe-reader callbacks via `Task { await ... }` after a batch of
+    /// fully-terminated lines has been extracted. Iterates every watch registered on
+    /// `handleId` and regex-matches each line, capped at a 10ms per-match deadline
+    /// (catastrophic-backtracking protection). Mutates watch state, appends
+    /// `WatchMatch` events, and auto-unsubscribes when limits are reached or a match
+    /// times out.
+    func evaluateWatches(handleId: String, stream: String, lines: [String]) {
+        guard var current = watches[handleId], !current.isEmpty else { return }
+        var changed = false
+        for (wIdx, w) in current.enumerated() where current.indices.contains(wIdx) {
+            // Snapshot for closure capture inside the timed match.
+            var watchRef = w
+            for line in lines {
+                let matchResult = BackgroundProcessRegistry.timedRegexMatch(
+                    regex: watchRef.regex, line: line, timeoutMs: 10
+                )
+                switch matchResult {
+                case .matched:
+                    watchRef.matchesSoFar += 1
+                    let reachedLimit = watchRef.matchesSoFar >= watchRef.limit
+                    pendingMatchEvents.append(WatchMatch(
+                        watchId: watchRef.id,
+                        handle: handleId,
+                        pattern: watchRef.patternSource,
+                        line: line,
+                        stream: stream,
+                        matchedAt: Date(),
+                        autoUnsubscribed: reachedLimit,
+                        unsubscribeReason: reachedLimit ? "limit_reached" : nil,
+                        matchesSoFar: watchRef.matchesSoFar,
+                        limit: watchRef.limit
+                    ))
+                    if reachedLimit {
+                        watchRef.matchesSoFar = -1  // sentinel: mark for removal
+                    }
+                    changed = true
+                case .noMatch:
+                    break
+                case .timedOut:
+                    print("[BackgroundProcessRegistry] watch \(watchRef.id) on \(handleId): regex timeout (>10ms) — auto-unsubscribing (ReDoS protection). pattern: \(watchRef.patternSource)")
+                    pendingMatchEvents.append(WatchMatch(
+                        watchId: watchRef.id,
+                        handle: handleId,
+                        pattern: watchRef.patternSource,
+                        line: "[watch auto-unsubscribed — regex match exceeded 10ms timeout (possible catastrophic backtracking)]",
+                        stream: "system",
+                        matchedAt: Date(),
+                        autoUnsubscribed: true,
+                        unsubscribeReason: "regex_timeout",
+                        matchesSoFar: watchRef.matchesSoFar,
+                        limit: watchRef.limit
+                    ))
+                    watchRef.matchesSoFar = -1  // mark for removal
+                    changed = true
+                }
+                if watchRef.matchesSoFar < 0 { break }  // unsubscribed — stop feeding lines
+            }
+            current[wIdx] = watchRef
+        }
+        if changed {
+            // Remove watches sentineled (matchesSoFar == -1).
+            current.removeAll { $0.matchesSoFar < 0 }
+            if current.isEmpty {
+                watches[handleId] = nil
+            } else {
+                watches[handleId] = current
+            }
+        }
+    }
+
+    // MARK: Static helpers
+
+    /// Split the incoming chunk across any pending partial line and return all newly-complete
+    /// lines (without the trailing \n). Updates `buffer` with the new trailing partial.
+    static func extractCompleteLines(newChunk: String, buffer: inout String) -> [String] {
+        buffer.append(newChunk)
+        guard buffer.contains("\n") else { return [] }
+        var out: [String] = []
+        // Normalize CR-LF to LF for matching purposes without losing content.
+        let parts = buffer.split(separator: "\n", omittingEmptySubsequences: false)
+        // All but the last are complete lines; the last is either "" (trailing \n) or a partial.
+        for i in 0..<(parts.count - 1) {
+            var line = String(parts[i])
+            if line.hasSuffix("\r") { line.removeLast() }
+            out.append(line)
+        }
+        buffer = String(parts[parts.count - 1])
+        return out
+    }
+
+    enum RegexMatchOutcome {
+        case matched
+        case noMatch
+        case timedOut
+    }
+
+    /// Runs an NSRegularExpression match against `line` with a hard wall-clock budget.
+    /// NSRegularExpression has no native timeout, so we run the match on a detached
+    /// task and race it against a sleep. On timeout we return `.timedOut`; the match
+    /// task keeps running in the background but its result is discarded.
+    ///
+    /// This is belt-and-braces: for the overwhelming majority of patterns match
+    /// returns in microseconds; the timeout exists purely to bound a pathologically
+    /// catastrophic-backtracking pattern so it can't jam the stdout reader loop.
+    static func timedRegexMatch(regex: NSRegularExpression, line: String, timeoutMs: Int) -> RegexMatchOutcome {
+        // Short-circuit for the common case: Swift cannot cancel an in-flight
+        // NSRegularExpression call, but we can cap wall time by racing tasks.
+        let sem = DispatchSemaphore(value: 0)
+        var outcome: RegexMatchOutcome = .timedOut
+        let work = DispatchWorkItem {
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            let m = regex.firstMatch(in: line, options: [], range: range)
+            outcome = (m == nil) ? .noMatch : .matched
+            sem.signal()
+        }
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        let deadline = DispatchTime.now() + .milliseconds(timeoutMs)
+        if sem.wait(timeout: deadline) == .timedOut {
+            // Leave outcome as .timedOut. The work item keeps running; we can't
+            // forcibly abort NSRegularExpression, so we just let it finish and
+            // let the result signal into the (now-unread) semaphore.
+            return .timedOut
+        }
+        return outcome
     }
 
     /// Called by the ConversationManager poll loop. Returns and clears pending completions.
