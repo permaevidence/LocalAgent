@@ -155,7 +155,6 @@ struct ContentView: View {
     // MARK: - Header
     
     @State private var settingsHover = false
-    @State private var projectsHover = false
     
     private var headerView: some View {
         VStack(spacing: 0) {
@@ -180,35 +179,6 @@ struct ContentView: View {
                         action: { openSettings() }
                     )
                     
-                    // Projects button (conditional)
-                    if isClaudeDocumentGenerationEnabled {
-                        Button(action: openClaudeProjectsFolderInFinder) {
-                            Label("Projects", systemImage: "folder.fill")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(projectsHover ? .primary : .secondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(projectsHover
-                                              ? Color(nsColor: .controlBackgroundColor)
-                                              : Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(projectsHover
-                                                ? Color.secondary.opacity(0.25)
-                                                : Color.secondary.opacity(0.1), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hovering in
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                projectsHover = hovering
-                            }
-                        }
-                        .help("Open Projects Folder")
-                    }
                 }
                 
                 // Polling toggle
@@ -295,12 +265,6 @@ struct ContentView: View {
         }
     }
     
-    private var isClaudeDocumentGenerationEnabled: Bool {
-        (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "true"
-    }
-    
     private func headerIconButton(
         systemImage: String,
         helpText: String,
@@ -333,22 +297,6 @@ struct ContentView: View {
             }
         }
         .help(helpText)
-    }
-
-    private var claudeProjectsDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("LocalAgent/projects", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder
-    }
-
-    private func openClaudeProjectsFolderInFinder() {
-        let didOpen = NSWorkspace.shared.open(claudeProjectsDirectory)
-        guard !didOpen else { return }
-        presentAlert(
-            title: "Unable to Open Folder",
-            message: "Could not open the projects folder in Finder."
-        )
     }
 
     private func presentAlert(title: String, message: String) {

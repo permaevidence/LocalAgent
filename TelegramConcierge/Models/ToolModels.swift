@@ -978,242 +978,8 @@ enum AvailableTools {
         )
     )
     
-    // MARK: - (deployment/database tools removed — agent uses bash + run_claude_code instead)
+    // MARK: - (legacy Code-CLI project tools removed in Phase 2 — the Agent subagent tool replaces them)
 
-
-    // MARK: - Project Workspace Tools
-
-    static let manageProjects = ToolDefinition(
-        function: FunctionDefinition(
-            name: "manage_projects",
-            description: "Unified project workspace admin tool. Use action='create' to create a new local isolated workspace for the configured Code CLI Sub-Agent. Use action='list' to list or search available project workspaces, including both 'User Projects' and your own internal 'Agent Automations'. Examples: {action:'create', project_name:'Landing Page Redesign', initial_notes:'...'} or {action:'list', query:'invoice parser', limit:20}.",
-            parameters: FunctionParameters(
-                properties: [
-                    "action": ParameterProperty(
-                        type: "string",
-                        description: "Required project admin action: 'create' or 'list'.",
-                        enumValues: ["create", "list"]
-                    ),
-                    "project_name": ParameterProperty(
-                        type: "string",
-                        description: "For action='create'. Human-friendly project name (e.g., 'Landing Page Redesign', 'Invoice Parser')."
-                    ),
-                    "initial_notes": ParameterProperty(
-                        type: "string",
-                        description: "For action='create'. Optional starter notes or requirements to save in the project README. If you are creating an internal tool/automation for your own use, explicitly state 'This is an internal agent automation' here."
-                    ),
-                    "query": ParameterProperty(
-                        type: "string",
-                        description: "For action='list'. Optional keyword to search for specific project names, IDs, or description contents (case-insensitive)."
-                    ),
-                    "limit": ParameterProperty(
-                        type: "integer",
-                        description: "For action='list'. Optional number of projects to return per page. Default 20, max 100."
-                    ),
-                    "cursor": ParameterProperty(
-                        type: "string",
-                        description: "For action='list'. Optional pagination cursor from a previous manage_projects list response (next_cursor). Omit on first call to get the latest projects."
-                    )
-                ],
-                required: ["action"]
-            )
-        )
-    )
-
-    static let browseProject = ToolDefinition(
-        function: FunctionDefinition(
-            name: "browse_project",
-            description: "Browse files and folders inside a specific project workspace. Use this to inspect project structure before running project automation/coding or sending results.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional subfolder path inside the project. Leave empty to browse project root."
-                    ),
-                    "recursive": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, recursively list nested files. If false, only list direct children."
-                    ),
-                    "max_entries": ParameterProperty(
-                        type: "integer",
-                        description: "Maximum number of entries to return (default 200, max 1000)."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-
-    static let readProjectFile = ToolDefinition(
-        function: FunctionDefinition(
-            name: "read_project_file",
-            description: "Read a file inside a project workspace. For text files, returns content. For binary files, returns metadata and makes the file visible for multimodal analysis.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Relative file path inside the project (e.g., 'src/main.swift')."
-                    ),
-                    "max_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max characters for text file output (default 12000)."
-                    )
-                ],
-                required: ["project_id", "relative_path"]
-            )
-        )
-    )
-    
-    static let addProjectFiles = ToolDefinition(
-        function: FunctionDefinition(
-            name: "add_project_files",
-            description: "Copy files from local app storage into a project workspace. If any selected file is a .zip archive, it is automatically extracted into the destination folder inside the project. Use this when the user sends files/images and wants the configured Code CLI to use them in the project.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "document_filenames": ParameterProperty(
-                        type: "string",
-                        description: "JSON array of filenames from list_documents (or CSV). Example: [\"brief.pdf\", \"project.zip\"]. ZIP archives are extracted automatically."
-                    ),
-                    "source_directory": ParameterProperty(
-                        type: "string",
-                        description: "Optional source storage location: 'documents' (default) or 'images'. Use 'images' for files from the app image directory.",
-                        enumValues: ["documents", "images"]
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional target subfolder inside the project (default '.')."
-                    ),
-                    "overwrite": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, overwrite same-name files in destination. If false, auto-renames to avoid collisions."
-                    )
-                ],
-                required: ["project_id", "document_filenames"]
-            )
-        )
-    )
-    
-    static let viewProjectHistory = ToolDefinition(
-        function: FunctionDefinition(
-            name: "view_project_history",
-            description: "View the recent history of your project tool runs for a specific project. Use this once per turn before the first run_claude_code call whenever you are reusing an existing project_id so the coordinator can review past attempts and avoid repeating prior prompting mistakes. Do not call it repeatedly in the same turn for the same project unless the history load failed. This is for the coordinator's planning context; the Code CLI still resumes its own native project session separately.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "max_tokens": ParameterProperty(
-                        type: "integer",
-                        description: "Optional token budget for history context (default 10000, range 500-20000)."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-
-    static let runClaudeCode = ToolDefinition(
-        function: FunctionDefinition(
-            name: "run_claude_code",
-            description: "Delegate a task to the configured Code CLI Sub-Agent (Claude Code, Gemini CLI, or Codex CLI) in a specific workspace. Use this for complex file manipulations, iterative local tasks, data processing, or script execution. The Code CLI acts autonomously within the project. CRITICAL: The Code CLI's memory is strictly project-bound; it only remembers past interactions within this specific project ID. If reusing an existing project, call view_project_history for that same project_id once per turn before the first run_claude_code call so the coordinator reviews prior attempts before composing the new prompt. Do not repeat the history tool again in the same turn for the same project unless the history load failed. Always check created_files/modified_files/file_changes_detected before claiming work is done.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "prompt": ParameterProperty(
-                        type: "string",
-                        description: "Task instructions for the configured Code CLI."
-                    ),
-                    "timeout_seconds": ParameterProperty(
-                        type: "integer",
-                        description: "Optional execution timeout in seconds. If omitted, uses app default."
-                    ),
-                    "max_output_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max output characters returned from stdout/stderr. Default 12000."
-                    ),
-                    "cli_args": ParameterProperty(
-                        type: "string",
-                        description: "Optional CLI argument string override. If omitted, uses saved default args from settings."
-                    )
-                ],
-                required: ["project_id", "prompt"]
-            )
-        )
-    )
-
-    static let sendProjectResult = ToolDefinition(
-        function: FunctionDefinition(
-            name: "send_project_result",
-            description: "Send project output files either to Telegram chat or via email. Use after run_claude_code when user asks to share deliverables. Supports packaging as individual files or as ZIP archives (selected files or whole project). For websites/apps with multiple files, prefer package_as='zip_project'.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "destination": ParameterProperty(
-                        type: "string",
-                        description: "Where to send files: 'chat' or 'email'.",
-                        enumValues: ["chat", "email"]
-                    ),
-                    "to": ParameterProperty(
-                        type: "string",
-                        description: "Required when destination is 'email'. Recipient email address."
-                    ),
-                    "subject": ParameterProperty(
-                        type: "string",
-                        description: "Optional email subject (for destination='email')."
-                    ),
-                    "body": ParameterProperty(
-                        type: "string",
-                        description: "Optional email body text (for destination='email')."
-                    ),
-                    "file_paths": ParameterProperty(
-                        type: "string",
-                        description: "Optional JSON array of relative file paths inside the project to send. Example: [\"dist/app.zip\", \"README.md\"]"
-                    ),
-                    "package_as": ParameterProperty(
-                        type: "string",
-                        description: "Packaging mode: 'files' (default, send files directly), 'zip_selection' (zip selected files), or 'zip_project' (zip the full project deliverables).",
-                        enumValues: ["files", "zip_selection", "zip_project"]
-                    ),
-                    "archive_name": ParameterProperty(
-                        type: "string",
-                        description: "Optional archive base name when package_as is zip mode. '.zip' is added automatically."
-                    ),
-                    "use_last_changed_files": ParameterProperty(
-                        type: "boolean",
-                        description: "If true (default), send files changed in the last run_claude_code execution when file_paths is not provided."
-                    ),
-                    "max_files": ParameterProperty(
-                        type: "integer",
-                        description: "Maximum number of selected files to include (default 10). In zip_project mode, all project deliverables are included unless max_files is explicitly set."
-                    ),
-                    "caption": ParameterProperty(
-                        type: "string",
-                        description: "Optional caption used when sending to chat."
-                    )
-                ],
-                required: ["project_id", "destination"]
-            )
-        )
-    )
     // MARK: - Filesystem Tools (new surface)
 
     static let readFile = ToolDefinition(
@@ -1442,6 +1208,69 @@ enum AvailableTools {
         )
     )
 
+    // MARK: - Agent / Subagent Tool
+
+    /// Agent tool — dynamic enum values include built-in subagents plus any user-defined ones
+    /// discovered via `UserAgentLoader`. The definition is computed so new user agents appear
+    /// on the next tool-list build without a restart.
+    static var agentTool: ToolDefinition {
+        let subagentNames = SubagentTypes.allNames()
+        return ToolDefinition(
+            function: FunctionDefinition(
+                name: "Agent",
+                description: "Launch a new subagent with a fresh, isolated context for focused work. Useful for broad codebase exploration, architectural planning, or focused investigations that would otherwise bloat your own context. The subagent has its own tools and returns only its final message to you. Built-in subagent_type values: 'general-purpose' (full tool access, open-ended tasks), 'Explore' (read-only, fast codebase search with parallel tool calls, cheap model), 'Plan' (read-only, produces an implementation plan without executing). User-defined subagents loaded from ~/LocalAgent/agents/*.md are also accepted. Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.",
+                parameters: FunctionParameters(
+                    properties: [
+                        "subagent_type": ParameterProperty(
+                            type: "string",
+                            description: "Which subagent to spawn.",
+                            enumValues: subagentNames
+                        ),
+                        "description": ParameterProperty(
+                            type: "string",
+                            description: "A short (3-5 word) description of the task. Used for progress display."
+                        ),
+                        "prompt": ParameterProperty(
+                            type: "string",
+                            description: "The full task for the subagent. Must be self-contained — include all context the subagent needs, since it sees none of your conversation."
+                        ),
+                        "run_in_background": ParameterProperty(
+                            type: "string",
+                            description: "Pass 'true' to run the subagent in the background and receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Useful for long-running Explore or Plan tasks so the parent can continue in parallel. Default 'false' (synchronous)."
+                        ),
+                        "model": ParameterProperty(
+                            type: "string",
+                            description: "Optional per-task model override. Leave empty to inherit parent model.",
+                            enumValues: ["sonnet", "opus", "haiku", "inherit"]
+                        )
+                    ],
+                    required: ["subagent_type", "description", "prompt"]
+                )
+            )
+        )
+    }
+
+    static let listRunningSubagents = ToolDefinition(
+        function: FunctionDefinition(
+            name: "list_running_subagents",
+            description: "List every subagent currently running in the background (spawned via Agent with run_in_background='true'). Returns a JSON array of {handle, subagent_type, description, started_at, running_seconds}. Use to check what's in flight before cancelling or to confirm a background spawn is still working.",
+            parameters: FunctionParameters(properties: [:], required: [])
+        )
+    )
+
+    static let cancelSubagent = ToolDefinition(
+        function: FunctionDefinition(
+            name: "cancel_subagent",
+            description: "Cancel a running background subagent by handle. Cancellation is best-effort and takes effect at the subagent's next turn boundary — an in-flight tool call finishes first, then the subagent exits and surfaces a truncated [SUBAGENT COMPLETE] message to you. Returns {cancelled: bool, handle, reason?}.",
+            parameters: FunctionParameters(
+                properties: [
+                    "handle": ParameterProperty(type: "string", description: "The handle returned by Agent(run_in_background='true'), e.g. 'subagent_1'.")
+                ],
+                required: ["handle"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// IMAP email tools (8 tools - used when email_mode is "imap")
@@ -1460,42 +1289,16 @@ enum AvailableTools {
     }
 
     /// Non-email tools that do not depend on web search credentials.
-    /// Removed (superseded by filesystemTools): list_documents, read_document, browse_project,
-    /// read_project_file, add_project_files, generate_document.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        var tools: [ToolDefinition] = filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts]
-        // Code CLI sub-agent tools (manage_projects, view_project_history,
-        // run_claude_code, send_project_result) are gated on the same
-        // "Use selected Code CLI for document generation" toggle that controls
-        // their system-prompt section in OpenRouterService. When the toggle
-        // is OFF, the agent has no awareness of the Code CLI flow at all —
-        // it relies entirely on its native filesystem tools (bash, write_file,
-        // edit_file, apply_patch, etc.) for everything.
-        let codeCLIEnabled =
-            (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "true"
-        if codeCLIEnabled {
-            tools += [manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
-        }
-        return tools
+        return filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, cancelSubagent]
     }
 
     /// All available tools - dynamically selects email tools and optionally web search
     static func all(includeWebSearch: Bool) -> [ToolDefinition] {
         let emailMode = KeychainHelper.load(key: KeychainHelper.emailModeKey) ?? "imap"
         let emailTools = emailMode == "gmail" ? gmailEmailTools : imapEmailTools
-        let disableLegacyDocumentGeneration =
-            (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "true"
         let webTools = includeWebSearch ? [webSearch, deepResearch, webFetch, webFetchImage] : []
-        var coreTools = webTools + coreToolsWithoutWebSearch
-
-        if disableLegacyDocumentGeneration {
-            coreTools.removeAll { $0.function.name == "generate_document" }
-        }
-
+        let coreTools = webTools + coreToolsWithoutWebSearch
         return coreTools + emailTools
     }
     

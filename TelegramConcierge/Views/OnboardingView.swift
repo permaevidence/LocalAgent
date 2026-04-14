@@ -6,7 +6,7 @@ struct OnboardingView: View {
 
     @State private var step = 0
     private let totalRequiredSteps = 4 // 0=welcome, 1=LLM, 2=persona, 3=telegram
-    private let totalOptionalSteps = 5 // 4=voice, 5=websearch, 6=email, 7=imagegen, 8=codeCLI
+    private let totalOptionalSteps = 4 // 4=voice, 5=websearch, 6=email, 7=imagegen
 
     // LLM Provider
     @State private var llmProvider: String = "openrouter"
@@ -45,10 +45,6 @@ struct OnboardingView: View {
     // Image Gen
     @State private var geminiApiKey: String = ""
 
-    // Code CLI
-    @State private var codeCLIProvider: String = "claude"
-    @State private var codeCLIDocumentMode: Bool = true
-
     var body: some View {
         VStack(spacing: 0) {
             // Progress bar
@@ -78,7 +74,6 @@ struct OnboardingView: View {
                     case 6: webSearchStep
                     case 7: emailStep
                     case 8: imageGenStep
-                    case 9: codeCLIStep
                     default: doneStep
                     }
                 }
@@ -102,7 +97,7 @@ struct OnboardingView: View {
                         .buttonStyle(.bordered)
                     Button("Continue setup") { step = 5 }
                         .buttonStyle(.borderedProminent)
-                } else if step >= 5 && step <= 9 {
+                } else if step >= 5 && step <= 8 {
                     Button("Skip") { step += 1 }
                         .buttonStyle(.bordered)
                     Button("Next") {
@@ -110,7 +105,7 @@ struct OnboardingView: View {
                         step += 1
                     }
                     .buttonStyle(.borderedProminent)
-                } else if step == 10 {
+                } else if step == 9 {
                     Button("Start Agent") { finishOnboarding() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
@@ -378,7 +373,6 @@ struct OnboardingView: View {
                 Label("Web Search — search the internet and read web pages", systemImage: "magnifyingglass")
                 Label("Email — read and send emails on your behalf", systemImage: "envelope")
                 Label("Image Generation — create and edit images", systemImage: "photo.badge.plus")
-                Label("Code CLI — create documents, run code, build projects", systemImage: "terminal")
             }
             .font(.callout)
             .foregroundColor(.secondary)
@@ -505,34 +499,6 @@ struct OnboardingView: View {
         }
     }
 
-    private var codeCLIStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("Code CLI", systemImage: "terminal")
-                .font(.title2.bold())
-
-            Text("A Code CLI is a local sub-agent that your assistant delegates to for coding, document creation, file manipulation, and complex tasks. Without it, the assistant can only generate basic PDFs and spreadsheets.")
-                .font(.callout)
-                .foregroundColor(.secondary)
-
-            Picker("Provider", selection: $codeCLIProvider) {
-                Text("Claude Code").tag("claude")
-                Text("Gemini CLI").tag("gemini")
-                Text("Codex CLI").tag("codex")
-            }
-            .pickerStyle(.segmented)
-
-            Text("The selected CLI must be installed on your machine. You can switch anytime in Settings or via Telegram (/claude, /gemini, /codex).")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            Toggle("Use Code CLI for document generation", isOn: $codeCLIDocumentMode)
-
-            Text("Recommended ON. When enabled, the assistant uses the Code CLI to generate documents (reports, spreadsheets, presentations) instead of a limited built-in generator. This produces much higher quality output.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-
     private var doneStep: some View {
         VStack(alignment: .center, spacing: 20) {
             Spacer()
@@ -576,7 +542,6 @@ struct OnboardingView: View {
         case 6: saveWebSearch()
         case 7: saveEmail()
         case 8: saveImageGen()
-        case 9: saveCodeCLI()
         default: break
         }
     }
@@ -652,11 +617,6 @@ struct OnboardingView: View {
         }
     }
 
-    private func saveCodeCLI() {
-        try? KeychainHelper.save(key: KeychainHelper.codeCLIProviderKey, value: codeCLIProvider)
-        try? KeychainHelper.save(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey, value: codeCLIDocumentMode ? "true" : "false")
-    }
-
     private func finishOnboarding() {
         saveCurrentStep()
         UserDefaults.standard.set(true, forKey: "onboarding_completed")
@@ -688,9 +648,6 @@ struct OnboardingView: View {
         gmailClientId = KeychainHelper.load(key: KeychainHelper.gmailClientIdKey) ?? ""
         gmailClientSecret = KeychainHelper.load(key: KeychainHelper.gmailClientSecretKey) ?? ""
         geminiApiKey = KeychainHelper.load(key: KeychainHelper.geminiApiKeyKey) ?? ""
-        codeCLIProvider = KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? "claude"
-        codeCLIDocumentMode = (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "true")
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
     }
 
     // MARK: - Local Server Presets

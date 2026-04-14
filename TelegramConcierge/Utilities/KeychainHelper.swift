@@ -119,21 +119,10 @@ enum KeychainHelper {
 
 // MARK: - Credential Keys
 extension KeychainHelper {
-    static let defaultCodeCLIProvider = "claude"
-    static let defaultClaudeCodeArgs = "-p --permission-mode bypassPermissions"
-    static let defaultClaudeCodeTimeout = "1500"
-    static let defaultGeminiCodeCommand = "gemini"
-    static let defaultGeminiCodeArgs = "--yolo --output-format json"
-    static let defaultGeminiCodeModel = ""
-    static let defaultGeminiCodeTimeout = "1500"
     static let defaultGeminiImageModel = ""
     static let defaultGeminiImageInputCostPerMillionTokensUSD = "2"
     static let defaultGeminiImageOutputTextCostPerMillionTokensUSD = "12"
     static let defaultGeminiImageOutputImageCostPerMillionTokensUSD = "120"
-    static let defaultCodexCodeCommand = "codex"
-    static let defaultCodexCodeArgs = "exec --sandbox danger-full-access -c approval_policy=\"never\" --skip-git-repo-check"
-    static let defaultCodexCodeModel = ""
-    static let defaultCodexCodeTimeout = "1500"
     static let defaultVercelCommand = "vercel"
     static let defaultVercelTimeout = "1200"
     static let defaultInstantCLICommand = "npx instant-cli@latest"
@@ -163,21 +152,6 @@ extension KeychainHelper {
     static let geminiImageInputCostPerMillionTokensUSDKey = "gemini_image_input_cost_per_million_tokens_usd"
     static let geminiImageOutputTextCostPerMillionTokensUSDKey = "gemini_image_output_text_cost_per_million_tokens_usd"
     static let geminiImageOutputImageCostPerMillionTokensUSDKey = "gemini_image_output_image_cost_per_million_tokens_usd"
-    
-    // Code CLI Settings (Claude Code, Gemini CLI, Codex CLI)
-    static let codeCLIProviderKey = "code_cli_provider"
-    static let claudeCodeCommandKey = "claude_code_command"
-    static let claudeCodeArgsKey = "claude_code_args"
-    static let claudeCodeTimeoutKey = "claude_code_timeout"
-    static let geminiCodeCommandKey = "gemini_code_command"
-    static let geminiCodeArgsKey = "gemini_code_args"
-    static let geminiCodeModelKey = "gemini_code_model"
-    static let geminiCodeTimeoutKey = "gemini_code_timeout"
-    static let codexCodeCommandKey = "codex_code_command"
-    static let codexCodeArgsKey = "codex_code_args"
-    static let codexCodeModelKey = "codex_code_model"
-    static let codexCodeTimeoutKey = "codex_code_timeout"
-    static let claudeCodeDisableLegacyDocumentGenerationToolsKey = "claude_code_disable_legacy_document_generation_tools"
     
     // Vercel Deployment Settings
     static let vercelApiTokenKey = "vercel_api_token"

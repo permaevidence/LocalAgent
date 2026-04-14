@@ -64,21 +64,6 @@ struct SettingsView: View {
     @State private var voiceTranscriptionProvider: VoiceTranscriptionProvider = .defaultProvider
     @State private var openAITranscriptionApiKey: String = ""
     
-    // Code CLI settings
-    @State private var codeCLIProvider: String = KeychainHelper.defaultCodeCLIProvider
-    @State private var claudeCodeCommand: String = "claude"
-    @State private var claudeCodeArgs: String = KeychainHelper.defaultClaudeCodeArgs
-    @State private var claudeCodeTimeout: String = KeychainHelper.defaultClaudeCodeTimeout
-    @State private var geminiCodeCommand: String = KeychainHelper.defaultGeminiCodeCommand
-    @State private var geminiCodeArgs: String = KeychainHelper.defaultGeminiCodeArgs
-    @State private var geminiCodeModel: String = KeychainHelper.defaultGeminiCodeModel
-    @State private var geminiCodeTimeout: String = KeychainHelper.defaultGeminiCodeTimeout
-    @State private var codexCodeCommand: String = KeychainHelper.defaultCodexCodeCommand
-    @State private var codexCodeArgs: String = KeychainHelper.defaultCodexCodeArgs
-    @State private var codexCodeModel: String = KeychainHelper.defaultCodexCodeModel
-    @State private var codexCodeTimeout: String = KeychainHelper.defaultCodexCodeTimeout
-    @State private var claudeCodeDisableLegacyDocumentGenerationTools: Bool = false
-    
     // Vercel deployment settings
     @State private var vercelApiToken: String = ""
     @State private var vercelTeamScope: String = ""
@@ -110,7 +95,6 @@ struct SettingsView: View {
     // Collapsible sections
     @State private var isSpendLimitsExpanded: Bool = false
     @State private var isImagePricingExpanded: Bool = false
-    @State private var isCodeCLIAdvancedExpanded: Bool = false
     @State private var isVercelAdvancedExpanded: Bool = false
     @State private var isInstantAdvancedExpanded: Bool = false
     
@@ -174,17 +158,6 @@ struct SettingsView: View {
             return value
         }
         return defaultToolSpendLimitPerTurnUSD
-    }
-    
-    private var activeCodeCLIProviderName: String {
-        switch codeCLIProvider {
-        case "gemini":
-            return "Gemini CLI"
-        case "codex":
-            return "Codex CLI"
-        default:
-            return "Claude Code"
-        }
     }
     
     var body: some View {
@@ -645,73 +618,6 @@ struct SettingsView: View {
             }
             
             Section {
-                Picker("Code CLI Provider", selection: $codeCLIProvider) {
-                    Text("Claude Code").tag("claude")
-                    Text("Gemini CLI").tag("gemini")
-                    Text("Codex CLI").tag("codex")
-                }
-                .pickerStyle(.segmented)
-                
-                Text("Active provider: \(activeCodeCLIProviderName)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Toggle("Use selected Code CLI for document generation", isOn: $claudeCodeDisableLegacyDocumentGenerationTools)
-
-                Text("When enabled, the legacy generate_document tool is replaced by project tools powered by the selected Code CLI provider.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                DisclosureGroup("CLI Configuration", isExpanded: $isCodeCLIAdvancedExpanded) {
-                    if codeCLIProvider == "gemini" {
-                        TextField("CLI Command", text: $geminiCodeCommand)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Default: \(KeychainHelper.defaultGeminiCodeCommand)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField("Default CLI Args", text: $geminiCodeArgs)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("CLI Model (optional)", text: $geminiCodeModel)
-                            .textFieldStyle(.roundedBorder)
-                            .disableAutocorrection(true)
-                        TextField("Default Timeout (seconds)", text: $geminiCodeTimeout)
-                            .textFieldStyle(.roundedBorder)
-                    } else if codeCLIProvider == "codex" {
-                        TextField("CLI Command", text: $codexCodeCommand)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Default: \(KeychainHelper.defaultCodexCodeCommand)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField("Default CLI Args", text: $codexCodeArgs)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("CLI Model (optional)", text: $codexCodeModel)
-                            .textFieldStyle(.roundedBorder)
-                            .disableAutocorrection(true)
-                        TextField("Default Timeout (seconds)", text: $codexCodeTimeout)
-                            .textFieldStyle(.roundedBorder)
-                    } else {
-                        TextField("CLI Command", text: $claudeCodeCommand)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Default: claude")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField("Default CLI Args", text: $claudeCodeArgs)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Default Timeout (seconds)", text: $claudeCodeTimeout)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    Text("Timeout range: 30-3600 seconds.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                
-            } header: {
-                Label("Code CLI", systemImage: "terminal")
-            }
-            
-            Section {
                 SecureField("Vercel API Token", text: $vercelApiToken)
                     .textFieldStyle(.roundedBorder)
                 
@@ -772,19 +678,6 @@ struct SettingsView: View {
         .onChange(of: geminiImageInputCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputTextCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputImageCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
-        .onChange(of: codeCLIProvider) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: claudeCodeCommand) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: claudeCodeArgs) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: claudeCodeTimeout) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: geminiCodeCommand) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: geminiCodeArgs) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: geminiCodeModel) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: geminiCodeTimeout) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: codexCodeCommand) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: codexCodeArgs) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: codexCodeModel) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: codexCodeTimeout) { _ in autoSave { saveClaudeCodeSection() } }
-        .onChange(of: claudeCodeDisableLegacyDocumentGenerationTools) { _ in autoSave { saveClaudeCodeSection() } }
         .onChange(of: vercelApiToken) { _ in autoSave { saveVercelSection() } }
         .onChange(of: vercelTeamScope) { _ in autoSave { saveVercelSection() } }
         .onChange(of: vercelProjectName) { _ in autoSave { saveVercelSection() } }
@@ -1925,32 +1818,6 @@ struct SettingsView: View {
         )
         openAITranscriptionApiKey = KeychainHelper.load(key: KeychainHelper.openAITranscriptionApiKeyKey) ?? ""
         
-        // Load Code CLI settings
-        let loadedProvider = (KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? KeychainHelper.defaultCodeCLIProvider)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        switch loadedProvider {
-        case "gemini", "codex":
-            codeCLIProvider = loadedProvider
-        default:
-            codeCLIProvider = "claude"
-        }
-        claudeCodeCommand = KeychainHelper.load(key: KeychainHelper.claudeCodeCommandKey) ?? "claude"
-        claudeCodeArgs = KeychainHelper.load(key: KeychainHelper.claudeCodeArgsKey) ?? KeychainHelper.defaultClaudeCodeArgs
-        claudeCodeTimeout = KeychainHelper.load(key: KeychainHelper.claudeCodeTimeoutKey) ?? KeychainHelper.defaultClaudeCodeTimeout
-        geminiCodeCommand = KeychainHelper.load(key: KeychainHelper.geminiCodeCommandKey) ?? KeychainHelper.defaultGeminiCodeCommand
-        geminiCodeArgs = KeychainHelper.load(key: KeychainHelper.geminiCodeArgsKey) ?? KeychainHelper.defaultGeminiCodeArgs
-        geminiCodeModel = KeychainHelper.load(key: KeychainHelper.geminiCodeModelKey) ?? KeychainHelper.defaultGeminiCodeModel
-        geminiCodeTimeout = KeychainHelper.load(key: KeychainHelper.geminiCodeTimeoutKey) ?? KeychainHelper.defaultGeminiCodeTimeout
-        codexCodeCommand = KeychainHelper.load(key: KeychainHelper.codexCodeCommandKey) ?? KeychainHelper.defaultCodexCodeCommand
-        codexCodeArgs = KeychainHelper.load(key: KeychainHelper.codexCodeArgsKey) ?? KeychainHelper.defaultCodexCodeArgs
-        codexCodeModel = KeychainHelper.load(key: KeychainHelper.codexCodeModelKey) ?? KeychainHelper.defaultCodexCodeModel
-        codexCodeTimeout = KeychainHelper.load(key: KeychainHelper.codexCodeTimeoutKey) ?? KeychainHelper.defaultCodexCodeTimeout
-        claudeCodeDisableLegacyDocumentGenerationTools =
-            (KeychainHelper.load(key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey) ?? "false")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "true"
-        
         // Load Vercel deployment settings
         vercelApiToken = KeychainHelper.load(key: KeychainHelper.vercelApiTokenKey) ?? ""
         vercelTeamScope = KeychainHelper.load(key: KeychainHelper.vercelTeamScopeKey) ?? ""
@@ -2204,9 +2071,6 @@ struct SettingsView: View {
                 try KeychainHelper.save(key: KeychainHelper.openAITranscriptionApiKeyKey, value: normalizedOpenAIKey)
             }
             openAITranscriptionApiKey = normalizedOpenAIKey
-            
-            // Save Code CLI settings
-            try saveCodeCLISettings()
             
             // Save Vercel deployment settings
             let normalizedVercelToken = vercelApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2522,99 +2386,6 @@ struct SettingsView: View {
                 await WhisperKitService.shared.checkModelStatus()
             }
         }
-    }
-    
-    private func saveClaudeCodeSection() {
-        try? saveCodeCLISettings()
-    }
-    
-    private func saveCodeCLISettings() throws {
-        let normalizedProvider: String
-        switch codeCLIProvider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "gemini", "codex":
-            normalizedProvider = codeCLIProvider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        default:
-            normalizedProvider = "claude"
-        }
-        
-        let normalizedClaudeCommand = claudeCodeCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedClaudeArgs = claudeCodeArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-        let claudeTimeout = Int(claudeCodeTimeout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 300
-        let clampedClaudeTimeout = min(max(claudeTimeout, 30), 3600)
-        
-        let normalizedGeminiCommand = geminiCodeCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedGeminiArgs = geminiCodeArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedGeminiModel = geminiCodeModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let geminiTimeout = Int(geminiCodeTimeout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 300
-        let clampedGeminiTimeout = min(max(geminiTimeout, 30), 3600)
-        
-        let normalizedCodexCommand = codexCodeCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCodexArgs = codexCodeArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCodexModel = codexCodeModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let codexTimeout = Int(codexCodeTimeout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 300
-        let clampedCodexTimeout = min(max(codexTimeout, 30), 3600)
-        
-        let saveOp = {
-            try KeychainHelper.save(key: KeychainHelper.codeCLIProviderKey, value: normalizedProvider)
-            try KeychainHelper.save(
-                key: KeychainHelper.claudeCodeCommandKey,
-                value: normalizedClaudeCommand.isEmpty ? "claude" : normalizedClaudeCommand
-            )
-            try KeychainHelper.save(
-                key: KeychainHelper.claudeCodeArgsKey,
-                value: normalizedClaudeArgs.isEmpty ? KeychainHelper.defaultClaudeCodeArgs : normalizedClaudeArgs
-            )
-            try KeychainHelper.save(key: KeychainHelper.claudeCodeTimeoutKey, value: "\(clampedClaudeTimeout)")
-            
-            try KeychainHelper.save(
-                key: KeychainHelper.geminiCodeCommandKey,
-                value: normalizedGeminiCommand.isEmpty ? KeychainHelper.defaultGeminiCodeCommand : normalizedGeminiCommand
-            )
-            try KeychainHelper.save(
-                key: KeychainHelper.geminiCodeArgsKey,
-                value: normalizedGeminiArgs.isEmpty ? KeychainHelper.defaultGeminiCodeArgs : normalizedGeminiArgs
-            )
-            try KeychainHelper.save(
-                key: KeychainHelper.geminiCodeModelKey,
-                value: normalizedGeminiModel.isEmpty ? KeychainHelper.defaultGeminiCodeModel : normalizedGeminiModel
-            )
-            try KeychainHelper.save(key: KeychainHelper.geminiCodeTimeoutKey, value: "\(clampedGeminiTimeout)")
-            try KeychainHelper.save(
-                key: KeychainHelper.codexCodeCommandKey,
-                value: normalizedCodexCommand.isEmpty ? KeychainHelper.defaultCodexCodeCommand : normalizedCodexCommand
-            )
-            try KeychainHelper.save(
-                key: KeychainHelper.codexCodeArgsKey,
-                value: normalizedCodexArgs.isEmpty ? KeychainHelper.defaultCodexCodeArgs : normalizedCodexArgs
-            )
-            try KeychainHelper.save(
-                key: KeychainHelper.codexCodeModelKey,
-                value: normalizedCodexModel.isEmpty ? KeychainHelper.defaultCodexCodeModel : normalizedCodexModel
-            )
-            try KeychainHelper.save(key: KeychainHelper.codexCodeTimeoutKey, value: "\(clampedCodexTimeout)")
-            
-            try KeychainHelper.save(
-                key: KeychainHelper.claudeCodeDisableLegacyDocumentGenerationToolsKey,
-                value: claudeCodeDisableLegacyDocumentGenerationTools ? "true" : "false"
-            )
-        }
-        
-        try saveOp()
-        
-        codeCLIProvider = normalizedProvider
-        claudeCodeCommand = normalizedClaudeCommand.isEmpty ? "claude" : normalizedClaudeCommand
-        claudeCodeArgs = normalizedClaudeArgs.isEmpty ? KeychainHelper.defaultClaudeCodeArgs : normalizedClaudeArgs
-        claudeCodeTimeout = "\(clampedClaudeTimeout)"
-        
-        geminiCodeCommand = normalizedGeminiCommand.isEmpty ? KeychainHelper.defaultGeminiCodeCommand : normalizedGeminiCommand
-        geminiCodeArgs = normalizedGeminiArgs.isEmpty ? KeychainHelper.defaultGeminiCodeArgs : normalizedGeminiArgs
-        geminiCodeModel = normalizedGeminiModel.isEmpty ? KeychainHelper.defaultGeminiCodeModel : normalizedGeminiModel
-        geminiCodeTimeout = "\(clampedGeminiTimeout)"
-        
-        codexCodeCommand = normalizedCodexCommand.isEmpty ? KeychainHelper.defaultCodexCodeCommand : normalizedCodexCommand
-        codexCodeArgs = normalizedCodexArgs.isEmpty ? KeychainHelper.defaultCodexCodeArgs : normalizedCodexArgs
-        codexCodeModel = normalizedCodexModel.isEmpty ? KeychainHelper.defaultCodexCodeModel : normalizedCodexModel
-        codexCodeTimeout = "\(clampedCodexTimeout)"
     }
     
     private func saveVercelSection() {
