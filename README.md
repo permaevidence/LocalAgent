@@ -168,8 +168,8 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 | Tool | Description |
 |------|-------------|
 | `web_search` | Search the web via Google (Serper) |
-| `view_url` | Read a web page's content and image metadata |
-| `view_page_image` | Download and view a specific image from a web page |
+| `web_fetch` | Fetch a URL and extract a prompt-focused excerpt (mandatory prompt, 15-min LRU cache, Claude Code parity) |
+| `web_fetch_image` | Download and view a specific image from a web page |
 | `download_from_url` | Download any file from a URL |
 
 </details>

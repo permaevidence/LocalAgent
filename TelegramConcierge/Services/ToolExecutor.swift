@@ -93,8 +93,8 @@ actor ToolExecutor {
             return await executeShortcuts(call)
         case "generate_image":
             return await executeGenerateImage(call)
-        case "view_page_image":
-            return await executeViewPageImage(call)
+        case "web_fetch_image":
+            return await executeWebFetchImage(call)
         case "run_shortcut":
             return await executeRunShortcut(call)
         case "web_search":
@@ -175,8 +175,8 @@ actor ToolExecutor {
             
         // generate_image is handled in the special multimodal injection switch above
             
-        case "view_url":
-            content = await executeViewUrl(call)
+        case "web_fetch":
+            content = await executeWebFetch(call)
             
         case "download_from_url":
             content = await executeDownloadFromUrl(call)
@@ -3653,35 +3653,41 @@ struct RunShortcutArguments: Codable {
 // MARK: - URL Viewing and Download Tool Implementations
 
 extension ToolExecutor {
-    func executeViewUrl(_ call: ToolCall) async -> String {
+    func executeWebFetch(_ call: ToolCall) async -> String {
         guard let argsData = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(ViewUrlArguments.self, from: argsData) else {
-            return "{\"error\": \"Failed to parse view_url arguments\"}"
+              let args = try? JSONDecoder().decode(WebFetchArguments.self, from: argsData) else {
+            return "{\"error\": \"Failed to parse web_fetch arguments. Required: url (string), prompt (string).\"}"
         }
-        
+
         // Validate URL format
         guard args.url.hasPrefix("http://") || args.url.hasPrefix("https://") else {
             return "{\"error\": \"Invalid URL format. URL must start with http:// or https://\"}"
         }
-        
+
+        // Validate prompt non-empty
+        let promptTrim = args.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !promptTrim.isEmpty else {
+            return "{\"error\": \"web_fetch requires a non-empty prompt describing what to extract from the page.\"}"
+        }
+
         do {
-            let result = try await webOrchestrator.readUrlContent(url: args.url)
-            // Returns page content with image metadata (captions, URLs)
-            // LLM can use view_page_image tool to download specific images it wants to see
+            let result = try await webOrchestrator.readUrlContent(url: args.url, prompt: promptTrim)
+            // Returns a prompt-compressed excerpt plus image metadata (captions, URLs)
+            // LLM can use web_fetch_image tool to download specific images it wants to see
             return result.asJSON()
         } catch {
-            return "{\"error\": \"Failed to read URL: \(error.localizedDescription)\"}"
+            return "{\"error\": \"Failed to fetch URL: \(error.localizedDescription)\"}"
         }
     }
-    
+
     /// Download a specific image from a URL for multimodal injection
     /// LLM uses this after viewing page metadata to selectively download interesting images
-    func executeViewPageImage(_ call: ToolCall) async -> ToolResultMessage {
+    func executeWebFetchImage(_ call: ToolCall) async -> ToolResultMessage {
         guard let argsData = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(ViewPageImageArguments.self, from: argsData) else {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to parse view_page_image arguments\"}")
+              let args = try? JSONDecoder().decode(WebFetchImageArguments.self, from: argsData) else {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to parse web_fetch_image arguments\"}")
         }
-        
+
         // Validate URL format
         guard args.imageUrl.hasPrefix("http://") || args.imageUrl.hasPrefix("https://") else {
             return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid URL format. URL must start with http:// or https://\"}")
@@ -3806,14 +3812,15 @@ extension ToolExecutor {
 
 // MARK: - URL Tool Argument Types
 
-struct ViewUrlArguments: Codable {
+struct WebFetchArguments: Codable {
     let url: String
+    let prompt: String
 }
 
-struct ViewPageImageArguments: Codable {
+struct WebFetchImageArguments: Codable {
     let imageUrl: String
     let caption: String?
-    
+
     enum CodingKeys: String, CodingKey {
         case imageUrl = "image_url"
         case caption

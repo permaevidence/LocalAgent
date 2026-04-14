@@ -262,7 +262,7 @@ struct ScrapedDoc: Codable {
     }
 }
 
-// MARK: - URL Reading Types (for view_url tool)
+// MARK: - URL Reading Types (for web_fetch tool)
 
 struct JinaReaderResult: Codable {
     let url: String
@@ -367,7 +367,46 @@ actor WebOrchestrator {
     }
 
     private var executionStates: [UUID: ExecutionState] = [:]
-    
+
+    // MARK: - web_fetch Cache
+    // Two-tier LRU cache with 15-minute TTL (matches Claude Code WebFetch behavior).
+    // Tier 1: url -> raw Jina markdown (shared across different prompts on same URL).
+    // Tier 2: (url, prompt) -> compressed excerpt (fast repeat hits).
+    private struct CachedMarkdown {
+        let title: String?
+        let markdown: String
+        let cachedAt: Date
+    }
+    private struct CachedExcerpt {
+        let payload: JinaReaderResult
+        let cachedAt: Date
+    }
+    private let webFetchCacheTTL: TimeInterval = 15 * 60
+    private let webFetchCacheCapacity = 64
+    private var markdownCache: [String: CachedMarkdown] = [:]
+    private var excerptCache: [String: CachedExcerpt] = [:]
+
+    private func prunedMarkdownCache() {
+        let now = Date()
+        markdownCache = markdownCache.filter { now.timeIntervalSince($0.value.cachedAt) < webFetchCacheTTL }
+        if markdownCache.count > webFetchCacheCapacity {
+            let sorted = markdownCache.sorted { $0.value.cachedAt < $1.value.cachedAt }
+            for (k, _) in sorted.prefix(markdownCache.count - webFetchCacheCapacity) {
+                markdownCache.removeValue(forKey: k)
+            }
+        }
+    }
+    private func prunedExcerptCache() {
+        let now = Date()
+        excerptCache = excerptCache.filter { now.timeIntervalSince($0.value.cachedAt) < webFetchCacheTTL }
+        if excerptCache.count > webFetchCacheCapacity {
+            let sorted = excerptCache.sorted { $0.value.cachedAt < $1.value.cachedAt }
+            for (k, _) in sorted.prefix(excerptCache.count - webFetchCacheCapacity) {
+                excerptCache.removeValue(forKey: k)
+            }
+        }
+    }
+
     // MARK: - Configuration
     
     func configure(openRouterKey: String, serperKey: String, jinaKey: String) {
@@ -832,31 +871,143 @@ actor WebOrchestrator {
         return (title, text)
     }
     
-    // MARK: - Public URL Reading (for view_url tool)
-    
-    /// Read URL content directly via Jina Reader with image captions for Gemini
-    /// Downloads up to 5 images from the page for multimodal injection
-    func readUrlContent(url: String) async throws -> JinaReaderResult {
-        let (title, content) = try await fetchWithJinaReader(originalURL: url, includeImageCaptions: true)
-        
-        // Extract links from the markdown content
-        let links = extractLinksFromMarkdown(content)
-        
-        // Extract image references from the markdown (with captions and URLs)
-        // LLM can use view_page_image tool to selectively download images it wants to see
-        let images = extractImageReferences(content)
-        
-        return JinaReaderResult(
+    // MARK: - Public URL Reading (for web_fetch tool)
+
+    /// Fetch URL content via Jina Reader, then compress against a user prompt using the
+    /// webExcerpts small/fast model. Matches Claude Code WebFetch semantics:
+    /// mandatory prompt, pre-compression truncation (~100 KB), post-compression cap (~30 KB),
+    /// two-tier 15-minute LRU cache (url->markdown, (url,prompt)->excerpt).
+    func readUrlContent(url: String, prompt: String) async throws -> JinaReaderResult {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            throw NSError(domain: "WebOrchestrator", code: 1, userInfo: [NSLocalizedDescriptionKey: "web_fetch requires a non-empty prompt describing what to extract from the page."])
+        }
+
+        let normalizedURL = normalize(url)
+
+        // Tier 2 cache: exact (url, prompt) hit.
+        prunedExcerptCache()
+        let excerptKey = "\(normalizedURL)|\(trimmedPrompt)"
+        if let hit = excerptCache[excerptKey], Date().timeIntervalSince(hit.cachedAt) < webFetchCacheTTL {
+            print("[WebOrchestrator] web_fetch excerpt cache hit url=\(normalizedURL)")
+            return hit.payload
+        }
+
+        // Tier 1 cache: url -> raw Jina markdown (reused across different prompts).
+        prunedMarkdownCache()
+        let rawTitle: String?
+        let rawMarkdown: String
+        if let md = markdownCache[normalizedURL], Date().timeIntervalSince(md.cachedAt) < webFetchCacheTTL {
+            rawTitle = md.title
+            rawMarkdown = md.markdown
+            print("[WebOrchestrator] web_fetch markdown cache hit url=\(normalizedURL)")
+        } else {
+            let (title, content) = try await fetchWithJinaReader(originalURL: url, includeImageCaptions: true)
+            rawTitle = title
+            rawMarkdown = content
+            markdownCache[normalizedURL] = CachedMarkdown(title: title, markdown: content, cachedAt: Date())
+        }
+
+        let links = extractLinksFromMarkdown(rawMarkdown)
+        let images = extractImageReferences(rawMarkdown)
+
+        // Pre-compression truncation: cap the markdown fed to the small model at ~100 KB.
+        let preCap = 100_000
+        let inputMarkdown: String
+        if rawMarkdown.utf8.count > preCap {
+            // Truncate by UTF-16 index approximation to avoid slicing mid-grapheme.
+            let endIdx = rawMarkdown.index(rawMarkdown.startIndex, offsetBy: min(rawMarkdown.count, 90_000))
+            inputMarkdown = String(rawMarkdown[..<endIdx]) + "\n\n[...truncated; page exceeded 100KB...]"
+        } else {
+            inputMarkdown = rawMarkdown
+        }
+
+        // Compress with the webExcerpts small/fast model (gpt-oss-20b).
+        let excerpt: String
+        do {
+            excerpt = try await compressPageForPrompt(
+                pageURL: url,
+                pageTitle: rawTitle,
+                markdown: inputMarkdown,
+                prompt: trimmedPrompt
+            )
+        } catch {
+            print("[WebOrchestrator] web_fetch compression failed, returning truncated raw markdown: \(error.localizedDescription)")
+            // Fall back to truncated raw markdown so the agent still gets something.
+            excerpt = String(inputMarkdown.prefix(30_000))
+        }
+
+        // Post-compression hard cap.
+        let postCap = 30_000
+        let finalContent: String
+        if excerpt.count > postCap {
+            let endIdx = excerpt.index(excerpt.startIndex, offsetBy: postCap)
+            finalContent = String(excerpt[..<endIdx]) + "\n\n[...truncated; response exceeded 30KB...]"
+        } else {
+            finalContent = excerpt
+        }
+
+        let result = JinaReaderResult(
             url: url,
-            title: title,
-            content: content,
+            title: rawTitle,
+            content: finalContent,
             links: links,
             images: images,
-            downloadedImages: [] // Images are downloaded separately via view_page_image tool
+            downloadedImages: []
+        )
+
+        excerptCache[excerptKey] = CachedExcerpt(payload: result, cachedAt: Date())
+        return result
+    }
+
+    /// Small-model compression of a page's markdown against the user's prompt.
+    /// Mirrors Claude Code's WebFetch small-model stage.
+    private func compressPageForPrompt(
+        pageURL: String,
+        pageTitle: String?,
+        markdown: String,
+        prompt: String
+    ) async throws -> String {
+        let titleLine = pageTitle.map { "Page title: \($0)\n" } ?? ""
+        let systemMsg = """
+        You extract information from a web page to answer the user's specific prompt.
+
+        Rules:
+        - Use ONLY the page content below; do not invent facts.
+        - Quote verbatim when the user asks for exact text, code, commands, or steps.
+        - Preserve code blocks, command examples, tables, and numeric values exactly.
+        - Organise the output with short headings or bullets when helpful.
+        - If the page does not answer the prompt, say so plainly and mention the closest related content (1–2 sentences).
+        - Keep the response under ~25,000 characters. Prefer density over prose.
+        - Do not add conversational preambles ("Sure", "Here's what I found"). Start with the answer.
+        """
+        let userMsg = """
+        URL: \(pageURL)
+        \(titleLine)User prompt: \(prompt)
+
+        --- PAGE CONTENT (markdown) ---
+        \(markdown)
+        --- END PAGE CONTENT ---
+
+        Extract the information relevant to the user prompt, following the rules above.
+        """
+        let messages = [
+            ORChatReq.Msg(role: "system", content: systemMsg),
+            ORChatReq.Msg(role: "user", content: userMsg)
+        ]
+        return try await callOpenRouter(
+            stage: "web_fetch_compression",
+            mode: .webSearch,
+            model: ORModel.webExcerpts,
+            messages: messages,
+            maxTokens: 8_000,
+            reasoning: makeReasoning(.low),
+            provider: nil,
+            executionID: UUID()
         )
     }
     
-    /// Download a single image from URL - used by view_page_image tool
+    /// Download a single image from URL - used by web_fetch_image tool
     func downloadImage(url: String, caption: String = "") async -> DownloadedImage? {
         guard let imageUrl = URL(string: url) else { return nil }
         
