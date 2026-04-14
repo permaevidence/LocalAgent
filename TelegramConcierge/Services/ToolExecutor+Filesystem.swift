@@ -18,7 +18,8 @@ extension ToolExecutor {
         }
         let offset = args.int("offset")
         let limit = args.int("limit")
-        let result = await FilesystemTools.shared.readFile(path: path, offset: offset, limit: limit)
+        let pages = args.string("pages")
+        let result = await FilesystemTools.shared.readFile(path: path, offset: offset, limit: limit, pages: pages)
         return ToolResultMessage(toolCallId: call.id, content: result.content, fileAttachments: result.attachments)
     }
 

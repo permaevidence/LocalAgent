@@ -1219,12 +1219,13 @@ enum AvailableTools {
     static let readFile = ToolDefinition(
         function: FunctionDefinition(
             name: "read_file",
-            description: "Read a file by absolute path. Text files return up to 2000 lines / 50 KB per call with 1-indexed line numbers prepended in the format '  42→content'. Use offset and limit to page through larger files. IMPORTANT: when passing content back to edit_file as old_string, DO NOT include the line-number prefix — it is display-only, not part of the file. Image and PDF files are attached as multimodal content — they become visible to you as a user-role attachment on the next turn (you do NOT see them inside the tool result). Use list_recent_files or glob/list_dir to discover paths first.",
+            description: "Read a file by absolute path. Text files return up to 2000 lines / 50 KB per call with 1-indexed line numbers prepended in the format '  42→content'. Use offset and limit to page through larger files. IMPORTANT: when passing content back to edit_file as old_string, DO NOT include the line-number prefix — it is display-only, not part of the file. Image files are attached as multimodal content — they become visible to you as a user-role attachment on the next turn (you do NOT see them inside the tool result). For PDFs: small PDFs (≤10 pages) are attached whole. For larger PDFs, the 'pages' parameter is REQUIRED — specify a range like '1-5', '3', or '10-20' (max 20 pages per call); call again with a different range to page through. Use list_recent_files or glob/list_dir to discover paths first.",
             parameters: FunctionParameters(
                 properties: [
                     "path": ParameterProperty(type: "string", description: "Absolute path (starts with '/' or '~'). Relative paths are rejected."),
                     "offset": ParameterProperty(type: "integer", description: "Optional 1-indexed starting line for text files. Omit to start from line 1."),
-                    "limit": ParameterProperty(type: "integer", description: "Optional line limit (default 2000, also capped at 50 KB of output).")
+                    "limit": ParameterProperty(type: "integer", description: "Optional line limit (default 2000, also capped at 50 KB of output)."),
+                    "pages": ParameterProperty(type: "string", description: "PDF only. Page range like '1-5', '3', or '10-20'. Required when the PDF has more than 10 pages. Max 20 pages per call. Ignored for non-PDF files.")
                 ],
                 required: ["path"]
             )

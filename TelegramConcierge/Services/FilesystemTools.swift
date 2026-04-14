@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import PDFKit
 
 /// Core filesystem tool implementations: read_file, write_file, edit_file.
 /// Apply_patch lives in its own file (`ApplyPatch.swift`).
@@ -28,9 +29,15 @@ actor FilesystemTools {
 
     // MARK: - read_file
 
+    // PDF containment (matches Claude Code's Read tool).
+    static let pdfPagesRequiredThreshold = 10
+    static let pdfMaxPagesPerCall = 20
+
     /// Read a text file (paginated) OR load an image/PDF as a FileAttachment for
     /// multimodal injection. Always snapshots FileTime on success.
-    func readFile(path rawPath: String, offset: Int? = nil, limit: Int? = nil) async -> ReadResult {
+    /// `pages` (for PDFs only): range string like "1-5", "3", or "10-20". Required when the
+    /// PDF has more than 10 pages; capped at 20 pages per call.
+    func readFile(path rawPath: String, offset: Int? = nil, limit: Int? = nil, pages: String? = nil) async -> ReadResult {
         let path = Self.normalizePath(rawPath)
 
         guard Self.isAbsolute(path) else {
@@ -48,8 +55,8 @@ actor FilesystemTools {
 
         let mime = Self.mimeType(forPath: path)
 
-        // Images and PDFs → multimodal attachment, return minimal text so the model gets the image on the next turn.
-        if Self.isMultimodalMime(mime) {
+        // Images → multimodal attachment, whole file.
+        if mime.hasPrefix("image/") && mime != "image/svg+xml" {
             do {
                 let data = try Data(contentsOf: URL(fileURLWithPath: path))
                 let filename = (path as NSString).lastPathComponent
@@ -60,12 +67,17 @@ actor FilesystemTools {
                     "path": path,
                     "mime_type": mime,
                     "size_bytes": data.count,
-                    "message": "Image/PDF attached. It will be visible to you on the next turn as a user-role multimodal message."
+                    "message": "Image attached. It will be visible to you on the next turn as a user-role multimodal message."
                 ]
                 return ReadResult(content: jsonString(summary), attachments: [attachment])
             } catch {
                 return ReadResult(content: jsonError("failed to read \(path): \(error.localizedDescription)"), attachments: [])
             }
+        }
+
+        // PDFs → enforce page-range caps, slice if needed.
+        if mime == "application/pdf" {
+            return await Self.readPDF(path: path, pages: pages)
         }
 
         // Text path. Reject other binaries.
@@ -299,6 +311,121 @@ actor FilesystemTools {
     static func isMultimodalMime(_ mime: String) -> Bool {
         mime.hasPrefix("image/") && mime != "image/svg+xml"
             || mime == "application/pdf"
+    }
+
+    // MARK: - PDF page-range handling (parity with Claude Code Read)
+
+    /// Load a PDF, optionally slice to a page range, and return a FileAttachment.
+    /// - PDFs with <= `pdfPagesRequiredThreshold` pages: returned whole when `pages` is omitted.
+    /// - PDFs with more pages: `pages` is REQUIRED. Missing → error telling the agent the page count
+    ///   and requiring a range.
+    /// - `pages` always capped at `pdfMaxPagesPerCall` pages per call.
+    static func readPDF(path: String, pages: String?) async -> ReadResult {
+        func err(_ msg: String) -> ReadResult {
+            ReadResult(content: "{\"error\": \(jsonLiteral(msg))}", attachments: [])
+        }
+        guard let doc = PDFDocument(url: URL(fileURLWithPath: path)) else {
+            return err("failed to open PDF: \(path)")
+        }
+        let totalPages = doc.pageCount
+        guard totalPages > 0 else {
+            return err("PDF \(path) has zero pages.")
+        }
+
+        // Determine which pages to include.
+        let requestedRange: ClosedRange<Int>
+        if let p = pages?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+            guard let parsed = parsePageRange(p, totalPages: totalPages) else {
+                return err("invalid pages value '\(p)'. Use formats like '3', '1-5', or '10-20'. PDF has \(totalPages) pages.")
+            }
+            requestedRange = parsed
+        } else if totalPages > pdfPagesRequiredThreshold {
+            return err("PDF \(path) has \(totalPages) pages — too large to read in one call. Specify a page range via the 'pages' parameter (e.g. pages=\"1-5\" or pages=\"10-20\"). Max \(pdfMaxPagesPerCall) pages per call.")
+        } else {
+            requestedRange = 1...totalPages
+        }
+
+        let spanned = requestedRange.upperBound - requestedRange.lowerBound + 1
+        guard spanned <= pdfMaxPagesPerCall else {
+            return err("page range '\(pages ?? "")' spans \(spanned) pages. Max \(pdfMaxPagesPerCall) pages per call.")
+        }
+
+        // Build a sliced PDF containing only the requested pages.
+        let slicedData: Data
+        let slicedPageCount: Int
+        if requestedRange.lowerBound == 1 && requestedRange.upperBound == totalPages {
+            // Whole document — return the original bytes.
+            do {
+                slicedData = try Data(contentsOf: URL(fileURLWithPath: path))
+                slicedPageCount = totalPages
+            } catch {
+                return err("failed to load PDF bytes: \(error.localizedDescription)")
+            }
+        } else {
+            let sliced = PDFDocument()
+            var idx = 0
+            for pageNum in requestedRange {
+                // PDFKit uses 0-indexed page numbers.
+                if let page = doc.page(at: pageNum - 1) {
+                    sliced.insert(page, at: idx)
+                    idx += 1
+                }
+            }
+            guard let data = sliced.dataRepresentation() else {
+                return err("failed to serialize sliced PDF for range \(requestedRange.lowerBound)-\(requestedRange.upperBound).")
+            }
+            slicedData = data
+            slicedPageCount = idx
+        }
+
+        await FileTimeTracker.shared.recordRead(path: path)
+        let filename = (path as NSString).lastPathComponent
+        let attachment = FileAttachment(data: slicedData, mimeType: "application/pdf", filename: filename)
+        let summary: [String: Any] = [
+            "success": true,
+            "path": path,
+            "mime_type": "application/pdf",
+            "total_pages": totalPages,
+            "pages_returned": slicedPageCount,
+            "page_range": "\(requestedRange.lowerBound)-\(requestedRange.upperBound)",
+            "size_bytes": slicedData.count,
+            "message": "PDF pages \(requestedRange.lowerBound)–\(requestedRange.upperBound) of \(totalPages) attached. They will be visible to you on the next turn as a user-role multimodal message."
+        ]
+        return ReadResult(content: jsonStringStatic(summary), attachments: [attachment])
+    }
+
+    /// Parse "3", "1-5", "10-20" → ClosedRange<Int> clamped to [1, totalPages].
+    /// Returns nil on malformed input or ranges outside [1, totalPages].
+    static func parsePageRange(_ raw: String, totalPages: Int) -> ClosedRange<Int>? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty { return nil }
+        if let single = Int(s) {
+            guard single >= 1, single <= totalPages else { return nil }
+            return single...single
+        }
+        let parts = s.split(separator: "-", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, let lo = Int(parts[0]), let hi = Int(parts[1]) else { return nil }
+        guard lo >= 1, hi >= lo, lo <= totalPages else { return nil }
+        let clampedHi = min(hi, totalPages)
+        return lo...clampedHi
+    }
+
+    private static func jsonLiteral(_ s: String) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: [s], options: []),
+           let str = String(data: data, encoding: .utf8) {
+            // Strip the surrounding brackets to get just the quoted+escaped string.
+            let trimmed = str.dropFirst().dropLast()
+            return String(trimmed)
+        }
+        return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
+    }
+
+    private static func jsonStringStatic(_ dict: [String: Any]) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode response\"}"
     }
 
     /// Heuristic: if mime is known text-ish, treat as text. Otherwise check for null bytes.
