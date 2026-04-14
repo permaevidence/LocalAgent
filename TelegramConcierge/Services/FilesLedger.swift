@@ -50,9 +50,20 @@ actor FilesLedger {
             if let description, !description.isEmpty {
                 existing.description = description
             }
-            // Promote origin: `edited` overrides incoming origins once the agent has touched it,
-            // but an inbound origin (telegram/email/download) should not be overwritten by a later `edited`.
-            // Actually: keep whichever origin is most specific. Inbound stays inbound.
+            // Origin update policy:
+            //  - Inbound origins (.telegram / .email / .download) are sticky. They
+            //    record how the file ENTERED our system and shouldn't be overwritten
+            //    by a later edit.
+            //  - Write-type origins (.edited / .generated) reflect the MOST RECENT
+            //    agent action on the file. A file first generated and later modified
+            //    should now show as .edited so the per-turn diff buckets it under
+            //    "Edited files" rather than "Generated files".
+            switch existing.origin {
+            case .telegram, .email, .download:
+                break  // inbound provenance sticks
+            case .edited, .generated:
+                existing.origin = origin
+            }
             entries[path] = existing
         } else {
             entries[path] = Entry(
