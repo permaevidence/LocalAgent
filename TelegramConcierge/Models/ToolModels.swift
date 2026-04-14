@@ -974,225 +974,8 @@ enum AvailableTools {
         )
     )
     
-    // MARK: - Gated Deployment/Database Tools
-    
-    static let showProjectDeploymentTools = ToolDefinition(
-        function: FunctionDefinition(
-            name: "show_project_deployment_tools",
-            description: "Reveal advanced deployment/database tools for the current turn only. Call this BEFORE trying to deploy to Vercel or provision/sync project databases with InstantDB. Once called, the gated tools remain visible for the rest of this turn. After unlocking, if reusing an existing project for deployment/database work, call view_project_deployment_history once for that project before the first deployment/database tool call in the turn.",
-            parameters: FunctionParameters(
-                properties: [:],
-                required: []
-            )
-        )
-    )
+    // MARK: - (deployment/database tools removed — agent uses bash + run_claude_code instead)
 
-    static let viewProjectDeploymentHistory = ToolDefinition(
-        function: FunctionDefinition(
-            name: "view_project_deployment_history",
-            description: "View recent deployment/database history for a specific project. Use this once per turn before the first deployment/database tool call whenever you are reusing an existing project_id so the coordinator can review prior Vercel CLI and InstantDB CLI activity. Do not call it repeatedly in the same turn for the same project unless the history load failed.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-    
-    static let provisionProjectDatabase = ToolDefinition(
-        function: FunctionDefinition(
-            name: "provision_project_database",
-            description: "Provision a project database (currently optimized for Instant) and persist project database metadata. Uses Instant CLI in non-interactive mode with an API token from settings or instant_token argument. Reuses an already-linked app by default unless force_reprovision=true. If reusing an existing project for deployment/database work, call view_project_deployment_history once earlier in the turn before this tool.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "provider": ParameterProperty(
-                        type: "string",
-                        description: "Database provider. Supported: 'instantdb' (default).",
-                        enumValues: ["instantdb"]
-                    ),
-                    "environment": ParameterProperty(
-                        type: "string",
-                        description: "Optional database environment. Use 'test' for preview/testing DB or 'prod' for production DB. Default: existing legacy project link.",
-                        enumValues: ["test", "prod"]
-                    ),
-                    "database_title": ParameterProperty(
-                        type: "string",
-                        description: "Optional human title for the database app. Defaults to project name."
-                    ),
-                    "instant_token": ParameterProperty(
-                        type: "string",
-                        description: "Optional Instant CLI auth token override. If omitted, uses Settings token."
-                    ),
-                    "use_temporary_app": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, create a temporary Instant app (ephemeral; no long-term token needed). Default false."
-                    ),
-                    "force_reprovision": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, create a new Instant app even when this project already has a saved app_id. Default false."
-                    ),
-                    "timeout_seconds": ParameterProperty(
-                        type: "integer",
-                        description: "Optional timeout in seconds for provisioning command. Default 120."
-                    ),
-                    "max_output_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max output characters returned from stdout/stderr. Default 12000."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-    
-    static let pushProjectDatabaseSchema = ToolDefinition(
-        function: FunctionDefinition(
-            name: "push_project_database_schema",
-            description: "Apply/push project database schema to the provisioned database (currently optimized for Instant). Requires project database metadata from provision_project_database. If reusing an existing project for deployment/database work, call view_project_deployment_history once earlier in the turn before this tool.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "provider": ParameterProperty(
-                        type: "string",
-                        description: "Database provider. Supported: 'instantdb' (default).",
-                        enumValues: ["instantdb"]
-                    ),
-                    "environment": ParameterProperty(
-                        type: "string",
-                        description: "Optional database environment to push schema to: 'test' or 'prod'. Default: existing legacy project link.",
-                        enumValues: ["test", "prod"]
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional working directory inside the project where schema/perms files live. Default '.'."
-                    ),
-                    "schema_file_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional schema file path for Instant CLI via INSTANT_SCHEMA_FILE_PATH."
-                    ),
-                    "perms_file_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional perms file path for Instant CLI via INSTANT_PERMS_FILE_PATH."
-                    ),
-                    "instant_token": ParameterProperty(
-                        type: "string",
-                        description: "Optional Instant CLI auth token override. If omitted, uses saved project admin token, then Settings token."
-                    ),
-                    "timeout_seconds": ParameterProperty(
-                        type: "integer",
-                        description: "Optional timeout in seconds. Default 120."
-                    ),
-                    "max_output_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max output characters returned from stdout/stderr. Default 12000."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-    
-    static let syncProjectDatabaseEnvToVercel = ToolDefinition(
-        function: FunctionDefinition(
-            name: "sync_project_database_env_to_vercel",
-            description: "Upsert project database environment variables to Vercel using the Vercel REST API. Can use saved database metadata/env values and optional overrides. If reusing an existing project for deployment/database work, call view_project_deployment_history once earlier in the turn before this tool.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "environment": ParameterProperty(
-                        type: "string",
-                        description: "Optional database environment source: 'test' or 'prod'. When set and targets are omitted, defaults are test->development+preview, prod->production.",
-                        enumValues: ["test", "prod"]
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional folder inside the project where .vercel/project.json is located. Default '.'."
-                    ),
-                    "include_saved_database_env": ParameterProperty(
-                        type: "boolean",
-                        description: "If true (default), include env vars inferred from saved database metadata."
-                    ),
-                    "include_admin_token": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, include sensitive admin token env vars when available. Default false."
-                    ),
-                    "env_vars": ParameterProperty(
-                        type: "string",
-                        description: "Optional JSON object string of additional env vars to upsert. Example: {\"FOO\":\"bar\"}."
-                    ),
-                    "targets": ParameterProperty(
-                        type: "string",
-                        description: "Optional target environments as JSON array string or CSV. Defaults depend on environment: test->development,preview; prod->production; otherwise development,preview,production."
-                    ),
-                    "project_name": ParameterProperty(
-                        type: "string",
-                        description: "Optional Vercel project id/name override when no saved or local Vercel link exists. Passing this once lets the app persist the mapping for later runs."
-                    ),
-                    "team_id": ParameterProperty(
-                        type: "string",
-                        description: "Optional Vercel team ID override for API requests (e.g., team_xxx)."
-                    ),
-                    "timeout_seconds": ParameterProperty(
-                        type: "integer",
-                        description: "Optional HTTP timeout per request in seconds. Default 30."
-                    ),
-                    "max_output_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max characters for debug output in response. Default 12000."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-    
-    static let generateProjectMCPConfig = ToolDefinition(
-        function: FunctionDefinition(
-            name: "generate_project_mcp_config",
-            description: "Generate or update project MCP configuration (.mcp.json) for database tooling. Useful as optional Phase 2 after direct provisioning/env sync works. If reusing an existing project for deployment/database work, call view_project_deployment_history once earlier in the turn before this tool.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "provider": ParameterProperty(
-                        type: "string",
-                        description: "MCP provider target. Supported: 'instantdb' (default).",
-                        enumValues: ["instantdb"]
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional folder inside project to write config. Default '.'."
-                    ),
-                    "mode": ParameterProperty(
-                        type: "string",
-                        description: "MCP mode: 'remote' (default, https endpoint) or 'local' (command-based MCP server).",
-                        enumValues: ["remote", "local"]
-                    ),
-                    "output_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional output filename/path inside relative_path. Default '.mcp.json'."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
 
     // MARK: - Project Workspace Tools
 
@@ -1427,51 +1210,6 @@ enum AvailableTools {
             )
         )
     )
-    
-    static let deployProjectToVercel = ToolDefinition(
-        function: FunctionDefinition(
-            name: "deploy_project_to_vercel",
-            description: "Deploy a project workspace (or subfolder) to Vercel. Use when the user asks to publish, deploy, or put a website/app online. By default create a preview deployment; set production=true only when user explicitly asks for production/live deployment. If reusing an existing project for deployment/database work, call view_project_deployment_history once earlier in the turn before this tool.",
-            parameters: FunctionParameters(
-                properties: [
-                    "project_id": ParameterProperty(
-                        type: "string",
-                        description: "Project ID from manage_projects action='list'."
-                    ),
-                    "relative_path": ParameterProperty(
-                        type: "string",
-                        description: "Optional folder inside the project to deploy (default '.'). Use this when the app lives in a subdirectory."
-                    ),
-                    "production": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, deploy to production. If false or omitted, deploy a preview build."
-                    ),
-                    "project_name": ParameterProperty(
-                        type: "string",
-                        description: "Optional Vercel project id/name to link before deploy when the workspace has no saved Vercel mapping yet. Passing this once lets later deploys reuse the same project."
-                    ),
-                    "team_scope": ParameterProperty(
-                        type: "string",
-                        description: "Optional Vercel team/account scope (slug). Defaults to the configured value in Settings if present."
-                    ),
-                    "force_relink": ParameterProperty(
-                        type: "boolean",
-                        description: "If true, re-run `vercel link` even if .vercel/project.json already exists in the target folder."
-                    ),
-                    "timeout_seconds": ParameterProperty(
-                        type: "integer",
-                        description: "Optional timeout for each CLI command (link/deploy). Defaults to configured Settings value."
-                    ),
-                    "max_output_chars": ParameterProperty(
-                        type: "integer",
-                        description: "Optional max output characters to return from stdout/stderr. Default 12000."
-                    )
-                ],
-                required: ["project_id"]
-            )
-        )
-    )
-    
     // MARK: - Filesystem Tools (new surface)
 
     static let readFile = ToolDefinition(
@@ -1720,15 +1458,11 @@ enum AvailableTools {
     /// Removed (superseded by filesystemTools): list_documents, read_document, browse_project,
     /// read_project_file, add_project_files, generate_document.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, showProjectDeploymentTools, manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
+        filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, manageProjects, viewProjectHistory, runClaudeCode, sendProjectResult]
     }
-    
-    static var gatedProjectDeploymentTools: [ToolDefinition] {
-        [viewProjectDeploymentHistory, deployProjectToVercel, provisionProjectDatabase, pushProjectDatabaseSchema, syncProjectDatabaseEnvToVercel, generateProjectMCPConfig]
-    }
-    
+
     /// All available tools - dynamically selects email tools and optionally web search
-    static func all(includeWebSearch: Bool, includeProjectDeploymentTools: Bool = false) -> [ToolDefinition] {
+    static func all(includeWebSearch: Bool) -> [ToolDefinition] {
         let emailMode = KeychainHelper.load(key: KeychainHelper.emailModeKey) ?? "imap"
         let emailTools = emailMode == "gmail" ? gmailEmailTools : imapEmailTools
         let disableLegacyDocumentGeneration =
@@ -1737,15 +1471,11 @@ enum AvailableTools {
             .lowercased() == "true"
         let webTools = includeWebSearch ? [webSearch, deepResearch, viewUrl, viewPageImage] : []
         var coreTools = webTools + coreToolsWithoutWebSearch
-        
+
         if disableLegacyDocumentGeneration {
             coreTools.removeAll { $0.function.name == "generate_document" }
         }
-        
-        if includeProjectDeploymentTools {
-            coreTools += gatedProjectDeploymentTools
-        }
-        
+
         return coreTools + emailTools
     }
     

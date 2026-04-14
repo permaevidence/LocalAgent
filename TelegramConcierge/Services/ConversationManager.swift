@@ -73,7 +73,6 @@ class ConversationManager: ObservableObject {
     private struct ProjectToolTurnState {
         var createdProjectIDs: Set<String> = []
         var projectsWithSuccessfulHistory: Set<String> = []
-        var projectsWithSuccessfulDeploymentHistory: Set<String> = []
     }
     
     private let appFolder: URL = {
@@ -1188,8 +1187,7 @@ class ConversationManager: ObservableObject {
         
         // Check if tools are available
         let serperKey = KeychainHelper.load(key: KeychainHelper.serperApiKeyKey) ?? ""
-        var deploymentToolsUnlockedForTurn = false
-        
+
         // Fetch all context data in PARALLEL for performance
         let contextStartTime = Date()
         async let calendarContextTask = CalendarService.shared.getCalendarContextForSystemPrompt()
@@ -1305,13 +1303,9 @@ class ConversationManager: ObservableObject {
             
             // Call LLM (with tools available for chaining)
             let llmStartTime = Date()
-            var toolsForRound = AvailableTools.all(
-                includeWebSearch: !serperKey.isEmpty,
-                includeProjectDeploymentTools: deploymentToolsUnlockedForTurn
+            let toolsForRound = AvailableTools.all(
+                includeWebSearch: !serperKey.isEmpty
             )
-            if deploymentToolsUnlockedForTurn {
-                toolsForRound.removeAll { $0.function.name == "show_project_deployment_tools" }
-            }
             let allowedToolNames = Set(toolsForRound.map { $0.function.name })
             let response = try await openRouterService.generateResponse(
                 messages: messagesForLLM,
@@ -1324,7 +1318,6 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries.isEmpty ? nil : chunkSummaries,
                 totalChunkCount: totalChunkCount,
                 currentUserMessageId: currentUserMessageId,
-                deploymentToolsUnlockedForTurn: deploymentToolsUnlockedForTurn,
                 turnStartDate: systemPromptDate
             )
             print("[TIMING] LLM API call took: \(String(format: "%.2f", Date().timeIntervalSince(llmStartTime)))s")
@@ -1384,7 +1377,6 @@ class ConversationManager: ObservableObject {
                 let (executableCalls, blockedResults) = partitionToolCallsForExecution(
                     calls,
                     allowedToolNames: allowedToolNames,
-                    deploymentToolsUnlockedForTurn: deploymentToolsUnlockedForTurn,
                     priorInteractions: toolInteractions,
                     historicalMessages: messagesForLLM
                 )
@@ -1443,10 +1435,6 @@ class ConversationManager: ObservableObject {
                 for i in 0..<orderedToolResults.count {
                     let existingContent = orderedToolResults[i].content
                     orderedToolResults[i].content = existingContent + "\n\n[System Note: Current time is now \(currentRealTime)]"
-                }
-                
-                if executableCalls.contains(where: { $0.function.name == "show_project_deployment_tools" }) {
-                    deploymentToolsUnlockedForTurn = true
                 }
                 
                 // Add this interaction to the chain
@@ -1522,7 +1510,6 @@ class ConversationManager: ObservableObject {
             chunkSummaries: chunkSummaries.isEmpty ? nil : chunkSummaries,
             totalChunkCount: totalChunkCount,
             currentUserMessageId: currentUserMessageId,
-            deploymentToolsUnlockedForTurn: deploymentToolsUnlockedForTurn,
             turnStartDate: systemPromptDate,
             finalResponseInstruction: finalResponseInstruction
         )
@@ -1878,7 +1865,7 @@ class ConversationManager: ObservableObject {
     
     private func extractAccessedProjects(from interactions: [ToolInteraction]) -> [String] {
         var projectIds = Set<String>()
-        let projectTools = Set(["manage_projects", "browse_project", "read_project_file", "add_project_files", "view_project_history", "view_project_deployment_history", "run_claude_code", "send_project_result"])
+        let projectTools = Set(["manage_projects", "browse_project", "read_project_file", "add_project_files", "view_project_history", "run_claude_code", "send_project_result"])
         
         for interaction in interactions {
             for call in interaction.assistantMessage.toolCalls {
@@ -1908,23 +1895,8 @@ class ConversationManager: ObservableObject {
         return Array(projectIds).sorted()
     }
     
-    private func blockedToolResult(for call: ToolCall, deploymentToolsUnlockedForTurn: Bool) -> ToolResultMessage {
-        let gatedToolNames = Set(AvailableTools.gatedProjectDeploymentTools.map { $0.function.name })
-        let requestedTool = call.function.name
-        
-        let errorMessage: String
-        if gatedToolNames.contains(requestedTool) && !deploymentToolsUnlockedForTurn {
-            errorMessage = "Tool '\(requestedTool)' is currently gated. Call show_project_deployment_tools first to unlock deployment/database tools for this turn."
-        } else if requestedTool == "show_project_deployment_tools" && deploymentToolsUnlockedForTurn {
-            errorMessage = "Tool 'show_project_deployment_tools' was already used in this turn and is no longer available. Continue with the unlocked deployment/database tools."
-        } else {
-            errorMessage = "Tool '\(requestedTool)' is not available in this turn."
-        }
-        
-        let escapedError = errorMessage
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return ToolResultMessage(toolCallId: call.id, content: #"{"error":"\#(escapedError)"}"#)
+    private func blockedToolResult(for call: ToolCall) -> ToolResultMessage {
+        blockedToolResult(for: call, errorMessage: "Tool '\(call.function.name)' is not available in this turn.")
     }
 
     private func blockedToolResult(for call: ToolCall, errorMessage: String) -> ToolResultMessage {
@@ -1937,28 +1909,17 @@ class ConversationManager: ObservableObject {
     private func partitionToolCallsForExecution(
         _ calls: [ToolCall],
         allowedToolNames: Set<String>,
-        deploymentToolsUnlockedForTurn: Bool,
         priorInteractions: [ToolInteraction],
         historicalMessages: [Message] = []
     ) -> (executableCalls: [ToolCall], blockedResults: [ToolResultMessage]) {
         let turnState = buildProjectToolTurnState(from: priorInteractions, historicalMessages: historicalMessages)
-        let deploymentToolsRequiringHistory = Set([
-            "deploy_project_to_vercel",
-            "provision_project_database",
-            "push_project_database_schema",
-            "sync_project_database_env_to_vercel",
-            "generate_project_mcp_config"
-        ])
         var executableCalls: [ToolCall] = []
         var blockedResults: [ToolResultMessage] = []
         var historyRequestedThisRound = Set<String>()
-        var deploymentHistoryRequestedThisRound = Set<String>()
 
         for call in calls {
             guard allowedToolNames.contains(call.function.name) else {
-                blockedResults.append(
-                    blockedToolResult(for: call, deploymentToolsUnlockedForTurn: deploymentToolsUnlockedForTurn)
-                )
+                blockedResults.append(blockedToolResult(for: call))
                 continue
             }
 
@@ -1988,31 +1949,6 @@ class ConversationManager: ObservableObject {
                     executableCalls.append(call)
                 }
 
-            case "view_project_deployment_history":
-                guard let projectID = projectIDFromArguments(of: call) else {
-                    executableCalls.append(call)
-                    continue
-                }
-
-                if turnState.projectsWithSuccessfulDeploymentHistory.contains(projectID) {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "view_project_deployment_history was already loaded successfully for project '\(projectID)' earlier in this turn. Reuse that context instead of calling it again."
-                        )
-                    )
-                } else if deploymentHistoryRequestedThisRound.contains(projectID) {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "view_project_deployment_history was already requested for project '\(projectID)' in this round. Call it at most once per turn per project unless a prior history load failed."
-                        )
-                    )
-                } else {
-                    deploymentHistoryRequestedThisRound.insert(projectID)
-                    executableCalls.append(call)
-                }
-
             case "run_claude_code":
                 guard let projectID = projectIDFromArguments(of: call) else {
                     executableCalls.append(call)
@@ -2026,23 +1962,6 @@ class ConversationManager: ObservableObject {
                         blockedToolResult(
                             for: call,
                             errorMessage: "Before reusing existing project '\(projectID)', call view_project_history for that same project_id in an earlier tool round of this turn. After that result is returned, call run_claude_code."
-                        )
-                    )
-                }
-
-            case let toolName where deploymentToolsRequiringHistory.contains(toolName):
-                guard let projectID = projectIDFromArguments(of: call) else {
-                    executableCalls.append(call)
-                    continue
-                }
-
-                if turnState.createdProjectIDs.contains(projectID) || turnState.projectsWithSuccessfulDeploymentHistory.contains(projectID) {
-                    executableCalls.append(call)
-                } else {
-                    blockedResults.append(
-                        blockedToolResult(
-                            for: call,
-                            errorMessage: "Before using \(toolName) on existing project '\(projectID)', call view_project_deployment_history for that same project_id in an earlier tool round of this turn. After that result is returned, retry the deployment/database tool."
                         )
                     )
                 }
@@ -2116,19 +2035,6 @@ class ConversationManager: ObservableObject {
                     state.projectsWithSuccessfulHistory.insert(projectID)
                 }
 
-            case "view_project_deployment_history":
-                guard (resultDictionary["success"] as? Bool) == true else {
-                    continue
-                }
-
-                if let projectID = resultDictionary["projectId"] as? String, !projectID.isEmpty {
-                    state.projectsWithSuccessfulDeploymentHistory.insert(projectID)
-                } else if let projectID = resultDictionary["project_id"] as? String, !projectID.isEmpty {
-                    state.projectsWithSuccessfulDeploymentHistory.insert(projectID)
-                } else if let projectID = projectIDFromArguments(of: call) {
-                    state.projectsWithSuccessfulDeploymentHistory.insert(projectID)
-                }
-
             default:
                 continue
             }
@@ -2190,18 +2096,6 @@ class ConversationManager: ObservableObject {
             return "🔍📅 Searching the web and managing calendar..."
         } else if hasWebSearchOp {
             return "🔍 Searching the web..."
-        } else if toolNames.contains("show_project_deployment_tools") {
-            return "🧰 Enabling deployment and database tools for this turn..."
-        } else if toolNames.contains("view_project_deployment_history") {
-            return "🧰 Reviewing deployment history..."
-        } else if toolNames.contains("provision_project_database") {
-            return "🗄️ Provisioning project database..."
-        } else if toolNames.contains("push_project_database_schema") {
-            return "🧱 Applying project database schema..."
-        } else if toolNames.contains("sync_project_database_env_to_vercel") {
-            return "🔐 Syncing database environment variables to Vercel..."
-        } else if toolNames.contains("generate_project_mcp_config") {
-            return "🧩 Generating MCP configuration..."
         } else if toolNames.contains("run_claude_code") {
             let provider = (KeychainHelper.load(key: KeychainHelper.codeCLIProviderKey) ?? KeychainHelper.defaultCodeCLIProvider)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2218,8 +2112,6 @@ class ConversationManager: ObservableObject {
             return "📁 Managing project workspace..."
         } else if toolNames.contains("send_project_result") {
             return "📤 Sending project result..."
-        } else if toolNames.contains("deploy_project_to_vercel") {
-            return "🚀 Deploying project to Vercel..."
         } else if hasReminderOp {
             return "⏰ Managing reminders..."
         } else if hasCalendarOp {
