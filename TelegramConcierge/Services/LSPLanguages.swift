@@ -19,6 +19,13 @@ struct LSPServerConfig {
     /// `.xcworkspace` etc.), that directory is the root. Walked upward from
     /// the file's parent; falls back to the parent dir if no marker found.
     let workspaceMarkers: [String]
+
+    /// Maximum seconds to wait for publishDiagnostics after a write. Cold
+    /// sourcekit-lsp and rust-analyzer need longer because they index on
+    /// first touch; pylsp and tsserver are generally fast. A clean file
+    /// may wait the full timeout if the server doesn't publish empty
+    /// diagnostics — keep this conservative but not outrageous.
+    let diagnosticsTimeout: TimeInterval
 }
 
 enum LSPLanguages {
@@ -28,39 +35,71 @@ enum LSPLanguages {
             serverID: "sourcekit-lsp",
             executable: "sourcekit-lsp",
             arguments: [],
-            workspaceMarkers: ["Package.swift", ".xcodeproj", ".xcworkspace"]
+            workspaceMarkers: ["Package.swift", ".xcodeproj", ".xcworkspace"],
+            diagnosticsTimeout: 8.0
         ),
         "typescript-language-server": LSPServerConfig(
             serverID: "typescript-language-server",
             executable: "typescript-language-server",
             arguments: ["--stdio"],
-            workspaceMarkers: ["tsconfig.json", "jsconfig.json", "package.json"]
+            workspaceMarkers: ["tsconfig.json", "jsconfig.json", "package.json"],
+            diagnosticsTimeout: 3.0
         ),
         "pylsp": LSPServerConfig(
             serverID: "pylsp",
             executable: "pylsp",
             arguments: [],
-            workspaceMarkers: ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"]
+            workspaceMarkers: ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"],
+            diagnosticsTimeout: 2.0
         ),
         "gopls": LSPServerConfig(
             serverID: "gopls",
             executable: "gopls",
             arguments: [],
-            workspaceMarkers: ["go.mod"]
+            workspaceMarkers: ["go.mod"],
+            diagnosticsTimeout: 5.0
         ),
         "rust-analyzer": LSPServerConfig(
             serverID: "rust-analyzer",
             executable: "rust-analyzer",
             arguments: [],
-            workspaceMarkers: ["Cargo.toml"]
+            workspaceMarkers: ["Cargo.toml"],
+            diagnosticsTimeout: 8.0
         ),
         "vscode-json-languageserver": LSPServerConfig(
             serverID: "vscode-json-languageserver",
             executable: "vscode-json-languageserver",
             arguments: ["--stdio"],
-            workspaceMarkers: []
+            workspaceMarkers: [],
+            diagnosticsTimeout: 1.5
         )
     ]
+
+    /// PATH augmentation for LSP subprocesses. macOS apps launched outside
+    /// a shell inherit a minimal PATH like "/usr/bin:/bin:/usr/sbin:/sbin"
+    /// — that breaks servers like typescript-language-server (needs node),
+    /// pylsp (needs python3), gopls (needs go), rust-analyzer (needs
+    /// cargo/rustc) because their shebangs or runtimes aren't found.
+    /// Prepend the common Homebrew and user-install locations.
+    static func augmentedEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        let extras = [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ].joined(separator: ":")
+        if let existing = env["PATH"], !existing.isEmpty {
+            env["PATH"] = "\(extras):\(existing)"
+        } else {
+            env["PATH"] = extras
+        }
+        return env
+    }
 
     /// Per-extension server assignment.
     static let extensionToServerID: [String: String] = [
