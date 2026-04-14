@@ -956,7 +956,7 @@ actor OpenRouterService {
             request.setValue("Bearer lm-studio", forHTTPHeaderField: "Authorization")
         } else {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("TelegramConcierge/1.0", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
         }
         // LMStudio local inference can be slow for large models

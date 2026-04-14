@@ -1555,14 +1555,14 @@ struct ReadDocumentResult: Codable {
 extension ToolExecutor {
     private var documentsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge/documents", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent/documents", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
 
     private var documentsLastOpenedIndexURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder.appendingPathComponent("documents_last_opened.json")
     }
@@ -2944,7 +2944,7 @@ extension ToolExecutor {
     /// Images directory for loading source images
     private var imagesDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("TelegramConcierge/images", isDirectory: true)
+        return appSupport.appendingPathComponent("LocalAgent/images", isDirectory: true)
     }
     
     func executeGenerateImage(_ call: ToolCall) async -> ToolResultMessage {
@@ -4605,7 +4605,7 @@ extension ToolExecutor {
 
     private var projectsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge/projects", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent/projects", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
@@ -6108,7 +6108,7 @@ extension ToolExecutor {
             request.timeoutInterval = 60
         } else {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("TelegramConcierge/1.0", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
             request.timeoutInterval = 15
         }

@@ -30,7 +30,7 @@ final class ProjectsZipAutoExtractor {
 
     private var projectsDirectory: URL {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge/projects", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent/projects", isDirectory: true)
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }

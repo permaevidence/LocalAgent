@@ -2787,7 +2787,7 @@ struct SettingsView: View {
                 // Create save panel
                 let savePanel = NSSavePanel()
                 savePanel.allowedContentTypes = [.data]
-                savePanel.nameFieldStringValue = "TelegramConcierge_Mind.\(MindExportService.fileExtension)"
+                savePanel.nameFieldStringValue = "LocalAgent_Mind.\(MindExportService.fileExtension)"
                 savePanel.title = "Export Mind"
                 savePanel.message = "Choose where to save your mind backup"
                 
@@ -2880,7 +2880,7 @@ struct SettingsView: View {
             // Create save panel
             let savePanel = NSSavePanel()
             savePanel.allowedContentTypes = [.json]
-            savePanel.nameFieldStringValue = "TelegramConcierge_Calendar.json"
+            savePanel.nameFieldStringValue = "LocalAgent_Calendar.json"
             savePanel.title = "Export Calendar"
             savePanel.message = "Choose where to save your calendar backup"
             
@@ -3113,7 +3113,7 @@ struct SettingsView: View {
             request.timeoutInterval = 300
         } else {
             request.setValue("Bearer \(trimmedOpenRouterAPIKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("TelegramConcierge/1.0", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
             request.timeoutInterval = 120
         }

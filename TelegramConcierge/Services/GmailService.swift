@@ -29,20 +29,20 @@ actor GmailService {
     
     private let gmailCacheURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder.appendingPathComponent("gmailCache.json")
     }()
     
     private let gmailFetchTimeURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
         return folder.appendingPathComponent("gmailFetchTime.txt")
     }()
     
     private let gmailKnownIdsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
         return folder.appendingPathComponent("gmailKnownIds.json")
     }()
     

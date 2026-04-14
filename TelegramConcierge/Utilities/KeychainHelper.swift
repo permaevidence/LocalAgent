@@ -59,7 +59,7 @@ enum KeychainHelper {
         case unexpectedStatus(OSStatus)
     }
     
-    private static let service = "com.telegramconcierge"
+    private static let service = "com.localagent"
     
     static func save(key: String, value: String) throws {
         guard let data = value.data(using: .utf8) else { return }

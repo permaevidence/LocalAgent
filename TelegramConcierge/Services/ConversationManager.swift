@@ -77,7 +77,7 @@ class ConversationManager: ObservableObject {
     
     private let appFolder: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = appSupport.appendingPathComponent("TelegramConcierge", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("LocalAgent", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }()
