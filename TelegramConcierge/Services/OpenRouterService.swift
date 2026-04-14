@@ -372,7 +372,6 @@ actor OpenRouterService {
         chunkSummaries: [ArchivedSummaryItem]? = nil,
         totalChunkCount: Int = 0,
         currentUserMessageId: UUID? = nil,
-        deploymentToolsUnlockedForTurn: Bool = false,
         turnStartDate: Date? = nil,
         finalResponseInstruction: String? = nil
     ) async throws -> LLMResponse {
@@ -483,7 +482,7 @@ actor OpenRouterService {
             - Any topic where fresh information would improve your answer
             - Use web_search for quick/targeted lookup; use deep_research when the user asks for an in-depth, comprehensive, long-form researched answer
             - Project ZIP imports: if user wants edits to an existing project sent as a ZIP, use project tools to import it into a workspace before coding
-            - Deployment/database operations: call show_project_deployment_tools first to unlock advanced deployment/database tools for this turn
+            - Deployment/database operations: use bash (e.g. `vercel deploy --prod`, `npx instant-cli push`) or delegate to run_claude_code — there are no bespoke deployment tools.
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).
             - **Calendar management**: Use manage_calendar with actions 'view', 'add', 'edit', or 'delete' for events on the user's schedule
 
@@ -504,22 +503,7 @@ actor OpenRouterService {
                 - Reuse an existing project only when interacting with that specific past workflow/context. Otherwise, create a new project to give the CLI a clean memory space.
                 - When reusing an existing project, call view_project_history for that same project_id once per turn before the first run_claude_code call (unless the history is already visible from a previous turn's persisted tool interactions). Do not repeat it again in the same turn for the same project unless the history was not loaded successfully.
                 - When sending outputs, you can send_project_result with package_as='zip_project' or if more appropriate send the user individual files.
-                """
-                
-                if deploymentToolsUnlockedForTurn {
-                    prompt += """
-                    - Deployment/database tools are already unlocked for this turn.
-                    - When reusing an existing project for deployment/database work, call view_project_deployment_history once per turn for that same project before the first deployment/database tool call. Do not repeat it again in the same turn for the same project unless the history load failed.
-                    - When the user asks to publish/deploy a website to Vercel, use deploy_project_to_vercel after files are ready. Default to preview deployments unless the user explicitly requests production/live.
-                    - For database-backed app workflows, you can use: provision_project_database -> push_project_database_schema -> sync_project_database_env_to_vercel, then optionally generate_project_mcp_config.
-                    """
-                } else {
-                    prompt += """
-                    - Before any deployment/database operation, call show_project_deployment_tools once to unlock the advanced deployment/database tools for this turn.
-                    """
-                }
-                
-                prompt += """
+                - Deployment and database work happens through bash (e.g. `vercel deploy --prod --yes`, `npx instant-cli@latest push-schema`) or via run_claude_code inside the project. There are no bespoke deployment tools.
                 - For project cleanup requests, instruct the user to open the projects folder in Finder from the main app view and delete folders manually; do not claim deletion was completed by tools.
                 - Do not claim files/code were created unless run_claude_code reports file_changes_detected or returns created_files/modified_files.
                 """
