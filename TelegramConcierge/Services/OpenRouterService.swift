@@ -460,6 +460,16 @@ actor OpenRouterService {
                 prompt += formatChunkSummaries(chunks, totalChunkCount: totalChunkCount)
             }
             
+            // Live summary of any running background work (bash + subagents).
+            // These lines are the dynamic tail of the system prompt; everything
+            // above is stable-per-turn and feeds into the Anthropic cache.
+            if let bashLive = await BackgroundProcessRegistry.shared.liveSummaryText() {
+                prompt += "\n\(bashLive)\n"
+            }
+            if let subagentLive = await SubagentBackgroundRegistry.shared.liveSummary() {
+                prompt += "\n\(subagentLive)\n"
+            }
+
             prompt += """
             You have access to tools that can help you answer questions. Use them when appropriate, especially for:
             - Current events, news, or real-time data

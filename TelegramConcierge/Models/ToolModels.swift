@@ -1250,6 +1250,27 @@ enum AvailableTools {
         )
     }
 
+    static let listRunningSubagents = ToolDefinition(
+        function: FunctionDefinition(
+            name: "list_running_subagents",
+            description: "List every subagent currently running in the background (spawned via Agent with run_in_background='true'). Returns a JSON array of {handle, subagent_type, description, started_at, running_seconds}. Use to check what's in flight before cancelling or to confirm a background spawn is still working.",
+            parameters: FunctionParameters(properties: [:], required: [])
+        )
+    )
+
+    static let cancelSubagent = ToolDefinition(
+        function: FunctionDefinition(
+            name: "cancel_subagent",
+            description: "Cancel a running background subagent by handle. Cancellation is best-effort and takes effect at the subagent's next turn boundary — an in-flight tool call finishes first, then the subagent exits and surfaces a truncated [SUBAGENT COMPLETE] message to you. Returns {cancelled: bool, handle, reason?}.",
+            parameters: FunctionParameters(
+                properties: [
+                    "handle": ParameterProperty(type: "string", description: "The handle returned by Agent(run_in_background='true'), e.g. 'subagent_1'.")
+                ],
+                required: ["handle"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// IMAP email tools (8 tools - used when email_mode is "imap")
@@ -1269,7 +1290,7 @@ enum AvailableTools {
 
     /// Non-email tools that do not depend on web search credentials.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        return filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool]
+        return filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, cancelSubagent]
     }
 
     /// All available tools - dynamically selects email tools and optionally web search

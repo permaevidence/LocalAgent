@@ -363,6 +363,35 @@ actor BackgroundProcessRegistry {
             }
     }
 
+    /// Pre-formatted multi-line string summary suitable for direct injection
+    /// into the system prompt. Returns `nil` when there are no running bash
+    /// processes so the section can be skipped entirely.
+    func liveSummaryText() -> String? {
+        let rows = liveSummary()
+        guard !rows.isEmpty else { return nil }
+        var lines: [String] = ["Running background bash:"]
+        for r in rows {
+            let secs = r.runningFor
+            let dur: String
+            if secs < 60 {
+                dur = "\(secs)s"
+            } else {
+                let m = secs / 60
+                let s = secs % 60
+                dur = "\(m)m \(s)s"
+            }
+            let cmd = r.command.count > 60
+                ? String(r.command.prefix(60)) + "…"
+                : r.command
+            if let desc = r.description, !desc.isEmpty {
+                lines.append("- \(r.id) [\"\(cmd)\", \(desc), running \(dur)]")
+            } else {
+                lines.append("- \(r.id) [\"\(cmd)\", running \(dur)]")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     func kill(handleId: String) async -> Bool {
         guard let e = entries[handleId] else { return false }
         guard e.status == .running else { return false }

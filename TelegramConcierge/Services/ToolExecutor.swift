@@ -143,6 +143,10 @@ actor ToolExecutor {
             content = await executeTodoWrite(call)
         case "Agent":
             content = await executeAgent(call)
+        case "list_running_subagents":
+            content = await executeListRunningSubagents(call)
+        case "cancel_subagent":
+            content = await executeCancelSubagent(call)
         case "lsp_hover":
             content = await executeLSPHover(call)
         case "lsp_definition":
@@ -4212,5 +4216,59 @@ extension ToolExecutor {
         case "true", "yes", "1": return true
         default: return false
         }
+    }
+
+    func executeListRunningSubagents(_ call: ToolCall) async -> String {
+        let handles = await SubagentBackgroundRegistry.shared.runningHandles()
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let rows: [[String: Any]] = handles.map { h in
+            [
+                "handle": h.id,
+                "subagent_type": h.subagentType,
+                "description": h.description,
+                "started_at": iso.string(from: h.startedAt),
+                "running_seconds": Int(now.timeIntervalSince(h.startedAt))
+            ]
+        }
+        let payload: [String: Any] = [
+            "count": rows.count,
+            "running": rows
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode list_running_subagents result\"}"
+    }
+
+    func executeCancelSubagent(_ call: ToolCall) async -> String {
+        struct Args: Decodable { let handle: String? }
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(Args.self, from: data),
+              let handle = args.handle, !handle.isEmpty else {
+            return "{\"cancelled\": false, \"reason\": \"missing 'handle' argument\"}"
+        }
+        let ok = await SubagentBackgroundRegistry.shared.cancel(id: handle)
+        let payload: [String: Any]
+        if ok {
+            payload = [
+                "cancelled": true,
+                "handle": handle,
+                "note": "Cancellation requested. Takes effect at the subagent's next turn boundary — you will still receive a [SUBAGENT COMPLETE] message."
+            ]
+        } else {
+            payload = [
+                "cancelled": false,
+                "handle": handle,
+                "reason": "not found"
+            ]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode cancel_subagent result\"}"
     }
 }

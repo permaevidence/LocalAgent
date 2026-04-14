@@ -154,12 +154,22 @@ actor LSPRegistry {
                 column: max(column - 1, 0),
                 includeDeclaration: includeDeclaration
             )
-            return jsonString([
+            // Cap references at 100 locations — large codebases can return
+            // many hundreds of hits for a common identifier.
+            let cap = 100
+            let total = locs.count
+            let capped = Array(locs.prefix(cap))
+            var payload: [String: Any] = [
                 "success": true,
                 "path": path,
                 "server": serverID,
-                "locations": locs.map(locationPayload)
-            ])
+                "locations": capped.map(locationPayload)
+            ]
+            if total > cap {
+                payload["references_truncated"] = true
+                payload["references_total"] = total
+            }
+            return jsonString(payload)
         } catch {
             return jsonError("references failed: \(error)")
         }

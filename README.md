@@ -55,10 +55,11 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 - Send voice messages in Telegram and the AI receives the transcript
 
 ### 🤖 Native Subagents
-- Spawn isolated-context subagents via the `Agent` tool (`Explore`, `Plan`, `general-purpose`, or user-defined from `~/LocalAgent/agents/*.md`)
-- Project workspace management — create, browse, read, and add files to projects
-- Run the selected CLI provider with prompts and receive structured results
-- Send generated files back via Telegram or email
+- Spawn isolated-context subagents via the `Agent` tool — built-in types `Explore`, `Plan`, `general-purpose`, plus any user-defined agent from `~/LocalAgent/agents/*.md`
+- Foreground or background: pass `run_in_background='true'` to get a handle back immediately; the parent continues working and is notified via a synthetic `[SUBAGENT COMPLETE]` message when the subagent exits
+- Introspect and steer with `list_running_subagents` and `cancel_subagent`
+- `Explore` routes to a separate cheap model (Groq `openai/gpt-oss-120b`) in its own prompt-cache namespace, so a broad codebase sweep never evicts the parent's cached prefix
+- See [`docs/SUBAGENTS_PLAN.md`](docs/SUBAGENTS_PLAN.md) for architecture, YAML frontmatter spec, and end-to-end smoke tests
 
 ### ⚡ macOS Shortcuts
 - List and run any macOS Shortcut from Telegram
@@ -187,11 +188,15 @@ A native macOS AI assistant that lives inside a Telegram bot you control. It rea
 </details>
 
 <details>
-<summary><strong>🤖 Subagents (1 tool)</strong></summary>
+<summary><strong>🤖 Subagents (3 tools)</strong></summary>
 
 | Tool | Description |
 |------|-------------|
-| `Agent` | Spawn a fresh-context subagent (`general-purpose`, `Explore`, `Plan`, or any user-defined type from `~/LocalAgent/agents/*.md`). Subagents have isolated context windows and return a single final message. |
+| `Agent` | Spawn a fresh-context subagent (`general-purpose`, `Explore`, `Plan`, or any user-defined type from `~/LocalAgent/agents/*.md`). Subagents have isolated context windows and return a single final message. Pass `run_in_background='true'` to get a handle immediately and continue; a synthetic `[SUBAGENT COMPLETE]` message arrives when it finishes. |
+| `list_running_subagents` | List every subagent currently running in the background: handle, type, description, started_at, running_seconds. |
+| `cancel_subagent` | Cancel a background subagent by handle. Takes effect at the next turn boundary. |
+
+See [`docs/SUBAGENTS_PLAN.md`](docs/SUBAGENTS_PLAN.md) for the full design.
 
 </details>
 
