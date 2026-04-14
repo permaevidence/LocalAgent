@@ -111,6 +111,8 @@ actor ToolExecutor {
             return try await executeWebSearch(call)
         case "deep_research":
             return try await executeDeepResearch(call)
+        case "Agent":
+            return await executeAgentToolResult(call)
         default:
             break
         }
@@ -141,8 +143,6 @@ actor ToolExecutor {
             content = await executeBashKill(call)
         case "todo_write":
             content = await executeTodoWrite(call)
-        case "Agent":
-            content = await executeAgent(call)
         case "list_running_subagents":
             content = await executeListRunningSubagents(call)
         case "cancel_subagent":
@@ -4150,6 +4150,71 @@ struct SubagentInvocationArguments: Codable {
 }
 
 extension ToolExecutor {
+    /// Wraps executeAgent and surfaces subagent spend on the ToolResultMessage so
+    /// ConversationManager's toolSpendUSD pass rolls it into the parent's cumulative
+    /// daily/monthly counters and spend-limit enforcement. Background spawns still
+    /// return spend = 0 here (the cost lands later via SubagentBackgroundRegistry →
+    /// checkBackgroundSubagentCompletions).
+    func executeAgentToolResult(_ call: ToolCall) async -> ToolResultMessage {
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(SubagentInvocationArguments.self, from: data) else {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid Agent tool arguments\"}")
+        }
+
+        guard let openRouter = openRouterService else {
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Agent tool not configured: OpenRouterService missing. ConversationManager must call toolExecutor.configureOpenRouter(...).\"}")
+        }
+
+        let imagesDir = subagentImagesDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/images", isDirectory: true)
+        let documentsDir = subagentDocumentsDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/documents", isDirectory: true)
+        let parentTools = AvailableTools.all(includeWebSearch: true)
+        let runInBg = Self.parseBoolFlag(args.run_in_background)
+        let invocation = SubagentRunner.Invocation(
+            subagentType: args.subagent_type,
+            description: args.description,
+            taskPrompt: args.prompt,
+            modelOverride: args.model,
+            runInBackground: runInBg
+        )
+
+        if runInBg {
+            let handle = await SubagentBackgroundRegistry.shared.spawn(
+                invocation: invocation,
+                parentTools: parentTools,
+                openRouterService: openRouter,
+                toolExecutor: self,
+                imagesDirectory: imagesDir,
+                documentsDirectory: documentsDir
+            )
+            let payload: [String: Any] = [
+                "background": true,
+                "handle": handle.id,
+                "subagent_type": handle.subagentType,
+                "description": handle.description,
+                "note": "Subagent is running in the background. You will receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Continue with other work or wait."
+            ]
+            let content = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
+                .flatMap { String(data: $0, encoding: .utf8) }
+                ?? "{\"error\": \"Failed to encode background handle response\"}"
+            return ToolResultMessage(toolCallId: call.id, content: content)
+        }
+
+        let runner = SubagentRunner()
+        let result = await runner.run(
+            invocation: invocation,
+            openRouterService: openRouter,
+            toolExecutor: self,
+            imagesDirectory: imagesDir,
+            documentsDirectory: documentsDir,
+            parentTools: parentTools
+        )
+        return ToolResultMessage(
+            toolCallId: call.id,
+            content: result.asJSON(),
+            spendUSD: result.spendUSD > 0 ? result.spendUSD : nil
+        )
+    }
+
     func executeAgent(_ call: ToolCall) async -> String {
         guard let data = call.function.arguments.data(using: .utf8),
               let args = try? JSONDecoder().decode(SubagentInvocationArguments.self, from: data) else {

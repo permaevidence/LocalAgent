@@ -2438,6 +2438,15 @@ class ConversationManager: ObservableObject {
                 : completion.result.filesTouched.joined(separator: ", ")
             let spendStr = String(format: "%.4f", completion.result.spendUSD)
 
+            // Persist background subagent spend to the authoritative daily/monthly
+            // counters in Keychain so it counts toward the user-configured spend
+            // limits. The generateResponseWithTools call that follows will re-seed
+            // its local spend status from Keychain at the top of the loop.
+            if completion.result.spendUSD.isFinite, completion.result.spendUSD > 0 {
+                KeychainHelper.recordOpenRouterSpend(completion.result.spendUSD)
+                print("[ConversationManager] Background subagent \(completion.handle.id) spend: +$\(formatUSD(completion.result.spendUSD))")
+            }
+
             var body = """
             [SUBAGENT COMPLETE]
             handle: \(completion.handle.id)
