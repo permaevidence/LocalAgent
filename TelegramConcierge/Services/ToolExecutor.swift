@@ -133,6 +133,14 @@ actor ToolExecutor {
             content = await executeBashOutput(call)
         case "bash_kill":
             content = await executeBashKill(call)
+        case "todo_write":
+            content = await executeTodoWrite(call)
+        case "lsp_hover":
+            content = await executeLSPHover(call)
+        case "lsp_definition":
+            content = await executeLSPDefinition(call)
+        case "lsp_references":
+            content = await executeLSPReferences(call)
 
         case "show_project_deployment_tools":
             content = await executeShowProjectDeploymentTools(call)

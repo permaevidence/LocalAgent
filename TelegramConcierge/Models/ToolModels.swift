@@ -1637,6 +1637,68 @@ enum AvailableTools {
         )
     )
 
+    static let todoWrite = ToolDefinition(
+        function: FunctionDefinition(
+            name: "todo_write",
+            description: "Plan and track multi-step work. Send the FULL desired todo list every call — it replaces the stored state (same semantics as Claude Code's TodoWrite and OpenCode's todowrite). Use for any non-trivial task: break work into discrete steps, mark exactly one step as in_progress while you work on it, mark each completed as soon as it's done. Over-use beats under-use.",
+            parameters: FunctionParameters(
+                properties: [
+                    "todos": ParameterProperty(
+                        type: "array",
+                        description: "Complete todo list. Each item: {content: past/present tense noun ('Build the LSP client'), activeForm: imperative while running ('Building the LSP client'), status: 'pending'|'in_progress'|'completed'}. Only one item may be in_progress at a time."
+                    )
+                ],
+                required: ["todos"]
+            )
+        )
+    )
+
+    static let lspHover = ToolDefinition(
+        function: FunctionDefinition(
+            name: "lsp_hover",
+            description: "Ask the language server what a symbol is: type signature, docstring, brief description. Position is 1-indexed to match read_file's line numbers. Use when you need to understand code without reading the whole definition.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path to the file."),
+                    "line": ParameterProperty(type: "integer", description: "1-indexed line number (same numbering as read_file output)."),
+                    "column": ParameterProperty(type: "integer", description: "1-indexed column within the line — point at the symbol name.")
+                ],
+                required: ["path", "line", "column"]
+            )
+        )
+    )
+
+    static let lspDefinition = ToolDefinition(
+        function: FunctionDefinition(
+            name: "lsp_definition",
+            description: "Find where a symbol is defined (go-to-definition). Returns a list of locations {path, line, column, end_line, end_column} with 1-indexed positions. Much more accurate than grep because the language server understands scope and imports.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path to the file containing the symbol reference."),
+                    "line": ParameterProperty(type: "integer", description: "1-indexed line number where the symbol appears."),
+                    "column": ParameterProperty(type: "integer", description: "1-indexed column of the symbol.")
+                ],
+                required: ["path", "line", "column"]
+            )
+        )
+    )
+
+    static let lspReferences = ToolDefinition(
+        function: FunctionDefinition(
+            name: "lsp_references",
+            description: "Find every use of a symbol across the workspace. Returns locations {path, line, column, end_line, end_column} with 1-indexed positions. Prefer over grep for code-symbol search — the language server knows scope and excludes comments/strings/unrelated names.",
+            parameters: FunctionParameters(
+                properties: [
+                    "path": ParameterProperty(type: "string", description: "Absolute path to a file where the symbol appears."),
+                    "line": ParameterProperty(type: "integer", description: "1-indexed line number of the symbol."),
+                    "column": ParameterProperty(type: "integer", description: "1-indexed column of the symbol."),
+                    "include_declaration": ParameterProperty(type: "boolean", description: "Include the declaration site in results. Default true.")
+                ],
+                required: ["path", "line", "column"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// IMAP email tools (8 tools - used when email_mode is "imap")
@@ -1651,7 +1713,7 @@ enum AvailableTools {
     
     /// New filesystem tool surface (replaces the sandboxed document tools).
     static var filesystemTools: [ToolDefinition] {
-        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill]
+        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill, todoWrite, lspHover, lspDefinition, lspReferences]
     }
 
     /// Non-email tools that do not depend on web search credentials.

@@ -92,6 +92,143 @@ actor LSPRegistry {
         return .diagnostics(diags, serverID: cfg.serverID)
     }
 
+    // MARK: - Symbol queries
+    //
+    // These convert 1-indexed line/column (what the agent sees in read_file
+    // output) to 0-indexed positions the LSP server expects, and return
+    // JSON-ready strings for the tool layer. If the server is missing or
+    // errors, a JSON object with `error` or `skipped` is returned — we never
+    // throw out of these methods.
+
+    func hover(path: String, line: Int, column: Int) async -> String {
+        guard let (client, uri, serverID) = await prepareForQuery(path: path) else {
+            return jsonSkipped(path: path, reason: "no language server available for \(path)")
+        }
+        do {
+            let text = try await client.hover(uri: uri, line: max(line - 1, 0), column: max(column - 1, 0))
+            return jsonString([
+                "success": true,
+                "path": path,
+                "server": serverID,
+                "hover": text ?? NSNull()
+            ])
+        } catch {
+            return jsonError("hover failed: \(error)")
+        }
+    }
+
+    func definition(path: String, line: Int, column: Int) async -> String {
+        guard let (client, uri, serverID) = await prepareForQuery(path: path) else {
+            return jsonSkipped(path: path, reason: "no language server available for \(path)")
+        }
+        do {
+            let locs = try await client.definition(uri: uri, line: max(line - 1, 0), column: max(column - 1, 0))
+            return jsonString([
+                "success": true,
+                "path": path,
+                "server": serverID,
+                "locations": locs.map(locationPayload)
+            ])
+        } catch {
+            return jsonError("definition failed: \(error)")
+        }
+    }
+
+    func references(path: String, line: Int, column: Int, includeDeclaration: Bool = true) async -> String {
+        guard let (client, uri, serverID) = await prepareForQuery(path: path) else {
+            return jsonSkipped(path: path, reason: "no language server available for \(path)")
+        }
+        do {
+            let locs = try await client.references(
+                uri: uri,
+                line: max(line - 1, 0),
+                column: max(column - 1, 0),
+                includeDeclaration: includeDeclaration
+            )
+            return jsonString([
+                "success": true,
+                "path": path,
+                "server": serverID,
+                "locations": locs.map(locationPayload)
+            ])
+        } catch {
+            return jsonError("references failed: \(error)")
+        }
+    }
+
+    /// Get-or-spawn the client for a path and ensure the current file
+    /// contents are open in the server, so symbol queries have a document
+    /// to work with.
+    private func prepareForQuery(path: String) async -> (LSPClient, URL, String)? {
+        let ext = (path as NSString).pathExtension.lowercased()
+        guard let cfg = LSPLanguages.serverConfig(forExtension: ext),
+              let languageId = LSPLanguages.languageId(forExtension: ext) else {
+            return nil
+        }
+        if missingExecutables.contains(cfg.executable) { return nil }
+        let root = LSPLanguages.workspaceRoot(forFilePath: path, markers: cfg.workspaceMarkers)
+        let key = entryKey(serverID: cfg.serverID, root: root)
+        guard let client = await ensureClient(key: key, config: cfg, root: root) else {
+            missingExecutables.insert(cfg.executable)
+            return nil
+        }
+        let fileURL = URL(fileURLWithPath: path)
+        let uriKey = fileURL.absoluteString
+        let alreadyOpen = entries[key]?.openedURIs.contains(uriKey) ?? false
+        if !alreadyOpen {
+            guard let data = try? String(contentsOfFile: path, encoding: .utf8) else {
+                return nil
+            }
+            do {
+                try await client.didOpen(uri: fileURL, text: data, languageId: languageId)
+                entries[key]?.openedURIs.insert(uriKey)
+            } catch {
+                return nil
+            }
+        }
+        entries[key]?.lastUsed = Date()
+        return (client, fileURL, cfg.serverID)
+    }
+
+    /// Convert a raw LSP Location dict to a 1-indexed, path-rooted payload
+    /// that matches read_file's line numbering.
+    private func locationPayload(_ loc: [String: Any]) -> [String: Any] {
+        let uriString = loc["uri"] as? String ?? ""
+        let decoded = URL(string: uriString)?.path ?? uriString
+        var out: [String: Any] = ["path": decoded]
+        if let range = loc["range"] as? [String: Any],
+           let start = range["start"] as? [String: Any],
+           let line = start["line"] as? Int,
+           let char = start["character"] as? Int {
+            out["line"] = line + 1
+            out["column"] = char + 1
+        }
+        if let range = loc["range"] as? [String: Any],
+           let end = range["end"] as? [String: Any],
+           let line = end["line"] as? Int,
+           let char = end["character"] as? Int {
+            out["end_line"] = line + 1
+            out["end_column"] = char + 1
+        }
+        return out
+    }
+
+    private func jsonString(_ dict: [String: Any]) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode response\"}"
+    }
+
+    private func jsonError(_ msg: String) -> String {
+        jsonString(["error": msg])
+    }
+
+    private func jsonSkipped(path: String, reason: String) -> String {
+        jsonString(["success": false, "skipped": reason, "path": path])
+    }
+
     /// Shut down every live client. Called at app termination.
     func shutdownAll() async {
         for (_, entry) in entries {

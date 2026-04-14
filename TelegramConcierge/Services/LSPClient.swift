@@ -173,6 +173,99 @@ actor LSPClient {
         ])
     }
 
+    // MARK: - Symbol queries
+    //
+    // All positions are 0-indexed per LSP. Callers are responsible for
+    // converting from the 1-indexed surface we expose to the agent.
+
+    /// textDocument/hover → raw result (may be null, a Hover, or a string).
+    /// Returns nil on null/missing, or a plain-text summary extracted from
+    /// the Hover.contents field.
+    func hover(uri: URL, line: Int, column: Int) async throws -> String? {
+        let params: [String: Any] = [
+            "textDocument": ["uri": uri.absoluteString],
+            "position": ["line": line, "character": column]
+        ]
+        let result = try await sendRequest(method: "textDocument/hover", params: params)
+        return Self.extractHoverText(from: result)
+    }
+
+    /// textDocument/definition → array of Locations (paths + ranges).
+    func definition(uri: URL, line: Int, column: Int) async throws -> [[String: Any]] {
+        let params: [String: Any] = [
+            "textDocument": ["uri": uri.absoluteString],
+            "position": ["line": line, "character": column]
+        ]
+        let result = try await sendRequest(method: "textDocument/definition", params: params)
+        return Self.extractLocations(from: result)
+    }
+
+    /// textDocument/references → array of Locations.
+    func references(uri: URL, line: Int, column: Int, includeDeclaration: Bool = true) async throws -> [[String: Any]] {
+        let params: [String: Any] = [
+            "textDocument": ["uri": uri.absoluteString],
+            "position": ["line": line, "character": column],
+            "context": ["includeDeclaration": includeDeclaration]
+        ]
+        let result = try await sendRequest(method: "textDocument/references", params: params)
+        return Self.extractLocations(from: result)
+    }
+
+    private static func extractHoverText(from result: [String: Any]) -> String? {
+        // Hover: { contents: MarkedString | MarkedString[] | MarkupContent, range? }
+        if result.isEmpty { return nil }
+        guard let contents = result["contents"] else { return nil }
+        if let s = contents as? String { return s }
+        if let dict = contents as? [String: Any] {
+            // MarkupContent { kind, value } or legacy MarkedString { language, value }
+            if let value = dict["value"] as? String { return value }
+        }
+        if let arr = contents as? [Any] {
+            let parts: [String] = arr.compactMap { item in
+                if let s = item as? String { return s }
+                if let d = item as? [String: Any], let v = d["value"] as? String { return v }
+                return nil
+            }
+            if !parts.isEmpty { return parts.joined(separator: "\n\n") }
+        }
+        return nil
+    }
+
+    private static func extractLocations(from result: [String: Any]) -> [[String: Any]] {
+        // Response may be: Location | Location[] | LocationLink[] | null.
+        // `result` is what sendRequest returns — already unwrapped from the
+        // JSON-RPC envelope but wrapped in the "result" dict. We look for a
+        // "__value__" fallback if the dispatch wrapped a non-dict result.
+        if let unwrapped = result["__value__"] {
+            return Self.normalizeLocations(unwrapped)
+        }
+        // If the top-level result is a dict representing a single Location,
+        // the dict will have "uri" and "range" keys.
+        if result["uri"] != nil, result["range"] != nil {
+            return [result]
+        }
+        return []
+    }
+
+    private static func normalizeLocations(_ any: Any) -> [[String: Any]] {
+        if let single = any as? [String: Any] {
+            // Location
+            if let _ = single["uri"], let _ = single["range"] {
+                return [single]
+            }
+            // LocationLink
+            if let targetUri = single["targetUri"] as? String,
+               let range = single["targetSelectionRange"] as? [String: Any] ?? single["targetRange"] as? [String: Any] {
+                return [["uri": targetUri, "range": range]]
+            }
+            return []
+        }
+        if let arr = any as? [[String: Any]] {
+            return arr.flatMap { normalizeLocations($0) }
+        }
+        return []
+    }
+
     // MARK: - Diagnostics
 
     /// Returns diagnostics for `uri`, waiting up to `waitFor` seconds for an
@@ -249,9 +342,15 @@ actor LSPClient {
                 if let err = message["error"] as? [String: Any] {
                     let msg = err["message"] as? String ?? "LSP error"
                     cont.resume(throwing: LSPClientError.responseError(msg))
+                } else if let resultDict = message["result"] as? [String: Any] {
+                    cont.resume(returning: resultDict)
+                } else if let resultArray = message["result"] as? [Any] {
+                    // Wrap non-dict results (Location[], DocumentSymbol[], etc.)
+                    // so the continuation's [String: Any] contract holds.
+                    cont.resume(returning: ["__value__": resultArray])
                 } else {
-                    let result = (message["result"] as? [String: Any]) ?? [:]
-                    cont.resume(returning: result)
+                    // null, string, number, or missing.
+                    cont.resume(returning: [:])
                 }
             }
             return
