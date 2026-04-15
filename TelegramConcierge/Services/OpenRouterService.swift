@@ -990,7 +990,7 @@ actor OpenRouterService {
             print("[OpenRouterService] HTTP \(httpResponse.statusCode) error. Raw response: \(rawResponse)")
 
             if let errorResponse = try? JSONDecoder().decode(OpenRouterErrorResponse.self, from: data) {
-                throw OpenRouterError.apiError("HTTP \(httpResponse.statusCode): \(errorResponse.error.message)")
+                throw OpenRouterError.apiError("HTTP \(httpResponse.statusCode): \(errorResponse.error.composedMessage)")
             }
             // Structured decode failed — surface the raw body (truncated) so the
             // user sees the actual cause in the Telegram error message rather
@@ -1547,9 +1547,10 @@ struct OpenRouterErrorDetail: Codable {
     let message: String
     let type: String?
     let code: String?
+    let metadata: OpenRouterErrorMetadata?
 
     enum CodingKeys: String, CodingKey {
-        case message, type, code
+        case message, type, code, metadata
     }
 
     init(from decoder: Decoder) throws {
@@ -1566,6 +1567,53 @@ struct OpenRouterErrorDetail: Codable {
         } else {
             self.code = nil
         }
+        self.metadata = try? container.decodeIfPresent(OpenRouterErrorMetadata.self, forKey: .metadata)
+    }
+
+    /// Best-effort human-readable combined message. When OpenRouter relays an
+    /// upstream provider error (message = "Provider returned error"), the
+    /// actionable detail lives in metadata.raw. Prepend the provider name so
+    /// we can see which backend failed.
+    var composedMessage: String {
+        var parts: [String] = [message]
+        if let md = metadata {
+            if let provider = md.providerName, !provider.isEmpty {
+                parts.append("[provider=\(provider)]")
+            }
+            if let raw = md.raw, !raw.isEmpty {
+                parts.append(raw)
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
+/// OpenRouter attaches an optional `metadata` block to 4xx errors with the
+/// actual upstream provider response. Both `raw` and `providerName` are
+/// provider-dependent and may be missing.
+struct OpenRouterErrorMetadata: Codable {
+    let raw: String?
+    let providerName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case raw
+        case providerName = "provider_name"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // `raw` can be a plain string OR a JSON object that upstream
+        // serialized. Accept either.
+        if let s = try? container.decode(String.self, forKey: .raw) {
+            self.raw = s
+        } else if let d = try? container.decode(JSONValue.self, forKey: .raw),
+                  let data = try? JSONEncoder().encode(d),
+                  let s = String(data: data, encoding: .utf8) {
+            self.raw = s
+        } else {
+            self.raw = nil
+        }
+        self.providerName = try? container.decodeIfPresent(String.self, forKey: .providerName)
     }
 }
 
