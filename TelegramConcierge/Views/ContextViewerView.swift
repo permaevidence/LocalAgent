@@ -345,7 +345,7 @@ struct ContextViewerView: View {
     @ViewBuilder
     private var emailContent: some View {
         if emailContext.isEmpty {
-            Text("No email context available. Configure email in Settings.")
+            Text("No email context available. Install and authenticate the `gws` CLI (see onboarding).")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .italic()
@@ -399,17 +399,12 @@ struct ContextViewerView: View {
         currentMessages = context.recentMessages
         chunkSummaries = context.chunkSummaries
         
-        // Get calendar context
-        calendarContext = await CalendarService.shared.getCalendarContextForSystemPrompt()
-        
-        // Get email context (check which service is active)
-        let emailMode = KeychainHelper.load(key: KeychainHelper.emailModeKey) ?? "imap"
-        if emailMode == "gmail" {
-            emailContext = await GmailService.shared.getEmailContextForSystemPrompt()
-        } else {
-            emailContext = await EmailService.shared.getEmailContextForSystemPrompt()
-        }
-        
+        // Get calendar + email context from the gws-backed service. Both
+        // return "" if gws is missing/unauthenticated, which the views handle.
+        calendarContext = await GoogleWorkspaceService.shared.getCalendarContextForSystemPrompt()
+        emailContext = await GoogleWorkspaceService.shared.getEmailContextForSystemPrompt()
+
+
         isLoading = false
     }
     

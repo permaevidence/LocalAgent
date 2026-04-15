@@ -135,17 +135,11 @@ extension KeychainHelper {
     static let serperApiKeyKey = "serper_api_key"
     static let jinaApiKeyKey = "jina_api_key"
     
-    // Email (IMAP/SMTP) Keys
-    static let imapHostKey = "imap_host"
-    static let imapPortKey = "imap_port"
-    static let imapUsernameKey = "imap_username"
-    static let imapPasswordKey = "imap_password"
-    static let smtpHostKey = "smtp_host"
-    static let smtpPortKey = "smtp_port"
-    static let smtpUsernameKey = "smtp_username"
-    static let smtpPasswordKey = "smtp_password"
-    static let emailDisplayNameKey = "email_display_name"
-    
+    // Google Workspace (Gmail / Calendar / Contacts / Drive) is reached through
+    // the `gws` CLI — credentials live in the macOS keychain under gws's own
+    // entry, not here. The former imap/smtp/gmail-OAuth keys were removed as
+    // part of that migration.
+
     // Google Gemini API Key
     static let geminiApiKeyKey = "gemini_api_key"
     static let geminiImageModelKey = "gemini_image_model"
@@ -197,15 +191,6 @@ extension KeychainHelper {
     static let maxContextTokensKey = "max_context_tokens"
     static let targetContextTokensKey = "target_context_tokens"
 
-    // Email Mode Selection
-    static let emailModeKey = "email_mode" // "imap" or "gmail"
-    
-    // Gmail API OAuth Keys
-    static let gmailClientIdKey = "gmail_client_id"
-    static let gmailClientSecretKey = "gmail_client_secret"
-    static let gmailAccessTokenKey = "gmail_access_token"
-    static let gmailRefreshTokenKey = "gmail_refresh_token"
-    static let gmailTokenExpiryKey = "gmail_token_expiry"
 }
 
 // MARK: - OpenRouter Spend Ledger (UserDefaults-backed)

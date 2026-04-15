@@ -15,7 +15,6 @@
 		58BCD35919355360BA19A45B /* ConversationArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F819F46CC6EAA2842A19FB51 /* ConversationArchiveService.swift */; };
 		603CFC4690F84C64979D3048 /* WebOrchestrator+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD50E4C9FE60DE1DEB6071AF /* WebOrchestrator+Helpers.swift */; };
 		68FA8CA6412AA1AFB0B30BBA /* ToolExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E12F15918DC9CEE64092A28 /* ToolExecutor.swift */; };
-		69A2A54160E030BDBF124555 /* EmailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5FCEEB85030C0670DBB947 /* EmailService.swift */; };
 		822F9BF6D5ABC15C17E38EC4 /* ReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DCD141150F4C77541F4982 /* ReminderService.swift */; };
 		872F4C787E9A3ED2E5384972 /* DocumentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADE3E4558F8DFD065AE6A26 /* DocumentModels.swift */; };
 		87DCAC7DFD7B3B3C02ECDBA3 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55871B59F1F9B733E94E96B7 /* CalendarService.swift */; };
@@ -37,9 +36,7 @@
 		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
 		BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BASHTOOLS0123456789AB1B /* BashTools.swift */; };
 		C2B87AA65DC778516C459184 /* ConversationArchiveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788EABC6659EB6C669DBACA3 /* ConversationArchiveModels.swift */; };
-		CC2E2FEA08D0E88323DCC140 /* GmailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B3D8D014FCCF0BC929CA79 /* GmailService.swift */; };
 		CONTACT01234567890ABCDEF1 /* Contact.swift in Sources */ = {isa = PBXBuildFile; fileRef = CONTACT01234567890ABCDEF2 /* Contact.swift */; };
-		CONTACT01234567890ABCDEF3 /* ContactsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CONTACT01234567890ABCDEF4 /* ContactsService.swift */; };
 		CONTEXTVIEW0123456789ABC1 /* ContextViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */; };
 		DEF123AB456CD789EFAB1234 /* DocumentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF123AB456CD789EFAB5678 /* DocumentService.swift */; };
 		DF3114E0259D2473CAE34DDF /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B883CAF85B587CFB8951D59 /* CalendarEvent.swift */; };
@@ -75,7 +72,6 @@
 		1BAD23562F2E2F00000A88B2 /* WhisperKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitService.swift; sourceTree = "<group>"; };
 		21DCD141150F4C77541F4982 /* ReminderService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReminderService.swift; sourceTree = "<group>"; };
 		2E12F15918DC9CEE64092A28 /* ToolExecutor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolExecutor.swift; sourceTree = "<group>"; };
-		4E5FCEEB85030C0670DBB947 /* EmailService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmailService.swift; sourceTree = "<group>"; };
 		55871B59F1F9B733E94E96B7 /* CalendarService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
 		GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleWorkspaceService.swift; sourceTree = "<group>"; };
 		5A93EA054D5A31889F2D4564 /* DocumentGeneratorService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentGeneratorService.swift; sourceTree = "<group>"; };
@@ -99,9 +95,7 @@
 		BADE3E4558F8DFD065AE6A26 /* DocumentModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentModels.swift; sourceTree = "<group>"; };
 		BASHTOOLS0123456789AB1B /* BashTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BashTools.swift; sourceTree = "<group>"; };
 		CONTACT01234567890ABCDEF2 /* Contact.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Contact.swift; sourceTree = "<group>"; };
-		CONTACT01234567890ABCDEF4 /* ContactsService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContactsService.swift; sourceTree = "<group>"; };
 		CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextViewerView.swift; sourceTree = "<group>"; };
-		D2B3D8D014FCCF0BC929CA79 /* GmailService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GmailService.swift; sourceTree = "<group>"; };
 		DA0AE409F8E6598E75DFDF72 /* WebOrchestrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebOrchestrator.swift; sourceTree = "<group>"; };
 		DDB20D1783E9B2F00765A721 /* Reminder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Reminder.swift; sourceTree = "<group>"; };
 		DEF123AB456CD789EFAB5678 /* DocumentService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentService.swift; sourceTree = "<group>"; };
@@ -189,13 +183,10 @@
 				21DCD141150F4C77541F4982 /* ReminderService.swift */,
 				55871B59F1F9B733E94E96B7 /* CalendarService.swift */,
 				F819F46CC6EAA2842A19FB51 /* ConversationArchiveService.swift */,
-				4E5FCEEB85030C0670DBB947 /* EmailService.swift */,
 				GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */,
 				DEF123AB456CD789EFAB5678 /* DocumentService.swift */,
-				CONTACT01234567890ABCDEF4 /* ContactsService.swift */,
 				GEMINIIMG012345678901234B /* GeminiImageService.swift */,
 				5A93EA054D5A31889F2D4564 /* DocumentGeneratorService.swift */,
-				D2B3D8D014FCCF0BC929CA79 /* GmailService.swift */,
 				F6F41BFCEF3C81A6A0A64255 /* FileDescriptionService.swift */,
 				MINDEXP0123456789ABCDEF2 /* MindExportService.swift */,
 				PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */,
@@ -356,16 +347,13 @@
 				87DCAC7DFD7B3B3C02ECDBA3 /* CalendarService.swift in Sources */,
 				C2B87AA65DC778516C459184 /* ConversationArchiveModels.swift in Sources */,
 				58BCD35919355360BA19A45B /* ConversationArchiveService.swift in Sources */,
-				69A2A54160E030BDBF124555 /* EmailService.swift in Sources */,
 				GWSSERVC0012345678901234A /* GoogleWorkspaceService.swift in Sources */,
 				DEF123AB456CD789EFAB1234 /* DocumentService.swift in Sources */,
 				CONTACT01234567890ABCDEF1 /* Contact.swift in Sources */,
-				CONTACT01234567890ABCDEF3 /* ContactsService.swift in Sources */,
 				GEMINIIMG012345678901234A /* GeminiImageService.swift in Sources */,
 				CONTEXTVIEW0123456789ABC1 /* ContextViewerView.swift in Sources */,
 				872F4C787E9A3ED2E5384972 /* DocumentModels.swift in Sources */,
 				F968F82FBFCB478DF1BD23F6 /* DocumentGeneratorService.swift in Sources */,
-				CC2E2FEA08D0E88323DCC140 /* GmailService.swift in Sources */,
 				31B7CF7E140CC51F1318A043 /* FileDescriptionService.swift in Sources */,
 				MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */,
 				PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */,

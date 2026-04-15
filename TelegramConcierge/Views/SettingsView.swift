@@ -28,31 +28,12 @@ struct SettingsView: View {
     @State private var botInfo: String?
     @State private var testError: String?
     
-    // Email settings
-    @State private var imapHost: String = ""
-    @State private var imapPort: String = "993"
-    @State private var smtpHost: String = ""
-    @State private var smtpPort: String = "465"
-    @State private var emailUsername: String = ""
-    @State private var emailPassword: String = ""
-    @State private var emailDisplayName: String = ""
-    @State private var isTestingEmail: Bool = false
-    @State private var emailTestSuccess: String?
-    @State private var emailTestError: String?
-    
-    // Gmail API settings
-    @State private var emailMode: String = "imap"  // "imap" or "gmail"
-    @State private var gmailClientId: String = ""
-    @State private var gmailClientSecret: String = ""
-    @State private var isAuthenticatingGmail: Bool = false
-    @State private var gmailAuthStatus: String = ""
-    
-    // Contacts settings
-    @State private var showingVCardPicker: Bool = false
-    @State private var contactCount: Int = 0
-    @State private var contactImportSuccess: String?
-    @State private var contactImportError: String?
-    
+    // Google Workspace (Gmail, Calendar, Contacts, Drive) is reached through
+    // the `gws` CLI — no in-app credentials or contact store. The former email
+    // / Gmail-OAuth / contacts @State fields were removed as part of the
+    // migration; CLI install + auth happens in a terminal.
+
+
     // Image generation settings
     @State private var geminiApiKey: String = ""
     @State private var geminiImageModel: String = KeychainHelper.defaultGeminiImageModel
@@ -124,8 +105,6 @@ struct SettingsView: View {
     @State private var showingMindFilePicker: Bool = false
     
     // Clear contacts
-    @State private var showingClearContactsConfirmation: Bool = false
-    
     // Calendar export/import
     @State private var isExportingCalendar: Bool = false
     @State private var isImportingCalendar: Bool = false
@@ -542,11 +521,27 @@ struct SettingsView: View {
                 Label("Web Search Tool", systemImage: "magnifyingglass")
             }
 
-            // MARK: - Email Settings Section
+            // MARK: - Google Workspace Section
             Section {
-                emailSettingsContent
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Gmail, Calendar, Contacts, and Drive are reached through the `gws` CLI. Install and authenticate it in a terminal — no credentials live in the app.")
+                        .font(.callout)
+                    Text("brew install gws")
+                        .font(.system(.callout, design: .monospaced))
+                        .padding(6)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(4)
+                    Text("gws auth login --credentials /path/to/credentials.json")
+                        .font(.system(.callout, design: .monospaced))
+                        .padding(6)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(4)
+                    Text("If the CLI is missing or unauthenticated, the ambient inbox/calendar blocks are silently skipped — the app stays usable.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             } header: {
-                Label("Email (IMAP/SMTP)", systemImage: "envelope.fill")
+                Label("Google Workspace (gws CLI)", systemImage: "envelope.fill")
             }
 
             Section {
@@ -687,14 +682,6 @@ struct SettingsView: View {
         .onChange(of: instantCLICommand) { _ in autoSave { saveInstantDatabaseSection() } }
         .onChange(of: voiceTranscriptionProvider) { _ in autoSave { saveVoiceTranscriptionSection() } }
         .onChange(of: openAITranscriptionApiKey) { _ in autoSave { saveVoiceTranscriptionSection() } }
-        .onChange(of: emailMode) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: imapHost) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: imapPort) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: smtpHost) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: smtpPort) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: emailDisplayName) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: gmailClientId) { _ in autoSave { saveEmailSection() } }
-        .onChange(of: gmailClientSecret) { _ in autoSave { saveEmailSection() } }
     }
 
     // MARK: - Data Tab
@@ -898,11 +885,7 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
                 
                 Divider()
-                
-                contactsSettingsContent
-                
-                Divider()
-                
+
                 // Calendar Export/Import
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Calendar")
@@ -1301,324 +1284,6 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Contacts Settings Content
-    
-    @ViewBuilder
-    private var contactsSettingsContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Contact List")
-                .font(.body)
-            Text("\(contactCount) contacts stored")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack(spacing: 12) {
-                Button("Import vCard") {
-                    showingVCardPicker = true
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Clear") {
-                    showingClearContactsConfirmation = true
-                }
-                .buttonStyle(.bordered)
-                .foregroundColor(.red)
-                .disabled(contactCount == 0)
-            }
-        }
-        .alert("Clear All Contacts?", isPresented: $showingClearContactsConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Clear", role: .destructive) {
-                Task {
-                    await ContactsService.shared.clearAllContacts()
-                    contactCount = 0
-                }
-            }
-        } message: {
-            Text("This will permanently delete all \(contactCount) contacts. This action cannot be undone.")
-        }
-        .onAppear {
-            Task {
-                contactCount = await ContactsService.shared.contactCount()
-            }
-        }
-        .fileImporter(
-            isPresented: $showingVCardPicker,
-            allowedContentTypes: [UTType.vCard],
-            allowsMultipleSelection: false
-        ) { result in
-            contactImportSuccess = nil
-            contactImportError = nil
-            
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                
-                // Request access to security-scoped resource
-                guard url.startAccessingSecurityScopedResource() else {
-                    contactImportError = "Unable to access file"
-                    return
-                }
-                defer { url.stopAccessingSecurityScopedResource() }
-                
-                Task {
-                    do {
-                        let data = try Data(contentsOf: url)
-                        let imported = await ContactsService.shared.importFromVCard(data: data)
-                        await MainActor.run {
-                            if imported > 0 {
-                                contactImportSuccess = "Imported \(imported) contact(s)"
-                                contactCount = imported + (contactCount - 0) // Refresh count
-                            } else {
-                                contactImportError = "No contacts found in file"
-                            }
-                        }
-                        // Refresh actual count
-                        let newCount = await ContactsService.shared.contactCount()
-                        await MainActor.run {
-                            contactCount = newCount
-                        }
-                    } catch {
-                        await MainActor.run {
-                            contactImportError = "Failed to read file: \(error.localizedDescription)"
-                        }
-                    }
-                }
-                
-            case .failure(let error):
-                contactImportError = "Failed to select file: \(error.localizedDescription)"
-            }
-        }
-        
-        if let success = contactImportSuccess {
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text(success)
-                    .font(.caption)
-                    .foregroundColor(.green)
-            }
-        }
-        
-        if let error = contactImportError {
-            HStack {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.red)
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-        }
-        
-        Text("Import contacts from a vCard (.vcf) file. Gemini can then look up contacts by name when sending emails.")
-            .font(.caption)
-            .foregroundColor(.secondary)
-    }
-    
-    // MARK: - Email Settings Content
-    
-    @ViewBuilder
-    private var emailSettingsContent: some View {
-        // Gmail API is the primary option, IMAP is secondary
-        HStack {
-            Text(emailMode == "gmail" ? "Gmail API" : "IMAP/SMTP")
-                .font(.headline)
-            
-            Spacer()
-            
-            if emailMode == "gmail" {
-                Button(action: {
-                    emailMode = "imap"
-                    try? KeychainHelper.save(key: KeychainHelper.emailModeKey, value: "imap")
-                }) {
-                    Text("Use IMAP instead")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-            } else {
-                Button(action: {
-                    emailMode = "gmail"
-                    try? KeychainHelper.save(key: KeychainHelper.emailModeKey, value: "gmail")
-                }) {
-                    Text("Use Gmail API")
-                        .font(.caption)
-                        .foregroundColor(.accentColor)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        
-        if emailMode == "imap" {
-            // IMAP Settings
-            TextField("IMAP Host", text: $imapHost)
-                .textFieldStyle(.roundedBorder)
-            
-            HStack {
-                TextField("IMAP Port", text: $imapPort)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
-                
-                Text("Default: 993 for SSL")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            TextField("SMTP Host", text: $smtpHost)
-                .textFieldStyle(.roundedBorder)
-            
-            HStack {
-                TextField("SMTP Port", text: $smtpPort)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
-                
-                Text("Use port 465 for SSL (required)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            TextField("Email Username", text: $emailUsername)
-                .textFieldStyle(.roundedBorder)
-            
-            SecureField("Email Password / App Password", text: $emailPassword)
-                .textFieldStyle(.roundedBorder)
-            
-            TextField("Display Name (optional)", text: $emailDisplayName)
-                .textFieldStyle(.roundedBorder)
-            
-            // Gmail quick-fill button
-            HStack {
-                Button("Use Gmail Defaults") {
-                    imapHost = "imap.gmail.com"
-                    imapPort = "993"
-                    smtpHost = "smtp.gmail.com"
-                    smtpPort = "465"
-                }
-                .buttonStyle(.bordered)
-                .font(.caption)
-                
-                Spacer()
-                
-                Button("Test IMAP") {
-                    testEmailConnection(testSMTP: false)
-                }
-                .buttonStyle(.bordered)
-                .disabled(imapHost.isEmpty || emailUsername.isEmpty || emailPassword.isEmpty || isTestingEmail)
-                
-                Button("Test SMTP") {
-                    testEmailConnection(testSMTP: true)
-                }
-                .buttonStyle(.bordered)
-                .disabled(smtpHost.isEmpty || emailUsername.isEmpty || emailPassword.isEmpty || isTestingEmail)
-            }
-            
-            // Gmail App Password instructions
-            VStack(alignment: .leading, spacing: 4) {
-                Text("**Gmail requires an App Password** (16-digit code):")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("1. Go to myaccount.google.com → Security → 2-Step Verification")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("2. Scroll to 'App passwords' → Generate for 'Mail'")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("3. Paste the 16-character code above (no spaces needed)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Link("Open Google App Passwords", destination: URL(string: "https://myaccount.google.com/apppasswords")!)
-                    .font(.caption)
-            }
-        } else {
-            // Gmail API Settings
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Gmail API requires a Google Cloud project with OAuth credentials.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Link("Setup instructions", destination: URL(string: "https://console.cloud.google.com/")!)
-                    .font(.caption)
-            }
-            
-            SecureField("Client ID", text: $gmailClientId)
-                .textFieldStyle(.roundedBorder)
-            
-            SecureField("Client Secret", text: $gmailClientSecret)
-                .textFieldStyle(.roundedBorder)
-            
-            HStack {
-                Button(isAuthenticatingGmail ? "Authenticating..." : "Authenticate with Google") {
-                    authenticateGmail()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(gmailClientId.isEmpty || gmailClientSecret.isEmpty || isAuthenticatingGmail)
-                
-                if !gmailAuthStatus.isEmpty {
-                    HStack {
-                        Image(systemName: gmailAuthStatus.contains("✓") ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(gmailAuthStatus.contains("✓") ? .green : .orange)
-                        Text(gmailAuthStatus)
-                            .font(.caption)
-                            .foregroundColor(gmailAuthStatus.contains("✓") ? .green : .orange)
-                    }
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("**Benefits of Gmail API:**")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                
-                Text("• Faster email operations")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("• Native thread support")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("• Fewer tools for better AI performance (2 vs 8)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        
-        if isTestingEmail {
-            HStack {
-                ProgressView()
-                    .scaleEffect(0.7)
-                Text("Testing connection...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        
-        if let successMessage = emailTestSuccess {
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text(successMessage)
-                    .font(.caption)
-                    .foregroundColor(.green)
-            }
-        }
-        
-        if let error = emailTestError {
-            HStack {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.red)
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-        }
-        
-    }
-    
     private var isFormValid: Bool {
         !telegramToken.isEmpty && !chatId.isEmpty && !openRouterApiKey.isEmpty
     }
@@ -1779,32 +1444,10 @@ struct SettingsView: View {
         serperApiKey = KeychainHelper.load(key: KeychainHelper.serperApiKeyKey) ?? ""
         jinaApiKey = KeychainHelper.load(key: KeychainHelper.jinaApiKeyKey) ?? ""
         
-        // Load email settings
-        imapHost = KeychainHelper.load(key: KeychainHelper.imapHostKey) ?? ""
-        imapPort = KeychainHelper.load(key: KeychainHelper.imapPortKey) ?? "993"
-        smtpHost = KeychainHelper.load(key: KeychainHelper.smtpHostKey) ?? ""
-        smtpPort = KeychainHelper.load(key: KeychainHelper.smtpPortKey) ?? "465"
-        emailUsername = KeychainHelper.load(key: KeychainHelper.imapUsernameKey) ?? ""
-        emailPassword = KeychainHelper.load(key: KeychainHelper.imapPasswordKey) ?? ""
-        emailDisplayName = KeychainHelper.load(key: KeychainHelper.emailDisplayNameKey) ?? ""
-        
-        // Load Gmail API settings
-        emailMode = KeychainHelper.load(key: KeychainHelper.emailModeKey) ?? "gmail"
-        gmailClientId = KeychainHelper.load(key: KeychainHelper.gmailClientIdKey) ?? ""
-        gmailClientSecret = KeychainHelper.load(key: KeychainHelper.gmailClientSecretKey) ?? ""
-        
-        // Check Gmail auth status
-        Task {
-            let isAuthenticated = await GmailService.shared.isAuthenticated
-            await MainActor.run {
-                if emailMode == "gmail" && isAuthenticated {
-                    gmailAuthStatus = "Authenticated ✓"
-                } else if emailMode == "gmail" && !gmailClientId.isEmpty && !gmailClientSecret.isEmpty {
-                    gmailAuthStatus = "Not authenticated"
-                }
-            }
-        }
-        
+        // Gmail / Contacts settings removed — Google Workspace is now reached
+        // through the gws CLI, configured outside the app.
+
+
         // Load image generation settings
         geminiApiKey = KeychainHelper.load(key: KeychainHelper.geminiApiKeyKey) ?? ""
         geminiImageModel = KeychainHelper.load(key: KeychainHelper.geminiImageModelKey) ?? KeychainHelper.defaultGeminiImageModel
@@ -1882,70 +1525,6 @@ struct SettingsView: View {
         }
     }
     
-    private func testEmailConnection(testSMTP: Bool) {
-        isTestingEmail = true
-        emailTestSuccess = nil
-        emailTestError = nil
-        
-        Task {
-            // Configure email service temporarily for testing
-            await EmailService.shared.configure(
-                imapHost: imapHost,
-                imapPort: Int(imapPort) ?? 993,
-                smtpHost: smtpHost,
-                smtpPort: Int(smtpPort) ?? 465,
-                username: emailUsername,
-                password: emailPassword,
-                displayName: emailDisplayName.isEmpty ? emailUsername : emailDisplayName
-            )
-            
-            do {
-                let success: Bool
-                if testSMTP {
-                    success = try await EmailService.shared.testSMTPConnection()
-                } else {
-                    success = try await EmailService.shared.testIMAPConnection()
-                }
-                await MainActor.run {
-                    emailTestSuccess = testSMTP ? "SMTP connection successful!" : "IMAP connection successful!"
-                    isTestingEmail = false
-                }
-            } catch {
-                await MainActor.run {
-                    emailTestError = "\(testSMTP ? "SMTP" : "IMAP"): \(error.localizedDescription)"
-                    isTestingEmail = false
-                }
-            }
-        }
-    }
-    
-    private func authenticateGmail() {
-        isAuthenticatingGmail = true
-        gmailAuthStatus = "Opening browser..."
-        
-        Task {
-            // Configure GmailService with credentials
-            await GmailService.shared.configure(clientId: gmailClientId, clientSecret: gmailClientSecret)
-            
-            do {
-                let success = try await GmailService.shared.authenticate()
-                await MainActor.run {
-                    isAuthenticatingGmail = false
-                    if success {
-                        gmailAuthStatus = "Authenticated ✓"
-                    } else {
-                        gmailAuthStatus = "Authentication failed"
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    isAuthenticatingGmail = false
-                    gmailAuthStatus = "Error: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-    
     private func saveSettings() {
         do {
             try KeychainHelper.save(key: KeychainHelper.telegramBotTokenKey, value: telegramToken)
@@ -1991,26 +1570,6 @@ struct SettingsView: View {
                 try? KeychainHelper.delete(key: KeychainHelper.openRouterToolSpendLimitMonthlyUSDKey)
             }
             refreshOpenRouterSpendCounters()
-            
-            // Save email settings (always save, even if empty, to allow clearing values)
-            try KeychainHelper.save(key: KeychainHelper.imapHostKey, value: imapHost)
-            try KeychainHelper.save(key: KeychainHelper.imapPortKey, value: imapPort)
-            try KeychainHelper.save(key: KeychainHelper.smtpHostKey, value: smtpHost)
-            try KeychainHelper.save(key: KeychainHelper.smtpPortKey, value: smtpPort)
-            try KeychainHelper.save(key: KeychainHelper.imapUsernameKey, value: emailUsername)
-            try KeychainHelper.save(key: KeychainHelper.imapPasswordKey, value: emailPassword)
-            try KeychainHelper.save(key: KeychainHelper.smtpUsernameKey, value: emailUsername)
-            try KeychainHelper.save(key: KeychainHelper.smtpPasswordKey, value: emailPassword)
-            try KeychainHelper.save(key: KeychainHelper.emailDisplayNameKey, value: emailDisplayName)
-            
-            // Save Gmail API settings
-            try KeychainHelper.save(key: KeychainHelper.emailModeKey, value: emailMode)
-            if !gmailClientId.isEmpty {
-                try KeychainHelper.save(key: KeychainHelper.gmailClientIdKey, value: gmailClientId)
-            }
-            if !gmailClientSecret.isEmpty {
-                try KeychainHelper.save(key: KeychainHelper.gmailClientSecretKey, value: gmailClientSecret)
-            }
             
             // Save image generation settings
             let normalizedGeminiAPIKey = geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2445,28 +2004,6 @@ struct SettingsView: View {
         
         instantApiToken = normalizedToken
         instantCLICommand = normalizedCommand.isEmpty ? KeychainHelper.defaultInstantCLICommand : normalizedCommand
-    }
-    
-    private func saveEmailSection() {
-        try? KeychainHelper.save(key: KeychainHelper.emailModeKey, value: emailMode)
-        if emailMode == "imap" {
-            try? KeychainHelper.save(key: KeychainHelper.imapHostKey, value: imapHost)
-            try? KeychainHelper.save(key: KeychainHelper.imapPortKey, value: imapPort)
-            try? KeychainHelper.save(key: KeychainHelper.smtpHostKey, value: smtpHost)
-            try? KeychainHelper.save(key: KeychainHelper.smtpPortKey, value: smtpPort)
-            try? KeychainHelper.save(key: KeychainHelper.imapUsernameKey, value: emailUsername)
-            try? KeychainHelper.save(key: KeychainHelper.imapPasswordKey, value: emailPassword)
-            try? KeychainHelper.save(key: KeychainHelper.smtpUsernameKey, value: emailUsername)
-            try? KeychainHelper.save(key: KeychainHelper.smtpPasswordKey, value: emailPassword)
-            try? KeychainHelper.save(key: KeychainHelper.emailDisplayNameKey, value: emailDisplayName)
-        } else {
-            if !gmailClientId.isEmpty {
-                try? KeychainHelper.save(key: KeychainHelper.gmailClientIdKey, value: gmailClientId)
-            }
-            if !gmailClientSecret.isEmpty {
-                try? KeychainHelper.save(key: KeychainHelper.gmailClientSecretKey, value: gmailClientSecret)
-            }
-        }
     }
     
     private func saveArchiveChunkSize() {
