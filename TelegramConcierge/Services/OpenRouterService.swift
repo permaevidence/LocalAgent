@@ -461,15 +461,10 @@ actor OpenRouterService {
                 prompt += formatChunkSummaries(chunks, totalChunkCount: totalChunkCount)
             }
             
-            // Live summary of any running background work (bash + subagents).
-            // These lines are the dynamic tail of the system prompt; everything
-            // above is stable-per-turn and feeds into the Anthropic cache.
-            if let bashLive = await BackgroundProcessRegistry.shared.liveSummaryText() {
-                prompt += "\n\(bashLive)\n"
-            }
-            if let subagentLive = await SubagentBackgroundRegistry.shared.liveSummary() {
-                prompt += "\n\(subagentLive)\n"
-            }
+            // Background bash/subagent live status is NOT injected here — durations
+            // like "running 12s" drift every turn and invalidate the prompt-cache
+            // suffix. Instead it's appended as a trailing user-role note after the
+            // Anthropic cache breakpoint, where drift has no caching cost.
 
             prompt += """
             You have access to tools that can help you answer questions. Use them when appropriate, especially for:
@@ -918,6 +913,25 @@ actor OpenRouterService {
             }
         }
         
+        // Ambient status tail — background bash + subagents currently running.
+        // Appended AFTER the Anthropic cache breakpoint (placed above), so per-turn
+        // drift in "running 12s / 35s / 1m 02s" does not invalidate any cached prefix.
+        // Omitted entirely when nothing is running to avoid noise.
+        var ambientLines: [String] = []
+        if let bashLive = await BackgroundProcessRegistry.shared.liveSummaryText() {
+            ambientLines.append(bashLive)
+        }
+        if let subagentLive = await SubagentBackgroundRegistry.shared.liveSummary() {
+            ambientLines.append(subagentLive)
+        }
+        if !ambientLines.isEmpty {
+            let ambientText = "[Ambient status — not a user message]\n" + ambientLines.joined(separator: "\n")
+            apiMessages.append(OpenRouterAPIMessage(
+                role: "user",
+                content: .text(ambientText)
+            ))
+        }
+
         // Build request — skip OpenRouter-specific fields when using LMStudio
         let usingLMStudio = isLMStudio
 

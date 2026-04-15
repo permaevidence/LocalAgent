@@ -1194,8 +1194,11 @@ class ConversationManager: ObservableObject {
         async let contextResultTask = openRouterService.processContextWindow(messages)
         
         // Await all parallel operations
-        let calendarContext = await calendarContextTask
-        let emailContext = await emailContextTask
+        // calendarContext / emailContext are `var` because we refresh them on every
+        // Watermark prune event — a prune already invalidates the cache, so we take
+        // advantage of that moment to re-fetch fresh calendar/email data for free.
+        var calendarContext = await calendarContextTask
+        var emailContext = await emailContextTask
         let chunkSummaries = await chunkSummariesTask
         let allChunks = await totalChunkCountTask
         let totalChunkCount = allChunks.count
@@ -1260,6 +1263,11 @@ class ConversationManager: ObservableObject {
         )
         if didPrune {
             refreshSystemPromptTimestamp()
+            // Cache is already invalidated by the prune — take the opportunity to
+            // refresh stale calendar/email context with current data for free.
+            calendarContext = await CalendarService.shared.getCalendarContextForSystemPrompt()
+            emailContext = await EmailService.shared.getEmailContextForSystemPrompt()
+            print("[ConversationManager] Post-prune refresh: fetched fresh calendar + email context")
         }
 
         // Use the frozen system prompt timestamp (only refreshes on prune events or day change)
@@ -1451,13 +1459,20 @@ class ConversationManager: ObservableObject {
                 toolInteractions.append(interaction)
 
                 // Mid-loop: prune stored tool interactions from older turns if context is growing too large
-                let _ = pruneStoredToolInteractionsMidLoop(
+                let midLoopDidPrune = pruneStoredToolInteractionsMidLoop(
                     messagesForLLM: &messagesForLLM,
                     currentTurnInteractions: toolInteractions,
                     calendarContext: calendarContext,
                     emailContext: emailContext,
                     chunkSummaries: chunkSummaries
                 )
+                if midLoopDidPrune {
+                    // Cache is already invalidated by the prune — take the opportunity
+                    // to refresh stale calendar/email context with current data for free.
+                    calendarContext = await CalendarService.shared.getCalendarContextForSystemPrompt()
+                    emailContext = await EmailService.shared.getEmailContextForSystemPrompt()
+                    print("[ConversationManager] Mid-loop post-prune refresh: fetched fresh calendar + email context")
+                }
 
                 if cumulativeToolSpendUSD >= toolSpendLimitPerTurnUSD {
                     didHitToolSpendLimit = true

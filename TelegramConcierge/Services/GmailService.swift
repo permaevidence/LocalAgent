@@ -678,26 +678,11 @@ actor GmailService {
             return "📧 **Your Inbox**: No recent emails."
         }
         
-        // Format the fetch timestamp - use ONLY relative time
-        let fetchTimeStr: String
-        if let fetchTime = fetchTime {
-            let ageSeconds = Int(Date().timeIntervalSince(fetchTime))
-            if ageSeconds < 5 {
-                fetchTimeStr = "just now"
-            } else if ageSeconds < 60 {
-                fetchTimeStr = "\(ageSeconds) seconds ago"
-            } else if ageSeconds < 3600 {
-                let mins = ageSeconds / 60
-                fetchTimeStr = "\(mins) minute\(mins == 1 ? "" : "s") ago"
-            } else {
-                let hours = ageSeconds / 3600
-                fetchTimeStr = "\(hours) hour\(hours == 1 ? "" : "s") ago"
-            }
-        } else {
-            fetchTimeStr = "unknown"
-        }
-        
-        var lines: [String] = ["📧 **Your Inbox** (last \(emails.count) emails, fetched \(fetchTimeStr)):"]
+        // Intentionally NOT including "fetched X ago" — it drifts every turn and
+        // invalidates the prompt cache. Each email below carries its own absolute date.
+        _ = fetchTime
+
+        var lines: [String] = ["📧 **Your Inbox** (last \(emails.count) emails):"]
         
         for email in emails {
             let from = email.getHeader("From") ?? "Unknown"
