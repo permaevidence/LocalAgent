@@ -190,6 +190,9 @@ struct SettingsView: View {
                 servicesTab
                     .tabItem { Label("Services", systemImage: "puzzlepiece.extension") }
 
+                AgentsSettingsView()
+                    .tabItem { Label("Agents", systemImage: "person.2.wave.2") }
+
                 dataTab
                     .tabItem { Label("Data", systemImage: "externaldrive.fill") }
             }

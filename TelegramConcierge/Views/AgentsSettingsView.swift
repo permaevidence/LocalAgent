@@ -1,0 +1,397 @@
+import SwiftUI
+
+/// Agent-centric MCP tool routing panel.
+///
+/// Phase 3 of the MCP rollout. Lets the user pick an agent (main, built-in
+/// subagent, user-defined subagent) and toggle which MCP tools it's allowed
+/// to see. Native tools are listed read-only — editing them happens in
+/// `~/LocalAgent/agents/*.md` (user-defined) or the subagent definition
+/// (built-in). Routing changes persist to `~/LocalAgent/mcp-routing.json`.
+///
+/// Two granularities:
+///   - Whole-MCP toggle (every tool from a server at once)
+///   - Per-tool checkbox (fine-grained)
+///
+/// Routing patterns stored on save:
+///   - If a server is fully enabled → `mcp__<server>__*` (one-line glob)
+///   - If a partial subset → exact `mcp__<server>__<tool>` entries
+///   - If nothing enabled → entry omitted
+struct AgentsSettingsView: View {
+
+    // MARK: - State
+
+    @State private var agents: [AgentRow] = []
+    @State private var selectedAgent: String = "main"
+
+    /// Per-server tool catalogue discovered from MCPRegistry.
+    /// [serverName: [prefixedToolName]]
+    @State private var serverTools: [String: [String]] = [:]
+
+    /// Current routing config on disk, keyed by agent name.
+    @State private var routingConfig: [String: [String]] = [:]
+
+    /// Per-server enabled-tool sets for the selected agent (working copy).
+    /// [serverName: Set<prefixedToolName>]
+    @State private var workingSet: [String: Set<String>] = [:]
+
+    /// Dirty flag — did the user change anything since last save / load?
+    @State private var isDirty: Bool = false
+
+    @State private var statusNote: String?
+    @State private var errorNote: String?
+    @State private var isLoading: Bool = true
+
+    // MARK: - Body
+
+    var body: some View {
+        Form {
+            Section {
+                agentPicker
+                agentDescription
+            } header: {
+                Label("Agent", systemImage: "person.2.wave.2")
+            }
+
+            Section {
+                nativeToolsView
+            } header: {
+                Label("Native tools (read-only)", systemImage: "hammer")
+            }
+
+            Section {
+                if isLoading {
+                    HStack {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading MCP servers…")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else if serverTools.isEmpty {
+                    Text("No MCP servers configured. Edit ~/LocalAgent/mcp.json to install one.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(serverTools.keys.sorted(), id: \.self) { server in
+                        mcpServerPanel(server: server)
+                    }
+                }
+            } header: {
+                Label("MCP tool access", systemImage: "gear.badge")
+            }
+
+            Section {
+                HStack {
+                    Button("Save routing") {
+                        saveRouting()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!isDirty)
+
+                    Button("Revert") {
+                        loadWorkingSet(for: selectedAgent)
+                        isDirty = false
+                    }
+                    .disabled(!isDirty)
+
+                    Button("Reload MCPs") {
+                        Task { await reload() }
+                    }
+
+                    Spacer()
+
+                    if let note = statusNote {
+                        Label(note, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    } else if let err = errorNote {
+                        Label(err, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                }
+
+                Text(editingConfigPath)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal)
+        .task {
+            await reload()
+        }
+    }
+
+    // MARK: - Agent picker + metadata
+
+    private var agentPicker: some View {
+        Picker("Agent", selection: $selectedAgent) {
+            ForEach(agents, id: \.name) { agent in
+                Text(agent.displayLabel)
+                    .tag(agent.name)
+            }
+        }
+        .pickerStyle(.menu)
+        .onChange(of: selectedAgent) { newValue in
+            if isDirty {
+                // Discard unsaved changes — the revert button exists for undo.
+                isDirty = false
+            }
+            loadWorkingSet(for: newValue)
+        }
+    }
+
+    @ViewBuilder
+    private var agentDescription: some View {
+        if let agent = agents.first(where: { $0.name == selectedAgent }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(agent.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let origin = agent.originLabel {
+                    Text(origin)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nativeToolsView: some View {
+        if let agent = agents.first(where: { $0.name == selectedAgent }) {
+            if agent.name == "main" {
+                Text("Main agent always has access to every native tool (filesystem, bash, web, LSP, Agent delegation, reminders, etc.).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if let native = agent.allowedNativeTools {
+                let sorted = native.sorted()
+                Text(sorted.joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Inherits every native tool the main agent has (minus Agent recursion).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - MCP server panel
+
+    @ViewBuilder
+    private func mcpServerPanel(server: String) -> some View {
+        let tools = serverTools[server] ?? []
+        let enabled = workingSet[server] ?? []
+        let allOn = !tools.isEmpty && enabled.count == tools.count
+        let partial = !enabled.isEmpty && !allOn
+
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(tools, id: \.self) { tool in
+                    Toggle(isOn: Binding(
+                        get: { enabled.contains(tool) },
+                        set: { newValue in
+                            var next = workingSet[server] ?? []
+                            if newValue { next.insert(tool) } else { next.remove(tool) }
+                            workingSet[server] = next
+                            isDirty = true
+                        }
+                    )) {
+                        Text(toolShortName(tool))
+                            .font(.caption)
+                            .monospaced()
+                    }
+                    .toggleStyle(.checkbox)
+                }
+                if tools.isEmpty {
+                    Text("This server has no tools advertised (yet).")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.leading, 20)
+        } label: {
+            HStack {
+                Toggle(isOn: Binding(
+                    get: { allOn },
+                    set: { newValue in
+                        if newValue {
+                            workingSet[server] = Set(tools)
+                        } else {
+                            workingSet[server] = []
+                        }
+                        isDirty = true
+                    }
+                )) {
+                    HStack(spacing: 6) {
+                        Text(server)
+                            .font(.body.weight(.medium))
+                        Text("\(enabled.count) / \(tools.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        if partial {
+                            Image(systemName: "minus.square.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+                Spacer()
+            }
+        }
+    }
+
+    private var editingConfigPath: String {
+        let home = NSHomeDirectory()
+        return "Routing file: \(home)/LocalAgent/mcp-routing.json"
+    }
+
+    // MARK: - Data loading
+
+    private func reload() async {
+        isLoading = true
+        statusNote = nil
+        errorNote = nil
+
+        // 1) Refresh MCPAgentRouting cache so dynamic subagents (Browse/DB)
+        //    reflect the current registry state.
+        await MCPAgentRouting.refreshFromRegistry()
+
+        // 2) Fetch the full MCP tool surface grouped by server.
+        let allTools = await MCPRegistry.shared.allToolDefinitions()
+        var byServer: [String: [String]] = [:]
+        for tool in allTools {
+            guard let (server, _) = MCPRegistry.splitPrefixedName(tool.function.name) else { continue }
+            byServer[server, default: []].append(tool.function.name)
+        }
+        for key in byServer.keys {
+            byServer[key]?.sort()
+        }
+
+        // 3) Build agent list.
+        var rows: [AgentRow] = []
+        rows.append(AgentRow(
+            name: "main",
+            displayLabel: "Main agent",
+            description: "The primary assistant that talks to you. By default has no MCP tools — opt them in below only for capabilities you want always-on.",
+            originLabel: "built-in",
+            allowedNativeTools: nil
+        ))
+        for subagent in SubagentTypes.all() {
+            rows.append(AgentRow(
+                name: subagent.name,
+                displayLabel: "Subagent: \(subagent.name)",
+                description: subagent.description,
+                originLabel: SubagentTypes.staticBuiltIns.contains(where: { $0.name == subagent.name })
+                    ? "built-in"
+                    : (SubagentTypes.activeDynamicBuiltIns().contains(where: { $0.name == subagent.name })
+                        ? "dynamic built-in (active because backing MCP is installed)"
+                        : "user-defined (~/LocalAgent/agents/\(subagent.name).md)"),
+                allowedNativeTools: subagent.allowedToolNames
+            ))
+        }
+
+        // 4) Load routing config from disk.
+        let cfg = MCPAgentRouting.currentConfig()
+
+        agents = rows
+        serverTools = byServer
+        routingConfig = cfg
+        loadWorkingSet(for: selectedAgent)
+        isLoading = false
+    }
+
+    /// Build the per-server working set from the routing config for `agent`.
+    /// Pattern expansion rules:
+    ///   - `mcp__<server>__*`  → every tool the server currently advertises
+    ///   - `mcp__*`            → every tool on every server
+    ///   - exact               → that one tool
+    private func loadWorkingSet(for agent: String) {
+        var set: [String: Set<String>] = [:]
+        let patterns = routingConfig[agent]
+            ?? routingConfig[caseInsensitiveKey(agent, in: routingConfig) ?? ""]
+            ?? []
+        for (server, tools) in serverTools {
+            var enabled: Set<String> = []
+            for tool in tools {
+                if patterns.contains(where: { MCPAgentRouting.matches(pattern: $0, name: tool) }) {
+                    enabled.insert(tool)
+                }
+            }
+            set[server] = enabled
+        }
+        workingSet = set
+        isDirty = false
+    }
+
+    private func caseInsensitiveKey(_ k: String, in d: [String: [String]]) -> String? {
+        let lower = k.lowercased()
+        return d.keys.first { $0.lowercased() == lower }
+    }
+
+    // MARK: - Save
+
+    /// Compact the working set into a routing entry:
+    ///   - whole server enabled → single `mcp__<server>__*` glob
+    ///   - partial → exact names
+    ///   - none → omit
+    private func saveRouting() {
+        var patterns: [String] = []
+        for server in serverTools.keys.sorted() {
+            let enabled = workingSet[server] ?? []
+            let total = serverTools[server]?.count ?? 0
+            guard !enabled.isEmpty else { continue }
+            if enabled.count == total, total > 0 {
+                patterns.append("mcp__\(server)__*")
+            } else {
+                patterns.append(contentsOf: enabled.sorted())
+            }
+        }
+
+        var next = routingConfig
+        if patterns.isEmpty {
+            next.removeValue(forKey: selectedAgent)
+        } else {
+            next[selectedAgent] = patterns
+        }
+
+        do {
+            try MCPAgentRouting.save(config: next)
+            routingConfig = next
+            isDirty = false
+            statusNote = "Saved routing for \(selectedAgent)"
+            errorNote = nil
+            // Auto-clear success note after 3 seconds.
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if statusNote?.contains("Saved") == true {
+                    statusNote = nil
+                }
+            }
+        } catch {
+            errorNote = "Save failed: \(error.localizedDescription)"
+            statusNote = nil
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func toolShortName(_ prefixed: String) -> String {
+        guard let (_, tool) = MCPRegistry.splitPrefixedName(prefixed) else { return prefixed }
+        return tool
+    }
+}
+
+/// One row in the agent picker.
+private struct AgentRow {
+    let name: String                 // Key used in mcp-routing.json
+    let displayLabel: String
+    let description: String
+    let originLabel: String?
+    let allowedNativeTools: Set<String>?
+}
