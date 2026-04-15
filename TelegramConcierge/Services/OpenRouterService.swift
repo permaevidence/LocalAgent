@@ -565,18 +565,12 @@ actor OpenRouterService {
             // BEFORE the final text so the model sees the full reasoning chain
             if message.role == .assistant && !isToolRunLog && !message.toolInteractions.isEmpty {
                 for interaction in message.toolInteractions {
-                    // Historical tool interactions — strip reasoning/reasoningDetails.
-                    // Gemini's `thoughtSignature` is only valid within the call that produced
-                    // it: cross-turn replay triggers "Corrupted thought signature" errors,
-                    // especially after a provider flip (Vertex ↔ AI Studio have incompatible
-                    // signing keys). Dropping past reasoning also removes a cache-drift source
-                    // since the blob can be regenerated or reformatted server-side.
                     apiMessages.append(OpenRouterAPIMessage(
                         role: "assistant",
                         content: interaction.assistantMessage.content.map { .text($0) },
                         toolCalls: interaction.assistantMessage.toolCalls,
-                        reasoning: nil,
-                        reasoningDetails: nil
+                        reasoning: interaction.assistantMessage.reasoning,
+                        reasoningDetails: interaction.assistantMessage.reasoningDetails
                     ))
                     for result in interaction.results {
                         apiMessages.append(OpenRouterAPIMessage(
