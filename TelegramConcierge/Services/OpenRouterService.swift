@@ -988,11 +988,17 @@ actor OpenRouterService {
             // Log the raw error response for debugging
             let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode error response"
             print("[OpenRouterService] HTTP \(httpResponse.statusCode) error. Raw response: \(rawResponse)")
-            
+
             if let errorResponse = try? JSONDecoder().decode(OpenRouterErrorResponse.self, from: data) {
-                throw OpenRouterError.apiError(errorResponse.error.message)
+                throw OpenRouterError.apiError("HTTP \(httpResponse.statusCode): \(errorResponse.error.message)")
             }
-            throw OpenRouterError.httpError(httpResponse.statusCode)
+            // Structured decode failed — surface the raw body (truncated) so the
+            // user sees the actual cause in the Telegram error message rather
+            // than a bare "httpError(400)" with no context.
+            let trimmed = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = trimmed.count > 600 ? String(trimmed.prefix(600)) + "…" : trimmed
+            let bodyDescription = snippet.isEmpty ? "(empty body)" : snippet
+            throw OpenRouterError.apiError("HTTP \(httpResponse.statusCode): \(bodyDescription)")
         }
         
         let decoded: OpenRouterResponse
@@ -1541,6 +1547,26 @@ struct OpenRouterErrorDetail: Codable {
     let message: String
     let type: String?
     let code: String?
+
+    enum CodingKeys: String, CodingKey {
+        case message, type, code
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.message = try container.decode(String.self, forKey: .message)
+        self.type = try container.decodeIfPresent(String.self, forKey: .type)
+        // `code` can arrive as either a string ("rate_limit_exceeded") or an
+        // integer (400) depending on the provider. Accept both so the outer
+        // decode doesn't fall through to the bare httpError path.
+        if let stringCode = try? container.decode(String.self, forKey: .code) {
+            self.code = stringCode
+        } else if let intCode = try? container.decode(Int.self, forKey: .code) {
+            self.code = String(intCode)
+        } else {
+            self.code = nil
+        }
+    }
 }
 
 // MARK: - Errors
