@@ -89,17 +89,71 @@ struct ParameterProperty: Codable {
     let type: String
     let description: String
     let enumValues: [String]?
+    /// Required when `type == "array"` — describes the element schema.
+    /// Gemini and other providers reject array parameters without items.
+    let items: ArrayItemsSchema?
 
     enum CodingKeys: String, CodingKey {
         case type
         case description
         case enumValues = "enum"
+        case items
     }
 
-    init(type: String, description: String, enumValues: [String]? = nil) {
+    init(type: String, description: String, enumValues: [String]? = nil, items: ArrayItemsSchema? = nil) {
         self.type = type
         self.description = description
         self.enumValues = enumValues
+        self.items = items
+    }
+
+    // Manual encode so nil fields are omitted rather than serialised as
+    // `"items": null` (some providers reject null schema nodes).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encode(description, forKey: .description)
+        try c.encodeIfPresent(enumValues, forKey: .enumValues)
+        try c.encodeIfPresent(items, forKey: .items)
+    }
+}
+
+/// Schema describing the element of an `array`-typed parameter. Supports
+/// primitive items (e.g. `{ type: "string" }`) and object items with their
+/// own properties / required list.
+struct ArrayItemsSchema: Codable {
+    let type: String                                    // "string" | "number" | "integer" | "boolean" | "object"
+    let description: String?
+    let enumValues: [String]?
+    let properties: [String: ParameterProperty]?        // populated when type == "object"
+    let required: [String]?                             // populated when type == "object"
+
+    enum CodingKeys: String, CodingKey {
+        case type, description, properties, required
+        case enumValues = "enum"
+    }
+
+    init(
+        type: String,
+        description: String? = nil,
+        enumValues: [String]? = nil,
+        properties: [String: ParameterProperty]? = nil,
+        required: [String]? = nil
+    ) {
+        self.type = type
+        self.description = description
+        self.enumValues = enumValues
+        self.properties = properties
+        self.required = required
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(enumValues, forKey: .enumValues)
+        try c.encodeIfPresent(properties, forKey: .properties)
+        try c.encodeIfPresent(required, forKey: .required)
     }
 }
 
@@ -1178,7 +1232,27 @@ enum AvailableTools {
                 properties: [
                     "todos": ParameterProperty(
                         type: "array",
-                        description: "Complete todo list. Each item: {content: past/present tense noun ('Build the LSP client'), activeForm: imperative while running ('Building the LSP client'), status: 'pending'|'in_progress'|'completed'}. Only one item may be in_progress at a time."
+                        description: "Complete todo list. Replaces stored state on every call. Only one item may be in_progress at a time.",
+                        items: ArrayItemsSchema(
+                            type: "object",
+                            description: "A single todo entry.",
+                            properties: [
+                                "content": ParameterProperty(
+                                    type: "string",
+                                    description: "Past/present-tense noun describing the task (e.g. 'Build the LSP client')."
+                                ),
+                                "activeForm": ParameterProperty(
+                                    type: "string",
+                                    description: "Imperative form shown while the task is in_progress (e.g. 'Building the LSP client')."
+                                ),
+                                "status": ParameterProperty(
+                                    type: "string",
+                                    description: "Lifecycle state of this item.",
+                                    enumValues: ["pending", "in_progress", "completed"]
+                                )
+                            ],
+                            required: ["content", "status"]
+                        )
                     )
                 ],
                 required: ["todos"]
