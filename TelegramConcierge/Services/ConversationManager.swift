@@ -219,44 +219,14 @@ class ConversationManager: ObservableObject {
         )
         await archiveService.recoverPendingChunks(defaultContext: recoveryContext)
         
-        // Configure email service: prefer Gmail OAuth if authenticated, fall back to IMAP
-        let gmailAuthenticated = await GmailService.shared.isAuthenticated
-        
-        if gmailAuthenticated {
-            // Use Gmail API with OAuth
-            print("[ConversationManager] Using Gmail API for email (OAuth authenticated)")
-            await GmailService.shared.startBackgroundFetch()
-            
-            // Register handler for smart Gmail notifications
-            await GmailService.shared.setNewEmailHandler { [weak self] newEmails in
-                await self?.processNewGmailEmails(newEmails)
-            }
-        } else if let imapHost = KeychainHelper.load(key: KeychainHelper.imapHostKey),
-           let imapPortStr = KeychainHelper.load(key: KeychainHelper.imapPortKey),
-           let smtpHost = KeychainHelper.load(key: KeychainHelper.smtpHostKey),
-           let smtpPortStr = KeychainHelper.load(key: KeychainHelper.smtpPortKey),
-           let emailUsername = KeychainHelper.load(key: KeychainHelper.imapUsernameKey),
-           let emailPassword = KeychainHelper.load(key: KeychainHelper.imapPasswordKey) {
-            // Fall back to IMAP/SMTP
-            print("[ConversationManager] Using IMAP/SMTP for email")
-            let displayName = KeychainHelper.load(key: KeychainHelper.emailDisplayNameKey) ?? emailUsername
-            await EmailService.shared.configure(
-                imapHost: imapHost,
-                imapPort: Int(imapPortStr) ?? 993,
-                smtpHost: smtpHost,
-                smtpPort: Int(smtpPortStr) ?? 465,
-                username: emailUsername,
-                password: emailPassword,
-                displayName: displayName
-            )
-            // Start background email fetch (every 5 minutes)
-            await EmailService.shared.startBackgroundFetch()
-            
-            // Register handler for smart email notifications (runs in detached task)
-            await EmailService.shared.setNewEmailHandler { [weak self] newEmails in
-                await self?.processNewEmails(newEmails)
-            }
+        // Google Workspace via `gws` CLI — single source of truth for ambient
+        // inbox + calendar awareness. Replaces IMAP (EmailService) and Gmail-API
+        // (GmailService) paths. The service retries + fails gracefully if `gws`
+        // is missing on this machine, so startup never blocks on it.
+        await GoogleWorkspaceService.shared.setNewEmailHandler { [weak self] newEmails in
+            await self?.processNewUnreadEmails(newEmails)
         }
+        await GoogleWorkspaceService.shared.startBackgroundPoll()
         
         // Configure Gemini image service if API key is available
         if let geminiApiKey = KeychainHelper.load(key: KeychainHelper.geminiApiKeyKey), !geminiApiKey.isEmpty {
@@ -2110,8 +2080,11 @@ class ConversationManager: ObservableObject {
         let needsFetch = forceRefresh || dayRolled || frozenCalendarContext == nil || frozenEmailContext == nil
 
         if needsFetch {
-            async let cal = CalendarService.shared.getCalendarContextForSystemPrompt()
-            async let eml = EmailService.shared.getEmailContextForSystemPrompt()
+            // Source both blocks from the single gws-backed service. The service
+            // itself retries + returns "" on persistent failure so the system
+            // prompt simply skips the block instead of erroring the turn.
+            async let cal = GoogleWorkspaceService.shared.getCalendarContextForSystemPrompt(forceRefresh: forceRefresh || dayRolled)
+            async let eml = GoogleWorkspaceService.shared.getEmailContextForSystemPrompt()
             let freshCal = await cal
             let freshEml = await eml
             frozenCalendarContext = freshCal
@@ -2797,6 +2770,51 @@ class ConversationManager: ObservableObject {
     /// Process new emails: use Gemini with full context to decide if notification-worthy
     /// and generate a personalized notification message.
     /// Runs in a detached context to avoid blocking user interactions.
+    /// Handler fired by GoogleWorkspaceService when a fresh unread email lands
+    /// between polls. Builds a synthetic user-role message (kind `.emailArrived`)
+    /// so the standard conversation pipeline picks it up and the agent can notify
+    /// Matteo via Telegram.
+    private func processNewUnreadEmails(_ emails: [GoogleWorkspaceService.UnreadEmail]) async {
+        guard pairedChatId != nil, !emails.isEmpty else { return }
+
+        print("[ConversationManager] Processing \(emails.count) new unread email(s) for notification")
+
+        var emailDetails: [String] = []
+        for email in emails {
+            var detail = """
+            ---
+            From: \(email.from)
+            Subject: \(email.subject)
+            Date: \(email.date)
+            ID: \(email.id)
+            """
+            if !email.snippet.isEmpty {
+                detail += "\nPreview:\n\(email.snippet)"
+            }
+            emailDetails.append(detail)
+        }
+
+        while activeRunId != nil || activeProcessingTask != nil {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+
+        let emailContent = """
+        [SYSTEM: NEW EMAILS ARRIVED]
+        The following new UNREAD emails have just arrived in your inbox. Please tell the user about them naturally.
+        If they seem unimportant (spam, promotions, newsletters), you can briefly mention them or skip detailing them, but you must still reply.
+        You have the `gws` CLI available via `bash` for any follow-up action (read full body with `gws gmail +read --id <id>`, reply with `gws gmail +reply`, etc.).
+
+        New emails:
+        \(emailDetails.joined(separator: "\n"))
+        """
+
+        let userMessage = Message(role: .user, content: emailContent, kind: .emailArrived)
+        messages.append(userMessage)
+
+        statusMessage = "Processing new emails..."
+        startActiveProcessing(for: userMessage)
+    }
+
     private func processNewEmails(_ emails: [EmailMessage]) async {
         guard pairedChatId != nil, !emails.isEmpty else { return }
         

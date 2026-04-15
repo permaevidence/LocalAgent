@@ -1371,33 +1371,27 @@ enum AvailableTools {
 
     // MARK: - Tool Arrays
 
-    /// IMAP email tools (8 tools - used when email_mode is "imap")
-    static var imapEmailTools: [ToolDefinition] {
-        [readEmails, searchEmails, sendEmail, replyEmail, forwardEmail, getEmailThread, sendEmailWithAttachment, downloadEmailAttachment]
-    }
-    
-    /// Gmail API tools (2 consolidated tools - used when email_mode is "gmail")
-    static var gmailEmailTools: [ToolDefinition] {
-        [gmailReader, gmailComposer]
-    }
-    
     /// New filesystem tool surface (replaces the sandboxed document tools).
     static var filesystemTools: [ToolDefinition] {
         [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill, bashWatch, todoWrite, lspHover, lspDefinition, lspReferences]
     }
 
     /// Non-email tools that do not depend on web search credentials.
+    ///
+    /// As of the gws-CLI migration, Gmail / Calendar / Contacts no longer have
+    /// dedicated tools — the agent invokes them via `bash gws …`. Ambient inbox
+    /// snapshot + 30-day agenda are still injected into the system prompt via
+    /// GoogleWorkspaceService.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        return filesystemTools + [manageReminders, manageCalendar, viewConversationChunk, manageContacts, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, cancelSubagent]
+        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, cancelSubagent]
     }
 
-    /// All available tools - dynamically selects email tools and optionally web search
+    /// All available tools. `includeWebSearch` toggles whether the four web tools
+    /// are added; email/calendar/contacts tools have been fully removed from the
+    /// agent surface in favor of the gws CLI.
     static func all(includeWebSearch: Bool) -> [ToolDefinition] {
-        let emailMode = KeychainHelper.load(key: KeychainHelper.emailModeKey) ?? "imap"
-        let emailTools = emailMode == "gmail" ? gmailEmailTools : imapEmailTools
         let webTools = includeWebSearch ? [webSearch, deepResearch, webFetch, webFetchImage] : []
-        let coreTools = webTools + coreToolsWithoutWebSearch
-        return coreTools + emailTools
+        return webTools + coreToolsWithoutWebSearch
     }
     
     /// Backward-compatible default: include web search
