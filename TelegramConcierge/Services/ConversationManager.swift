@@ -38,6 +38,15 @@ class ConversationManager: ObservableObject {
     private let defaultMaxContextTokens = 100_000
     private let defaultTargetContextTokens = 50_000
 
+    // Frozen calendar/email context — populated on first turn of a session, refreshed
+    // only on Watermark prune events or local-day rollover. Between refreshes, the
+    // system-prompt block stays byte-identical so the provider prompt cache holds.
+    // New emails arrive as ambient channel messages via the poller; the snapshot in
+    // the system prompt is a post-context-loss refresh point, not live awareness.
+    private var frozenCalendarContext: String?
+    private var frozenEmailContext: String?
+    private var frozenContextDay: Date?
+
     private struct ToolAwareResponse {
         let finalText: String
         let compactToolLog: String?
@@ -1185,20 +1194,22 @@ class ConversationManager: ObservableObject {
         // Check if tools are available
         let serperKey = KeychainHelper.load(key: KeychainHelper.serperApiKeyKey) ?? ""
 
-        // Fetch all context data in PARALLEL for performance
+        // Fetch all context data in PARALLEL for performance.
+        // Calendar + email use the frozen session-level cache: populated on first turn,
+        // refreshed only on prune events and local-day rollover. The helper returns
+        // instantly on cache hits, so awaiting it in parallel with the others is free.
         let contextStartTime = Date()
-        async let calendarContextTask = CalendarService.shared.getCalendarContextForSystemPrompt()
-        async let emailContextTask = EmailService.shared.getEmailContextForSystemPrompt()
+        async let frozenContextTask = getFrozenSystemContext()
         async let chunkSummariesTask = archiveService.getPromptSummaryItems(recentConsolidatedCount: 5)
         async let totalChunkCountTask = archiveService.getAllChunks()
         async let contextResultTask = openRouterService.processContextWindow(messages)
-        
-        // Await all parallel operations
-        // calendarContext / emailContext are `var` because we refresh them on every
-        // Watermark prune event — a prune already invalidates the cache, so we take
-        // advantage of that moment to re-fetch fresh calendar/email data for free.
-        var calendarContext = await calendarContextTask
-        var emailContext = await emailContextTask
+
+        // Await all parallel operations.
+        // calendarContext / emailContext remain `var` because prune events below
+        // force a cache refresh and we want the new values to flow to the LLM call.
+        let frozenContext = await frozenContextTask
+        var calendarContext = frozenContext.calendar
+        var emailContext = frozenContext.email
         let chunkSummaries = await chunkSummariesTask
         let allChunks = await totalChunkCountTask
         let totalChunkCount = allChunks.count
@@ -1265,9 +1276,9 @@ class ConversationManager: ObservableObject {
             refreshSystemPromptTimestamp()
             // Cache is already invalidated by the prune — take the opportunity to
             // refresh stale calendar/email context with current data for free.
-            calendarContext = await CalendarService.shared.getCalendarContextForSystemPrompt()
-            emailContext = await EmailService.shared.getEmailContextForSystemPrompt()
-            print("[ConversationManager] Post-prune refresh: fetched fresh calendar + email context")
+            let refreshed = await getFrozenSystemContext(forceRefresh: true)
+            calendarContext = refreshed.calendar
+            emailContext = refreshed.email
         }
 
         // Use the frozen system prompt timestamp (only refreshes on prune events or day change)
@@ -1469,9 +1480,9 @@ class ConversationManager: ObservableObject {
                 if midLoopDidPrune {
                     // Cache is already invalidated by the prune — take the opportunity
                     // to refresh stale calendar/email context with current data for free.
-                    calendarContext = await CalendarService.shared.getCalendarContextForSystemPrompt()
-                    emailContext = await EmailService.shared.getEmailContextForSystemPrompt()
-                    print("[ConversationManager] Mid-loop post-prune refresh: fetched fresh calendar + email context")
+                    let refreshed = await getFrozenSystemContext(forceRefresh: true)
+                    calendarContext = refreshed.calendar
+                    emailContext = refreshed.email
                 }
 
                 if cumulativeToolSpendUSD >= toolSpendLimitPerTurnUSD {
@@ -2084,6 +2095,32 @@ class ConversationManager: ObservableObject {
     /// Force-refresh the system prompt timestamp (called when cache is already broken by pruning)
     private func refreshSystemPromptTimestamp() {
         UserDefaults.standard.set(Date(), forKey: systemPromptTimestampKey)
+    }
+
+    /// Returns frozen calendar + email context for the system prompt. Fetches fresh
+    /// values only when (a) the session-level cache is empty (first turn), (b) the
+    /// caller forces a refresh (prune events, where the prompt cache is broken
+    /// anyway), or (c) the local day has rolled over (so TODAY/TOMORROW calendar
+    /// labels stay accurate). Between those events the cached strings are returned
+    /// byte-identical — new emails surface via ambient poller messages instead of
+    /// drifting the system prompt prefix.
+    private func getFrozenSystemContext(forceRefresh: Bool = false) async -> (calendar: String, email: String) {
+        let today = Calendar.current.startOfDay(for: Date())
+        let dayRolled = (frozenContextDay != today)
+        let needsFetch = forceRefresh || dayRolled || frozenCalendarContext == nil || frozenEmailContext == nil
+
+        if needsFetch {
+            async let cal = CalendarService.shared.getCalendarContextForSystemPrompt()
+            async let eml = EmailService.shared.getEmailContextForSystemPrompt()
+            let freshCal = await cal
+            let freshEml = await eml
+            frozenCalendarContext = freshCal
+            frozenEmailContext = freshEml
+            frozenContextDay = today
+            let reason = forceRefresh ? "prune" : (dayRolled ? "day-rollover" : "session-start")
+            print("[ConversationManager] Refreshed frozen calendar+email context (reason: \(reason))")
+        }
+        return (frozenCalendarContext ?? "", frozenEmailContext ?? "")
     }
 
     private func formatUSD(_ value: Double) -> String {
