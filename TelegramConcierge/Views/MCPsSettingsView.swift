@@ -1,0 +1,556 @@
+import SwiftUI
+
+/// MCP server management panel (Phase 4).
+///
+/// Lists every server configured in `~/LocalAgent/mcp.json`, shows live
+/// connection status from the registry, lets the user edit command / args /
+/// env / disabled flag / secret refs, add new servers, or remove existing
+/// ones. Secrets are stored in the macOS Keychain under
+/// `mcp_env_<server>_<VAR>` — never written to mcp.json.
+///
+/// Save flow: edits mutate an in-memory array; pressing "Save & Restart MCPs"
+/// serialises the array back to mcp.json via MCPRegistry.saveConfigsToDisk()
+/// and calls MCPRegistry.shared.reloadFromDisk() so running clients are
+/// cleanly torn down and respawned.
+struct MCPsSettingsView: View {
+
+    @State private var servers: [MCPServerConfig] = []
+    @State private var statusByServer: [String: ServerStatus] = [:]
+    @State private var editingIndex: Int? = nil
+    @State private var isLoading: Bool = true
+    @State private var isApplying: Bool = false
+    @State private var dirty: Bool = false
+    @State private var statusNote: String?
+    @State private var errorNote: String?
+    @State private var showingAddSheet: Bool = false
+
+    // Secrets editing (per editing session)
+    @State private var secretValues: [String: String] = [:]   // "<server>|<VAR>" → value
+    @State private var revealedSecrets: Set<String> = []
+
+    private struct ServerStatus {
+        let connected: Bool
+        let failed: Bool
+        let reason: String?
+        let toolCount: Int
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                if isLoading {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Loading MCP config…")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else if servers.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No MCP servers configured.")
+                            .font(.body)
+                        Text("Add one to expose external tools (Playwright, Postgres, GitHub, etc.) to your agents.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    ForEach(Array(servers.enumerated()), id: \.offset) { idx, cfg in
+                        serverRow(idx: idx, cfg: cfg)
+                    }
+                }
+            } header: {
+                Label("Installed MCPs", systemImage: "server.rack")
+            }
+
+            Section {
+                HStack {
+                    Button {
+                        showingAddSheet = true
+                    } label: {
+                        Label("Add MCP", systemImage: "plus.circle")
+                    }
+
+                    Button {
+                        Task { await applyChanges() }
+                    } label: {
+                        if isApplying {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Save & Restart MCPs")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!dirty || isApplying)
+
+                    Button("Revert") {
+                        Task { await reload() }
+                    }
+                    .disabled(!dirty || isApplying)
+
+                    Spacer()
+
+                    if let note = statusNote {
+                        Label(note, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    } else if let err = errorNote {
+                        Label(err, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                }
+
+                Text("Config file: \(MCPRegistry.mcpConfigPath())")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                Text("Secrets referenced via `secretRefs` are stored in the macOS Keychain under `mcp_env_<server>_<VAR>`. Plain text values go in `env` and are written to mcp.json — use `secretRefs` for tokens.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal)
+        .task {
+            await reload()
+        }
+        .sheet(isPresented: $showingAddSheet) {
+            AddMCPSheet(
+                existingNames: Set(servers.map { $0.name }),
+                onAdd: { cfg in
+                    servers.append(cfg)
+                    dirty = true
+                    showingAddSheet = false
+                },
+                onCancel: { showingAddSheet = false }
+            )
+        }
+    }
+
+    // MARK: - One server row (status header + inline editor)
+
+    @ViewBuilder
+    private func serverRow(idx: Int, cfg: MCPServerConfig) -> some View {
+        let status = statusByServer[cfg.name]
+        DisclosureGroup(
+            isExpanded: Binding(
+                get: { editingIndex == idx },
+                set: { editingIndex = $0 ? idx : nil }
+            )
+        ) {
+            serverEditor(idx: idx)
+                .padding(.leading, 8)
+        } label: {
+            HStack(spacing: 8) {
+                statusIndicator(for: status, disabled: cfg.disabled)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(cfg.name)
+                            .font(.body.weight(.medium))
+                        if cfg.disabled {
+                            Text("disabled")
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.gray.opacity(0.2))
+                                .cornerRadius(3)
+                        }
+                    }
+                    Text(commandPreview(cfg))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let status = status {
+                    if status.connected {
+                        Text("\(status.toolCount) tools")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if status.failed {
+                        Text("failed")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+        }
+    }
+
+    private func statusIndicator(for status: ServerStatus?, disabled: Bool) -> some View {
+        let color: Color
+        if disabled {
+            color = .gray
+        } else if let status = status {
+            if status.failed { color = .red }
+            else if status.connected { color = .green }
+            else { color = .yellow }
+        } else {
+            color = .gray
+        }
+        return Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+    }
+
+    private func commandPreview(_ cfg: MCPServerConfig) -> String {
+        let args = cfg.arguments.joined(separator: " ")
+        return args.isEmpty ? cfg.command : "\(cfg.command) \(args)"
+    }
+
+    // MARK: - Inline editor
+
+    @ViewBuilder
+    private func serverEditor(idx: Int) -> some View {
+        let binding = $servers[idx]
+        VStack(alignment: .leading, spacing: 10) {
+            TextField(
+                "Command (e.g. npx, uvx, /abs/path)",
+                text: Binding(
+                    get: { binding.wrappedValue.command },
+                    set: { newValue in replaceConfig(at: binding, command: newValue) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+
+            argumentsEditor(binding: binding)
+            envEditor(binding: binding)
+            secretRefsEditor(binding: binding)
+
+            HStack {
+                Toggle("Disabled", isOn: Binding(
+                    get: { binding.wrappedValue.disabled },
+                    set: { newValue in
+                        updateServer(idx: idx, newDisabled: newValue)
+                    }
+                ))
+                .toggleStyle(.checkbox)
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    servers.remove(at: idx)
+                    editingIndex = nil
+                    dirty = true
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+
+            if let status = statusByServer[binding.wrappedValue.name],
+               let reason = status.reason, !reason.isEmpty {
+                Text("Last spawn failure: \(reason)")
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func argumentsEditor(binding: Binding<MCPServerConfig>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Arguments")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            TextField(
+                "Space-separated",
+                text: Binding(
+                    get: { binding.wrappedValue.arguments.joined(separator: " ") },
+                    set: { newValue in
+                        let parts = newValue.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+                        replaceConfig(at: binding, arguments: parts)
+                    }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private func envEditor(binding: Binding<MCPServerConfig>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Environment (KEY=value, one per line) — plaintext, do NOT put secrets here")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            TextEditor(text: Binding(
+                get: { formatEnv(binding.wrappedValue.environment) },
+                set: { newValue in
+                    let parsed = parseEnv(newValue)
+                    replaceConfig(at: binding, environment: parsed)
+                }
+            ))
+            .frame(height: 60)
+            .font(.system(.caption, design: .monospaced))
+            .border(Color.secondary.opacity(0.3))
+        }
+    }
+
+    private func secretRefsEditor(binding: Binding<MCPServerConfig>) -> some View {
+        let serverName = binding.wrappedValue.name
+        let refs = binding.wrappedValue.secretRefs
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Secret refs (Keychain-backed env vars — safe for API tokens)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            ForEach(refs, id: \.self) { ref in
+                secretRow(server: serverName, ref: ref) {
+                    replaceConfig(at: binding, secretRefs: refs.filter { $0 != ref })
+                }
+            }
+            HStack {
+                TextField("ADD_SECRET_NAME (e.g. GITHUB_TOKEN)", text: newSecretDraft(for: serverName))
+                    .textFieldStyle(.roundedBorder)
+                Button("Add") {
+                    let key = "newSecretDraft|\(serverName)"
+                    let draft = (secretValues[key] ?? "").trimmingCharacters(in: .whitespaces)
+                    guard !draft.isEmpty, !refs.contains(draft) else { return }
+                    replaceConfig(at: binding, secretRefs: refs + [draft])
+                    secretValues[key] = ""
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func secretRow(server: String, ref: String, onRemove: @escaping () -> Void) -> some View {
+        let storageKey = "mcp_env_\(server)_\(ref)"
+        let revealKey = "\(server)|\(ref)"
+        HStack(spacing: 6) {
+            Text(ref)
+                .font(.system(.caption, design: .monospaced))
+                .frame(minWidth: 120, alignment: .leading)
+            if revealedSecrets.contains(revealKey) {
+                TextField("secret value", text: Binding(
+                    get: { secretValues[revealKey] ?? KeychainHelper.load(key: storageKey) ?? "" },
+                    set: { newValue in
+                        secretValues[revealKey] = newValue
+                        try? KeychainHelper.save(key: storageKey, value: newValue)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+            } else {
+                SecureField("•••••••• (click eye to edit)", text: Binding(
+                    get: { secretValues[revealKey] ?? KeychainHelper.load(key: storageKey) ?? "" },
+                    set: { newValue in
+                        secretValues[revealKey] = newValue
+                        try? KeychainHelper.save(key: storageKey, value: newValue)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+            Button {
+                if revealedSecrets.contains(revealKey) {
+                    revealedSecrets.remove(revealKey)
+                } else {
+                    revealedSecrets.insert(revealKey)
+                }
+            } label: {
+                Image(systemName: revealedSecrets.contains(revealKey) ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.borderless)
+
+            Button(role: .destructive) {
+                try? KeychainHelper.delete(key: storageKey)
+                onRemove()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func newSecretDraft(for server: String) -> Binding<String> {
+        Binding(
+            get: { secretValues["newSecretDraft|\(server)"] ?? "" },
+            set: { secretValues["newSecretDraft|\(server)"] = $0 }
+        )
+    }
+
+    // MARK: - Mutation helpers (preserve server name identity)
+
+    private func updateServer(idx: Int, newDisabled: Bool) {
+        let old = servers[idx]
+        servers[idx] = MCPServerConfig(
+            name: old.name,
+            command: old.command,
+            arguments: old.arguments,
+            environment: old.environment,
+            disabled: newDisabled,
+            secretRefs: old.secretRefs
+        )
+        dirty = true
+    }
+
+    private func replaceConfig(
+        at binding: Binding<MCPServerConfig>,
+        command: String? = nil,
+        arguments: [String]? = nil,
+        environment: [String: String]? = nil,
+        disabled: Bool? = nil,
+        secretRefs: [String]? = nil
+    ) {
+        let old = binding.wrappedValue
+        binding.wrappedValue = MCPServerConfig(
+            name: old.name,
+            command: command ?? old.command,
+            arguments: arguments ?? old.arguments,
+            environment: environment ?? old.environment,
+            disabled: disabled ?? old.disabled,
+            secretRefs: secretRefs ?? old.secretRefs
+        )
+        dirty = true
+    }
+
+    // MARK: - Env parsing
+
+    private func formatEnv(_ env: [String: String]) -> String {
+        env.keys.sorted().map { "\($0)=\(env[$0] ?? "")" }.joined(separator: "\n")
+    }
+
+    private func parseEnv(_ raw: String) -> [String: String] {
+        var out: [String: String] = [:]
+        for line in raw.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let eq = trimmed.firstIndex(of: "=") else { continue }
+            let key = String(trimmed[..<eq]).trimmingCharacters(in: .whitespaces)
+            let value = String(trimmed[trimmed.index(after: eq)...])
+            if !key.isEmpty { out[key] = value }
+        }
+        return out
+    }
+
+    // MARK: - Load / Apply
+
+    private func reload() async {
+        isLoading = true
+        statusNote = nil
+        errorNote = nil
+        servers = MCPRegistry.loadConfigsFromDisk()
+        let status = await MCPRegistry.shared.status()
+        var map: [String: ServerStatus] = [:]
+        for entry in status {
+            map[entry.name] = ServerStatus(
+                connected: entry.connected,
+                failed: entry.failed,
+                reason: entry.reason,
+                toolCount: entry.toolCount
+            )
+        }
+        statusByServer = map
+        dirty = false
+        isLoading = false
+    }
+
+    private func applyChanges() async {
+        isApplying = true
+        defer { isApplying = false }
+        do {
+            try MCPRegistry.saveConfigsToDisk(servers)
+            await MCPRegistry.shared.reloadFromDisk()
+            await MCPAgentRouting.refreshFromRegistry()
+            dirty = false
+            statusNote = "Saved and restarted MCPs"
+            errorNote = nil
+            await reload()
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if statusNote?.contains("Saved") == true { statusNote = nil }
+            }
+        } catch {
+            errorNote = "Save failed: \(error.localizedDescription)"
+            statusNote = nil
+        }
+    }
+}
+
+// MARK: - Add MCP sheet
+
+private struct AddMCPSheet: View {
+    let existingNames: Set<String>
+    let onAdd: (MCPServerConfig) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String = ""
+    @State private var command: String = ""
+    @State private var args: String = ""
+    @State private var selectedTemplate: Template = .custom
+
+    enum Template: String, CaseIterable, Identifiable {
+        case custom = "Custom"
+        case playwright = "Playwright (browser)"
+        case github = "GitHub"
+        case postgres = "Postgres"
+        case sqlite = "SQLite"
+
+        var id: String { rawValue }
+
+        var config: (name: String, command: String, args: String)? {
+            switch self {
+            case .custom: return nil
+            case .playwright:
+                return ("playwright", "npx", "@playwright/mcp@latest")
+            case .github:
+                return ("github", "npx", "@modelcontextprotocol/server-github")
+            case .postgres:
+                return ("postgres", "npx", "@modelcontextprotocol/server-postgres postgresql://user:pass@localhost/db")
+            case .sqlite:
+                return ("sqlite", "uvx", "mcp-server-sqlite --db-path /path/to/db.sqlite")
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add MCP server")
+                .font(.headline)
+
+            Picker("Template", selection: $selectedTemplate) {
+                ForEach(Template.allCases) { t in
+                    Text(t.rawValue).tag(t)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: selectedTemplate) { newValue in
+                if let cfg = newValue.config {
+                    if name.isEmpty { name = cfg.name }
+                    command = cfg.command
+                    args = cfg.args
+                }
+            }
+
+            TextField("Server name (e.g. playwright)", text: $name)
+                .textFieldStyle(.roundedBorder)
+            TextField("Command (e.g. npx, uvx)", text: $command)
+                .textFieldStyle(.roundedBorder)
+            TextField("Args (space-separated)", text: $args)
+                .textFieldStyle(.roundedBorder)
+
+            if existingNames.contains(name) {
+                Text("A server named '\(name)' already exists.")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Add") {
+                    let cfg = MCPServerConfig(
+                        name: name.trimmingCharacters(in: .whitespaces),
+                        command: command.trimmingCharacters(in: .whitespaces),
+                        arguments: args.split(separator: " ", omittingEmptySubsequences: true).map(String.init),
+                        environment: [:],
+                        disabled: false,
+                        secretRefs: []
+                    )
+                    onAdd(cfg)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(name.isEmpty || command.isEmpty || existingNames.contains(name))
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+    }
+}

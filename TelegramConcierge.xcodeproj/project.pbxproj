@@ -61,6 +61,7 @@
 		MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPREGISTRY0123456789A1B /* MCPRegistry.swift */; };
 		MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */; };
 		AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */; };
+		MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
@@ -128,6 +129,7 @@
 		MCPREGISTRY0123456789A1B /* MCPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPRegistry.swift; sourceTree = "<group>"; };
 		MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPAgentRouting.swift; sourceTree = "<group>"; };
 		AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentsSettingsView.swift; sourceTree = "<group>"; };
+		MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPsSettingsView.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
@@ -243,6 +245,7 @@
 				CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */,
 				DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */,
 				AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */,
+				MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -402,6 +405,7 @@
 				MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */,
 				MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */,
 				AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */,
+				MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */,
 				TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */,
 				DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */,
 			);

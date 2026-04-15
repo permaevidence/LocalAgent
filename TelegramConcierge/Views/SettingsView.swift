@@ -193,6 +193,9 @@ struct SettingsView: View {
                 AgentsSettingsView()
                     .tabItem { Label("Agents", systemImage: "person.2.wave.2") }
 
+                MCPsSettingsView()
+                    .tabItem { Label("MCPs", systemImage: "server.rack") }
+
                 dataTab
                     .tabItem { Label("Data", systemImage: "externaldrive.fill") }
             }

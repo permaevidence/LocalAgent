@@ -107,6 +107,60 @@ actor MCPRegistry {
         bootstrapTask = nil
     }
 
+    /// Tear down every running client and re-bootstrap from the current
+    /// on-disk config. Called by Settings UI after mcp.json is rewritten so
+    /// changes take effect without requiring an app restart.
+    func reloadFromDisk() async {
+        for entry in entries.values {
+            await entry.client.shutdown()
+        }
+        entries.removeAll()
+        didBootstrap = false
+        bootstrapTask = nil
+        await ensureBootstrapped()
+    }
+
+    // MARK: - Config persistence (for Settings UI)
+
+    /// Public wrapper around the private on-disk loader. Used by the MCPs
+    /// settings panel to render the current configuration.
+    nonisolated static func loadConfigsFromDisk() -> [MCPServerConfig] {
+        loadConfigs()
+    }
+
+    /// Write the full mcp.json atomically. Sorted by server name for
+    /// reviewable diffs. Does NOT restart running clients — call
+    /// `await MCPRegistry.shared.reloadFromDisk()` afterwards if the changes
+    /// need to take effect immediately.
+    nonisolated static func saveConfigsToDisk(_ configs: [MCPServerConfig]) throws {
+        var servers: [String: Any] = [:]
+        for cfg in configs.sorted(by: { $0.name < $1.name }) {
+            var dict: [String: Any] = [
+                "command": cfg.command,
+                "args": cfg.arguments
+            ]
+            if !cfg.environment.isEmpty { dict["env"] = cfg.environment }
+            if cfg.disabled { dict["disabled"] = true }
+            if !cfg.secretRefs.isEmpty { dict["secretRefs"] = cfg.secretRefs }
+            servers[cfg.name] = dict
+        }
+        let root: [String: Any] = ["mcpServers": servers]
+        let url = mcpConfigURL()
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: url, options: .atomic)
+    }
+
+    public static func mcpConfigPath() -> String {
+        mcpConfigURL().path
+    }
+
     // MARK: - Bootstrap
 
     private func ensureBootstrapped() async {
