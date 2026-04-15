@@ -38,9 +38,8 @@ struct OnboardingView: View {
     @State private var serperApiKey: String = ""
     @State private var jinaApiKey: String = ""
 
-    // Email
-    @State private var gmailClientId: String = ""
-    @State private var gmailClientSecret: String = ""
+    // Google Workspace is configured outside the app via the `gws` CLI —
+    // no in-app state to carry for this step.
 
     // Image Gen
     @State private var geminiApiKey: String = ""
@@ -371,7 +370,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label("Voice Transcription — understand your voice messages", systemImage: "waveform")
                 Label("Web Search — search the internet and read web pages", systemImage: "magnifyingglass")
-                Label("Email — read and send emails on your behalf", systemImage: "envelope")
+                Label("Google Workspace — Gmail, Calendar, Contacts, Drive via the gws CLI", systemImage: "envelope")
                 Label("Image Generation — create and edit images", systemImage: "photo.badge.plus")
             }
             .font(.callout)
@@ -454,31 +453,75 @@ struct OnboardingView: View {
     }
 
     private var emailStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("Gmail", systemImage: "envelope.fill")
-                .font(.title2.bold())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Google Workspace (gws CLI)", systemImage: "envelope.fill")
+                    .font(.title2.bold())
 
-            Text("Let your assistant read and send emails via Gmail API.")
-                .font(.callout)
-                .foregroundColor(.secondary)
+                Text("Your assistant talks to Gmail, Calendar, Contacts, and Drive through the official Google Workspace CLI (gws). One install gets you all of Google Workspace — the app itself just reads the CLI's output.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Setup:")
-                        .font(.headline)
-                    Text("1. Go to console.cloud.google.com")
-                    Text("2. Create a project and enable the Gmail API")
-                    Text("3. Create OAuth 2.0 credentials (Desktop app)")
-                    Text("4. Paste the Client ID and Client Secret below")
-                    Text("5. Complete OAuth authentication in Settings after onboarding")
+                GroupBox(label: Text("1. Install gws").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Via Homebrew (recommended on macOS):")
+                            .font(.callout)
+                        Text("brew install gws")
+                            .font(.system(.callout, design: .monospaced))
+                            .padding(6)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                        Text("Or see github.com/workspace-cli/gws for other install options.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .font(.callout)
-            }
 
-            SecureField("Gmail Client ID", text: $gmailClientId)
-                .textFieldStyle(.roundedBorder)
-            SecureField("Gmail Client Secret", text: $gmailClientSecret)
-                .textFieldStyle(.roundedBorder)
+                GroupBox(label: Text("2. Create OAuth credentials").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("• Go to console.cloud.google.com")
+                        Text("• Create a project (or reuse one) and enable these APIs: Gmail, Calendar, People (Contacts), Drive — plus any others you want (Docs, Sheets, Tasks, Keep).")
+                        Text("• Create OAuth 2.0 credentials, type \"Desktop app\".")
+                        Text("• Download the credentials JSON.")
+                    }
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox(label: Text("3. Authenticate").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("In a terminal, run:")
+                            .font(.callout)
+                        Text("gws auth login --credentials /path/to/credentials.json")
+                            .font(.system(.callout, design: .monospaced))
+                            .padding(6)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                        Text("The first run opens a browser for consent and grants the scopes for every service you want enabled. Tokens are kept in the macOS keychain under the gws entry.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox(label: Text("4. Verify").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Quick sanity checks — both should print JSON:")
+                            .font(.callout)
+                        Text("gws gmail +triage --query 'is:unread' --format json")
+                            .font(.system(.callout, design: .monospaced))
+                        Text("gws calendar +agenda --today --format json")
+                            .font(.system(.callout, design: .monospaced))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Text("Your assistant auto-discovers gws on next launch. If it's not installed or not authenticated, the system prompt silently skips the inbox/calendar blocks and the turn still works — you just won't have ambient awareness.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 4)
         }
     }
 
@@ -602,13 +645,9 @@ struct OnboardingView: View {
     }
 
     private func saveEmail() {
-        try? KeychainHelper.save(key: KeychainHelper.emailModeKey, value: "gmail")
-        if !gmailClientId.isEmpty {
-            try? KeychainHelper.save(key: KeychainHelper.gmailClientIdKey, value: gmailClientId)
-        }
-        if !gmailClientSecret.isEmpty {
-            try? KeychainHelper.save(key: KeychainHelper.gmailClientSecretKey, value: gmailClientSecret)
-        }
+        // Google Workspace is configured entirely outside the app — via the
+        // `gws` CLI — so this step has nothing to persist. Kept as a no-op so
+        // the step index mapping doesn't shift.
     }
 
     private func saveImageGen() {
@@ -645,8 +684,6 @@ struct OnboardingView: View {
         openAITranscriptionApiKey = KeychainHelper.load(key: KeychainHelper.openAITranscriptionApiKeyKey) ?? ""
         serperApiKey = KeychainHelper.load(key: KeychainHelper.serperApiKeyKey) ?? ""
         jinaApiKey = KeychainHelper.load(key: KeychainHelper.jinaApiKeyKey) ?? ""
-        gmailClientId = KeychainHelper.load(key: KeychainHelper.gmailClientIdKey) ?? ""
-        gmailClientSecret = KeychainHelper.load(key: KeychainHelper.gmailClientSecretKey) ?? ""
         geminiApiKey = KeychainHelper.load(key: KeychainHelper.geminiApiKeyKey) ?? ""
     }
 
