@@ -97,22 +97,28 @@ actor CalendarService {
     
     private var cachedContext: String?
     private var cacheInvalidated: Bool = true
-    
+    /// `startOfDay` at the moment `cachedContext` was rendered. Used to auto-
+    /// invalidate the cache when the local day rolls over so "TODAY/TOMORROW"
+    /// labels and the `>= startOfToday` event filter stay correct.
+    private var cachedDay: Date?
+
     // Token thresholds (approximate: 4 chars per token)
     private let maxTokens = 4000
     private let triggerTokens = 5000
     private let charsPerToken = 4
-    
+
     /// Get formatted calendar context for LLM system prompt
     /// Returns a string with today's and future events, auto-summarized if too long
     func getCalendarContextForSystemPrompt() -> String {
-        // Return cached if valid
-        if !cacheInvalidated, let cached = cachedContext {
+        let today = Calendar.current.startOfDay(for: Date())
+        // Return cached if valid AND the local day hasn't rolled over since render.
+        if !cacheInvalidated, let cached = cachedContext, cachedDay == today {
             return cached
         }
-        
+
         let context = generateCalendarContext()
         cachedContext = context
+        cachedDay = today
         cacheInvalidated = false
         return context
     }
@@ -121,6 +127,7 @@ actor CalendarService {
     private func invalidateCache() {
         cacheInvalidated = true
         cachedContext = nil
+        cachedDay = nil
     }
     
     /// Generate calendar context with progressive detail
