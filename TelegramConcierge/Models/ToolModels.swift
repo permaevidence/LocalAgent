@@ -877,13 +877,27 @@ enum AvailableTools {
 
     /// Agent tool — dynamic enum values include built-in subagents plus any user-defined ones
     /// discovered via `UserAgentLoader`. The definition is computed so new user agents appear
-    /// on the next tool-list build without a restart.
+    /// on the next tool-list build without a restart. Per-subagent descriptions are injected
+    /// into the tool's free-text description so the LLM knows what each one does, not just
+    /// that it exists.
     static var agentTool: ToolDefinition {
-        let subagentNames = SubagentTypes.allNames()
+        let allSubagents = SubagentTypes.all()
+        let subagentNames = allSubagents.map { $0.name }
+        let listing = allSubagents
+            .map { "  - \($0.name): \($0.description)" }
+            .joined(separator: "\n")
+        let description = """
+        Launch a new subagent with a fresh, isolated context for focused work. Useful for broad codebase exploration, architectural planning, or focused investigations that would otherwise bloat your own context. The subagent has its own tools and returns only its final message to you.
+
+        Available subagents:
+        \(listing)
+
+        Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.
+        """
         return ToolDefinition(
             function: FunctionDefinition(
                 name: "Agent",
-                description: "Launch a new subagent with a fresh, isolated context for focused work. Useful for broad codebase exploration, architectural planning, or focused investigations that would otherwise bloat your own context. The subagent has its own tools and returns only its final message to you. Built-in subagent_type values: 'general-purpose' (full tool access, open-ended tasks), 'Explore' (read-only, fast codebase search with parallel tool calls, cheap model), 'Plan' (read-only, produces an implementation plan without executing). User-defined subagents loaded from ~/LocalAgent/agents/*.md are also accepted. Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.",
+                description: description,
                 parameters: FunctionParameters(
                     properties: [
                         "subagent_type": ParameterProperty(
