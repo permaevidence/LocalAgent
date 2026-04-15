@@ -20,6 +20,29 @@ struct SubagentType {
     let allowedToolNames: Set<String>?
     let defaultMaxTurns: Int
     let preferredModel: SubagentModelChoice
+    /// Default MCP tool-name patterns this subagent type can see (e.g.
+    /// `["mcp__playwright__*"]`). Overridden per-agent by
+    /// `~/LocalAgent/mcp-routing.json` when an entry for this agent exists.
+    /// nil = no MCP tools visible unless the routing file opts them in.
+    let mcpToolPatterns: [String]?
+
+    init(
+        name: String,
+        description: String,
+        systemPromptSuffix: String,
+        allowedToolNames: Set<String>?,
+        defaultMaxTurns: Int,
+        preferredModel: SubagentModelChoice,
+        mcpToolPatterns: [String]? = nil
+    ) {
+        self.name = name
+        self.description = description
+        self.systemPromptSuffix = systemPromptSuffix
+        self.allowedToolNames = allowedToolNames
+        self.defaultMaxTurns = defaultMaxTurns
+        self.preferredModel = preferredModel
+        self.mcpToolPatterns = mcpToolPatterns
+    }
 }
 
 /// Model/provider/reasoning targets for `.cheapFast` subagent runs.
@@ -74,15 +97,66 @@ enum SubagentTypes {
         preferredModel: .inherit
     )
 
-    static let builtIns: [SubagentType] = [generalPurpose, explore, plan]
+    /// Dynamic subagent registered when a Playwright MCP is installed.
+    /// Gets the full browser tool surface scoped to its own context so the
+    /// main agent's prompt stays lean.
+    static let browse = SubagentType(
+        name: "Browse",
+        description: "browser automation via Playwright MCP",
+        systemPromptSuffix:
+            "You are a browser automation specialist. Use the mcp__playwright__* tools to navigate, snapshot, click, type, and evaluate pages. Prefer `browser_snapshot` (cheap, structured accessibility tree) over `browser_take_screenshot` unless a visual is specifically requested. Return a concise report with what you found, what you clicked, and any extracted data. If navigating to a sensitive site (bank, admin console), stop and report back rather than acting.",
+        allowedToolNames: ["read_file", "grep", "bash", "web_fetch"],
+        defaultMaxTurns: 25,
+        preferredModel: .inherit,
+        mcpToolPatterns: ["mcp__playwright__*"]
+    )
+
+    /// Dynamic subagent registered when a SQL MCP (postgres / sqlite / mysql)
+    /// is installed. Scoped to read-heavy analysis — writes are still possible
+    /// through the MCP but the prompt steers toward inspection first.
+    static let db = SubagentType(
+        name: "DB",
+        description: "SQL database exploration and query",
+        systemPromptSuffix:
+            "You are a database analysis specialist. Use the mcp__postgres__* / mcp__sqlite__* / mcp__mysql__* tools (whichever are present) to list schemas, inspect tables, and run read queries. For destructive writes (INSERT/UPDATE/DELETE/DROP), stop and confirm intent before executing. Return results as a concise summary with row counts and key values — do not dump large tables verbatim.",
+        allowedToolNames: ["read_file", "grep", "bash"],
+        defaultMaxTurns: 20,
+        preferredModel: .inherit,
+        mcpToolPatterns: ["mcp__postgres__*", "mcp__sqlite__*", "mcp__mysql__*"]
+    )
+
+    static let staticBuiltIns: [SubagentType] = [generalPurpose, explore, plan]
+
+    /// Built-ins that should appear only when a matching MCP server is
+    /// installed, keyed by the server name(s) that activate them.
+    private static let dynamicBuiltIns: [(type: SubagentType, servers: Set<String>)] = [
+        (browse, ["playwright"]),
+        (db, ["postgres", "sqlite", "mysql"])
+    ]
+
+    /// Active dynamic built-ins for the current registry state. Each dynamic
+    /// subagent appears only if at least one of its backing MCP servers is
+    /// currently connected (per `MCPAgentRouting.installedServers()`).
+    static func activeDynamicBuiltIns() -> [SubagentType] {
+        let installed = MCPAgentRouting.installedServers()
+        return dynamicBuiltIns.compactMap { pair in
+            pair.servers.isDisjoint(with: installed) ? nil : pair.type
+        }
+    }
+
+    /// All currently-visible built-ins (static + active dynamic).
+    static var builtIns: [SubagentType] {
+        staticBuiltIns + activeDynamicBuiltIns()
+    }
 
     /// Built-ins plus any user-defined agents from `~/LocalAgent/agents/*.md`.
     /// Built-ins win on name collision.
     static func all() -> [SubagentType] {
         let user = UserAgentLoader.loadAll()
-        let builtInNames = Set(builtIns.map { $0.name.lowercased() })
+        let built = builtIns
+        let builtInNames = Set(built.map { $0.name.lowercased() })
         let filteredUser = user.filter { !builtInNames.contains($0.name.lowercased()) }
-        return builtIns + filteredUser
+        return built + filteredUser
     }
 
     /// All subagent names for tool-schema enum values.

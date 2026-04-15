@@ -66,11 +66,22 @@ actor SubagentRunner {
 
         // 2. Build filtered tool list.
         //    - Always strip the Agent tool (recursion guard).
-        //    - If a whitelist is set, keep only whitelisted names.
+        //    - If a native whitelist is set, keep only whitelisted names.
+        //    - Append MCP tools scoped to this subagent's routing entry
+        //      (mcp-routing.json per-agent override → subagent type fallback
+        //      patterns → nothing). parentTools is native-only, so MCP tools
+        //      come in fresh from the registry, filtered per-agent.
         var filteredTools = parentTools.filter { $0.function.name != "Agent" }
         if let whitelist = subagentType.allowedToolNames {
             filteredTools = filteredTools.filter { whitelist.contains($0.function.name) }
         }
+        let allMcpTools = await MCPRegistry.shared.allToolDefinitions()
+        let subagentMcpTools = MCPAgentRouting.filterMcpTools(
+            forAgent: subagentType.name,
+            allTools: allMcpTools,
+            fallbackPatterns: subagentType.mcpToolPatterns
+        )
+        filteredTools += subagentMcpTools
         let allowedToolNames = Set(filteredTools.map { $0.function.name })
 
         // 3. Build an isolated message history — a single synthetic user message.

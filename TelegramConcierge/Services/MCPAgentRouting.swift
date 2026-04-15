@@ -1,0 +1,194 @@
+import Foundation
+
+/// Per-agent MCP tool routing.
+///
+/// Phase 2 of the MCP subsystem. Decides which MCP-backed tools each agent
+/// (main, built-in subagents, user-defined subagents) is allowed to see in
+/// its prompt tool block.
+///
+/// The routing file lives at `~/LocalAgent/mcp-routing.json`:
+///
+/// ```json
+/// {
+///   "main": [],
+///   "general-purpose": [],
+///   "Explore": [],
+///   "Plan": [],
+///   "Browse": ["mcp__playwright__*"],
+///   "DB":    ["mcp__postgres__*", "mcp__sqlite__*"]
+/// }
+/// ```
+///
+/// Each agent's entry is a list of patterns that match prefixed tool names
+/// (`mcp__<server>__<tool>`). Supported pattern shapes:
+///   - Exact full name:         `"mcp__playwright__browser_click"` (fine-grained)
+///   - Trailing-wildcard (server-wide): `"mcp__playwright__*"` (whole MCP)
+///   - Double wildcard:         `"mcp__*"` (every MCP — escape hatch)
+///
+/// If an agent has no entry in the file, the subagent's `mcpToolPatterns`
+/// (set on `SubagentType`) are used as a fallback. Main agent always falls
+/// back to empty — the Phase 2 default is "no MCP tool exposure on the main
+/// agent unless the user explicitly opts in."
+///
+/// The routing file is loaded lazily on first query and cached in-process.
+/// `reload()` forces a re-read (used after Settings UI writes in Phase 3).
+enum MCPAgentRouting {
+
+    // MARK: - Cached state
+
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cachedConfig: [String: [String]]?
+    nonisolated(unsafe) private static var cachedInstalledServers: Set<String> = []
+    nonisolated(unsafe) private static var cachedMCPToolNames: Set<String> = []
+
+    // MARK: - Public API
+
+    /// Filter the full MCP tool list down to what `agent` is allowed to see.
+    /// Safe to call from sync contexts — routing config is loaded from disk
+    /// lazily and cached.
+    static func filterMcpTools(
+        forAgent agent: String,
+        allTools: [ToolDefinition],
+        fallbackPatterns: [String]?
+    ) -> [ToolDefinition] {
+        let config = loadConfigIfNeeded()
+        let patterns = config[agent] ?? config[caseMatchedAgentKey(agent, in: config) ?? ""] ?? fallbackPatterns ?? []
+        if patterns.isEmpty { return [] }
+
+        return allTools.filter { tool in
+            patterns.contains { matches(pattern: $0, name: tool.function.name) }
+        }
+    }
+
+    /// Sync-readable snapshot of MCP servers known to the registry at the
+    /// most recent `refreshFromRegistry()` call. Used by `SubagentTypes.all()`
+    /// to decide whether to register Browse/DB built-ins (they only appear
+    /// when their backing MCP is actually installed).
+    static func installedServers() -> Set<String> {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cachedInstalledServers
+    }
+
+    /// Sync-readable list of currently-advertised MCP tool names (prefixed).
+    /// Populated by `refreshFromRegistry()`.
+    static func currentToolNames() -> Set<String> {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cachedMCPToolNames
+    }
+
+    /// Pull fresh state from the registry and update the sync caches.
+    /// ConversationManager calls this at the top of every turn, just before
+    /// assembling the tool list, so sync consumers (SubagentTypes.all() et al)
+    /// see up-to-date state without needing their own async path.
+    static func refreshFromRegistry() async {
+        let status = await MCPRegistry.shared.status()
+        let tools = await MCPRegistry.shared.allToolDefinitions()
+        let installed = Set(status.filter { $0.connected && !$0.failed }.map { $0.name })
+        let toolNames = Set(tools.map { $0.function.name })
+        setRegistryCache(installed: installed, toolNames: toolNames)
+    }
+
+    /// Sync shim for updating the cache — keeps the lock manipulation out
+    /// of the async `refreshFromRegistry()` body.
+    private static func setRegistryCache(installed: Set<String>, toolNames: Set<String>) {
+        cacheLock.lock()
+        cachedInstalledServers = installed
+        cachedMCPToolNames = toolNames
+        cacheLock.unlock()
+    }
+
+    /// Force re-read of the routing JSON on next access. Call after Settings
+    /// UI writes the file.
+    static func reload() {
+        cacheLock.lock()
+        cachedConfig = nil
+        cacheLock.unlock()
+    }
+
+    /// Write the full routing config to disk. Used by Phase 3 Settings UI.
+    static func save(config: [String: [String]]) throws {
+        let url = routingURL()
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONSerialization.data(
+            withJSONObject: config,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: url, options: .atomic)
+        cacheLock.lock()
+        cachedConfig = config
+        cacheLock.unlock()
+    }
+
+    /// Read the current routing config (creating an empty one in memory if
+    /// the file is missing). Useful for the Settings UI to populate its state.
+    static func currentConfig() -> [String: [String]] {
+        return loadConfigIfNeeded()
+    }
+
+    // MARK: - Pattern matching
+
+    /// Match `name` against `pattern`. Supported shapes:
+    ///   - Exact:        "mcp__playwright__browser_click"
+    ///   - Suffix glob:  "mcp__playwright__*"
+    ///   - Broad glob:   "mcp__*"
+    static func matches(pattern: String, name: String) -> Bool {
+        if pattern == name { return true }
+        if pattern.hasSuffix("*") {
+            let prefix = String(pattern.dropLast())
+            return name.hasPrefix(prefix)
+        }
+        return false
+    }
+
+    // MARK: - Config loading
+
+    private static func loadConfigIfNeeded() -> [String: [String]] {
+        cacheLock.lock()
+        if let cached = cachedConfig {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let loaded = loadFromDisk() ?? [:]
+        cacheLock.lock()
+        cachedConfig = loaded
+        cacheLock.unlock()
+        return loaded
+    }
+
+    private static func loadFromDisk() -> [String: [String]]? {
+        let url = routingURL()
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        var out: [String: [String]] = [:]
+        for (agent, raw) in root {
+            if let list = raw as? [String] {
+                out[agent] = list
+            }
+        }
+        return out
+    }
+
+    /// Agent names in mcp-routing.json may come in with exact built-in
+    /// capitalization (`Explore`, `Plan`). When a caller asks for a lowercase
+    /// variant (or vice versa), attempt a case-insensitive match before
+    /// giving up.
+    private static func caseMatchedAgentKey(_ agent: String, in config: [String: [String]]) -> String? {
+        let lowered = agent.lowercased()
+        return config.keys.first { $0.lowercased() == lowered }
+    }
+
+    private static func routingURL() -> URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("LocalAgent/mcp-routing.json")
+    }
+}

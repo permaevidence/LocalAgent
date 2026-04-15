@@ -8,6 +8,9 @@ import Foundation
 //   name: kebab-case-name         (required)
 //   description: one-line text    (required)
 //   tools: read_file, grep, bash  (optional — comma list or YAML list form)
+//   mcp_tools:                    (optional — MCP tool-name patterns this agent can see;
+//     - mcp__playwright__*        supports exact names or trailing-wildcard globs)
+//     - mcp__github__*
 //   model: inherit | cheapFast    (optional, default inherit)
 //   max_turns: 20                 (optional, default 20)
 // The body after the closing `---` is the agent's systemPromptSuffix.
@@ -76,6 +79,14 @@ enum UserAgentLoader {
             allowedTools = nil
         }
 
+        let mcpPatterns: [String]?
+        if let mcpValue = fields["mcp_tools"] {
+            let list = mcpValue.listValue()
+            mcpPatterns = list.isEmpty ? nil : list
+        } else {
+            mcpPatterns = nil
+        }
+
         let modelHint = (fields["model"]?.stringValue ?? "inherit")
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
@@ -95,7 +106,8 @@ enum UserAgentLoader {
             systemPromptSuffix: suffix,
             allowedToolNames: allowedTools,
             defaultMaxTurns: maxTurns,
-            preferredModel: preferredModel
+            preferredModel: preferredModel,
+            mcpToolPatterns: mcpPatterns
         )
     }
 

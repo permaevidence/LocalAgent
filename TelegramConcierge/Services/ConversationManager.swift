@@ -1292,11 +1292,22 @@ class ConversationManager: ObservableObject {
             
             // Call LLM (with tools available for chaining)
             let llmStartTime = Date()
+            // Sync MCPAgentRouting's cache so SubagentTypes.all() and the
+            // per-agent filter below see up-to-date installed-server state.
+            await MCPAgentRouting.refreshFromRegistry()
+
             let nativeTools = AvailableTools.all(
                 includeWebSearch: !serperKey.isEmpty
             )
-            let mcpTools = await MCPRegistry.shared.allToolDefinitions()
-            let toolsForRound = nativeTools + mcpTools
+            let allMcpTools = await MCPRegistry.shared.allToolDefinitions()
+            // Phase 2 default: main agent sees no MCP tools unless the user
+            // opts them in via ~/LocalAgent/mcp-routing.json ("main": [...]).
+            let mainMcpTools = MCPAgentRouting.filterMcpTools(
+                forAgent: "main",
+                allTools: allMcpTools,
+                fallbackPatterns: nil
+            )
+            let toolsForRound = nativeTools + mainMcpTools
             let allowedToolNames = Set(toolsForRound.map { $0.function.name })
             let response = try await openRouterService.generateResponse(
                 messages: messagesForLLM,

@@ -59,6 +59,7 @@
 		MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPFRAME00123456789AB1B /* MCPFraming.swift */; };
 		MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPCLIENT0123456789AB1B /* MCPClient.swift */; };
 		MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPREGISTRY0123456789A1B /* MCPRegistry.swift */; };
+		MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
@@ -124,6 +125,7 @@
 		MCPFRAME00123456789AB1B /* MCPFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPFraming.swift; sourceTree = "<group>"; };
 		MCPCLIENT0123456789AB1B /* MCPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPClient.swift; sourceTree = "<group>"; };
 		MCPREGISTRY0123456789A1B /* MCPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPRegistry.swift; sourceTree = "<group>"; };
+		MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPAgentRouting.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				MCPFRAME00123456789AB1B /* MCPFraming.swift */,
 				MCPCLIENT0123456789AB1B /* MCPClient.swift */,
 				MCPREGISTRY0123456789A1B /* MCPRegistry.swift */,
+				MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */,
 				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
 				DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */,
 			);
@@ -394,6 +397,7 @@
 				MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */,
 				MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */,
 				MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */,
+				MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */,
 				TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */,
 				DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */,
 			);
