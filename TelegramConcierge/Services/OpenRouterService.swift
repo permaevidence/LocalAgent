@@ -1009,7 +1009,30 @@ actor OpenRouterService {
             let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode response as string"
             print("[OpenRouterService] JSON decode failed. Raw response: \(rawResponse.prefix(1000))")
             print("[OpenRouterService] Decode error: \(error)")
-            throw error
+            // Surface a useful message up the call stack. Swift's default
+            // DecodingError description is "The data couldn't be read because
+            // it is missing." — generic and actionable to nobody. Include
+            // the specific key path + a snippet of the raw body so the
+            // Telegram error reply tells us exactly what's malformed.
+            let decodeDetail: String
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let ctx):
+                    decodeDetail = "missing key '\(key.stringValue)' at path [\(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))]"
+                case .valueNotFound(let type, let ctx):
+                    decodeDetail = "nil value for \(type) at path [\(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))]"
+                case .typeMismatch(let type, let ctx):
+                    decodeDetail = "type mismatch: expected \(type) at path [\(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))]"
+                case .dataCorrupted(let ctx):
+                    decodeDetail = "data corrupted at path [\(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))]: \(ctx.debugDescription)"
+                @unknown default:
+                    decodeDetail = String(describing: decodingError)
+                }
+            } else {
+                decodeDetail = error.localizedDescription
+            }
+            let bodySnippet = String(rawResponse.prefix(500))
+            throw OpenRouterError.apiError("Response decode failed — \(decodeDetail). Body: \(bodySnippet)")
         }
         
         guard let choice = decoded.choices.first else {
