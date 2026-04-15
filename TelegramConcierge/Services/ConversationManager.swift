@@ -866,6 +866,26 @@ class ConversationManager: ObservableObject {
                 self.error = "Failed to generate response: \(error.localizedDescription)"
                 statusMessage = "Error generating response"
             }
+
+            // Surface the failure to the user. Previously a thrown turn just
+            // updated a local `error` property and died silently — from the
+            // user's side that looks identical to "stuck", because no Telegram
+            // reply ever arrives. Append a visible error message to history
+            // AND send a Telegram ping so the user knows the turn is dead and
+            // a retry is needed. The text includes enough detail to diagnose
+            // common cases (rate limit, network, provider outage) without
+            // leaking internal stack details.
+            let errText = "❌ Turn failed: \(error.localizedDescription). Send another message to retry."
+            let errMessage = Message(role: .assistant, content: errText)
+            messages.append(errMessage)
+            saveConversation()
+            if let chatId = pairedChatId {
+                do {
+                    try await telegramService.sendMessage(chatId: chatId, text: errText)
+                } catch {
+                    print("[ConversationManager] Also failed to send error reply to Telegram: \(error)")
+                }
+            }
         }
     }
     
