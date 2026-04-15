@@ -63,6 +63,7 @@
 		AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */; };
 		MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */; };
 		SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */; };
+		PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROFBUNDL0123456789AB01B /* ProfileBundle.swift */; };
 		SUBAGEDIT0123456789AB01A /* SubagentEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGEDIT0123456789AB01B /* SubagentEditorSheet.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
@@ -133,6 +134,7 @@
 		AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentsSettingsView.swift; sourceTree = "<group>"; };
 		MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPsSettingsView.swift; sourceTree = "<group>"; };
 		SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSerializer.swift; sourceTree = "<group>"; };
+		PROFBUNDL0123456789AB01B /* ProfileBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileBundle.swift; sourceTree = "<group>"; };
 		SUBAGEDIT0123456789AB01B /* SubagentEditorSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentEditorSheet.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
@@ -234,6 +236,7 @@
 				MCPREGISTRY0123456789A1B /* MCPRegistry.swift */,
 				MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */,
 				SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */,
+				PROFBUNDL0123456789AB01B /* ProfileBundle.swift */,
 				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
 				DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */,
 			);
@@ -411,6 +414,7 @@
 				MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */,
 				MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */,
 				SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */,
+				PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */,
 				AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */,
 				MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */,
 				SUBAGEDIT0123456789AB01A /* SubagentEditorSheet.swift in Sources */,

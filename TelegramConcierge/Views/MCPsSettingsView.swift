@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// MCP server management panel (Phase 4).
 ///
@@ -27,6 +29,10 @@ struct MCPsSettingsView: View {
     // Secrets editing (per editing session)
     @State private var secretValues: [String: String] = [:]   // "<server>|<VAR>" → value
     @State private var revealedSecrets: Set<String> = []
+
+    // Profile bundle
+    @State private var showingImportResult: Bool = false
+    @State private var importResultText: String = ""
 
     private struct ServerStatus {
         let connected: Bool
@@ -109,6 +115,31 @@ struct MCPsSettingsView: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Section {
+                HStack {
+                    Button {
+                        exportProfile()
+                    } label: {
+                        Label("Export profile", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        importProfile()
+                    } label: {
+                        Label("Import profile", systemImage: "square.and.arrow.down")
+                    }
+
+                    Spacer()
+                }
+
+                Text("Profiles bundle mcp.json, mcp-routing.json, and every user-defined subagent from ~/LocalAgent/agents/ into a single file. Keychain-backed secret VALUES are never exported — only the variable names (`secretRefs`). On import, you'll need to re-enter secrets for any new servers.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Label("Profile", systemImage: "square.and.arrow.up.on.square")
+            }
         }
         .formStyle(.grouped)
         .padding(.horizontal)
@@ -126,6 +157,95 @@ struct MCPsSettingsView: View {
                 onCancel: { showingAddSheet = false }
             )
         }
+        .alert("Profile imported", isPresented: $showingImportResult) {
+            Button("OK") {}
+        } message: {
+            Text(importResultText)
+        }
+    }
+
+    // MARK: - Profile bundle
+
+    private func exportProfile() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = ProfileBundle.defaultExportFilename()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.message = "Save LocalAgent profile bundle. Keychain secrets are not included."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let data = try ProfileBundle.exportData()
+                try data.write(to: url, options: .atomic)
+                statusNote = "Exported profile to \(url.lastPathComponent)"
+                errorNote = nil
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    if statusNote?.contains("Exported") == true { statusNote = nil }
+                }
+            } catch {
+                errorNote = "Export failed: \(error.localizedDescription)"
+                statusNote = nil
+            }
+        }
+    }
+
+    private func importProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a LocalAgent profile bundle."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let data = try Data(contentsOf: url)
+                let result = try ProfileBundle.importData(data)
+                MCPAgentRouting.reload()
+                Task {
+                    await MCPRegistry.shared.reloadFromDisk()
+                    await MCPAgentRouting.refreshFromRegistry()
+                    await reload()
+                }
+                importResultText = formatImportResult(result)
+                showingImportResult = true
+                errorNote = nil
+            } catch {
+                errorNote = "Import failed: \(error.localizedDescription)"
+                statusNote = nil
+            }
+        }
+    }
+
+    private func formatImportResult(_ r: ProfileBundle.ImportResult) -> String {
+        var lines: [String] = []
+        if !r.mcpServersAdded.isEmpty {
+            lines.append("Added MCPs: \(r.mcpServersAdded.joined(separator: ", "))")
+        }
+        if !r.mcpServersReplaced.isEmpty {
+            lines.append("Replaced MCPs: \(r.mcpServersReplaced.joined(separator: ", "))")
+        }
+        if !r.routingEntriesReplaced.isEmpty {
+            lines.append("Replaced routing: \(r.routingEntriesReplaced.joined(separator: ", "))")
+        }
+        if !r.agentsAdded.isEmpty {
+            lines.append("Added agents: \(r.agentsAdded.joined(separator: ", "))")
+        }
+        if !r.agentsReplaced.isEmpty {
+            lines.append("Replaced agents: \(r.agentsReplaced.joined(separator: ", "))")
+        }
+        if !r.secretsToPopulate.isEmpty {
+            let pairs = r.secretsToPopulate.map { "\($0.server):\($0.variable)" }
+            lines.append("Secrets to populate in Settings: \(pairs.joined(separator: ", "))")
+        }
+        if !r.warnings.isEmpty {
+            lines.append("Warnings: \(r.warnings.joined(separator: "; "))")
+        }
+        if lines.isEmpty {
+            lines.append("Bundle contained nothing to apply.")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - One server row (status header + inline editor)
