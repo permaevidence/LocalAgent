@@ -31,11 +31,17 @@ actor GoogleWorkspaceService {
     private var cachedUnread: [UnreadEmail] = []
     private var lastSuccessfulFetch: Date?
 
-    /// IDs observed in a prior poll tick. A message disappearing from this set means
-    /// the user read it elsewhere; reappearing means it's new. We only fire the
-    /// handler for IDs that were NOT in the previous tick's unread set.
-    private var seenUnreadIds: Set<String> = []
-    private var firstPollCompleted: Bool = false
+    /// Watermark for the arrival-notification poll. Gmail's `after:<epoch>` only
+    /// returns messages delivered strictly after that timestamp, so we use this
+    /// as a high-water mark and advance it after each successful poll. On a
+    /// failed poll we leave it alone so the window widens to cover the gap.
+    /// Nil before the first successful poll — initialized to startBackgroundPoll
+    /// time so we don't notify on pre-existing unread mail at launch.
+    private var lastArrivalPollTime: Date?
+
+    /// Defense-in-depth dedupe across overlapping window edges (`after:` is
+    /// inclusive of second-boundary matches in practice). Bounded to last 200.
+    private var recentlyNotifiedIds: [String] = []
 
     private var pollerTask: Task<Void, Never>?
     private var newEmailHandler: (@Sendable ([UnreadEmail]) async -> Void)?
@@ -59,17 +65,20 @@ actor GoogleWorkspaceService {
     func startBackgroundPoll() {
         pollerTask?.cancel()
         let intervalNs: UInt64 = pollIntervalSeconds * 1_000_000_000
+        // Seed the arrival watermark to "now" so the first poll only surfaces
+        // truly fresh mail — a mailbox with hundreds of pre-existing unread
+        // would otherwise flood the session.
+        lastArrivalPollTime = Date()
         pollerTask = Task.detached { [weak self] in
-            // Do a first poll immediately so the context builders and the
-            // unread-ID watermark populate without waiting 5 min.
-            await self?.pollOnce()
+            // First poll after the seed interval: don't tick at T=0 or we'll
+            // query a zero-width window and miss nothing intended anyway.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: intervalNs)
                 if Task.isCancelled { break }
                 await self?.pollOnce()
             }
         }
-        print("[GoogleWorkspaceService] Background poll started (every \(pollIntervalSeconds)s, query: is:unread)")
+        print("[GoogleWorkspaceService] Arrival poll started (every \(pollIntervalSeconds)s, query: is:unread after:<lastPollTime>)")
     }
 
     func stopBackgroundPoll() {
@@ -82,12 +91,12 @@ actor GoogleWorkspaceService {
     /// Email context block for the system prompt. Byte-stable between explicit
     /// refreshes so the provider prompt cache holds. Returns "" on any failure
     /// so the caller can simply skip the block.
+    ///
+    /// This fetches the snapshot of current unread mail (top N by date, no
+    /// time-window filter) — distinct from the poll path which only reports
+    /// NEW arrivals since the last watermark.
     func getEmailContextForSystemPrompt() async -> String {
-        // If the poller has never populated, try a blocking fetch with retry.
-        if !firstPollCompleted {
-            _ = await fetchUnreadEmailsWithRetry()
-            firstPollCompleted = true
-        }
+        _ = await fetchUnreadSnapshotWithRetry()
         return formatUnreadEmails(cachedUnread)
     }
 
@@ -116,39 +125,50 @@ actor GoogleWorkspaceService {
         cachedCalendarDay = nil
     }
 
-    // MARK: - Poll tick
+    // MARK: - Poll tick (arrival-only — does NOT surface pre-existing unread)
 
     private func pollOnce() async {
-        guard let emails = await fetchUnreadEmailsWithRetry() else {
-            // Keep previous cache so ambient context doesn't flap to empty on a
-            // transient failure. Don't notify anyone either.
+        // Watermark was seeded at startBackgroundPoll time. On a failed fetch we
+        // leave it untouched so the next successful poll widens the window to
+        // cover the gap — no missed arrivals.
+        let since = lastArrivalPollTime ?? Date().addingTimeInterval(-TimeInterval(pollIntervalSeconds))
+        let sinceEpoch = Int(since.timeIntervalSince1970)
+        let pollStartedAt = Date()
+
+        guard let arrived = await fetchEmailsArrivedSinceWithRetry(sinceEpoch: sinceEpoch) else {
             return
         }
 
-        let currentIds = Set(emails.map { $0.id })
-        let newOnes: [UnreadEmail]
-        if firstPollCompleted {
-            newOnes = emails.filter { !seenUnreadIds.contains($0.id) }
-        } else {
-            // First successful poll after startup — do NOT flood the session with
-            // every pre-existing unread as if it were fresh. Just prime the set.
-            newOnes = []
-        }
+        // Deduplicate against the last 200 notified IDs — belt-and-braces for
+        // boundary conditions (same-second delivery, clock drift, etc.).
+        let notifiedSet = Set(recentlyNotifiedIds)
+        let fresh = arrived.filter { !notifiedSet.contains($0.id) }
 
-        seenUnreadIds = currentIds
-        firstPollCompleted = true
+        // Advance the watermark only on a successful fetch. Use pollStartedAt
+        // (captured before the fetch) to avoid creating a gap while the request
+        // was in flight.
+        lastArrivalPollTime = pollStartedAt
 
-        if !newOnes.isEmpty, let handler = newEmailHandler {
-            await handler(newOnes)
+        if !fresh.isEmpty {
+            // Bound the dedupe buffer to the most recent 200 IDs.
+            recentlyNotifiedIds.append(contentsOf: fresh.map { $0.id })
+            if recentlyNotifiedIds.count > 200 {
+                recentlyNotifiedIds = Array(recentlyNotifiedIds.suffix(200))
+            }
+            if let handler = newEmailHandler {
+                await handler(fresh)
+            }
         }
     }
 
     // MARK: - Fetch helpers (with retry)
 
-    private func fetchUnreadEmailsWithRetry() async -> [UnreadEmail]? {
+    /// Snapshot fetch: "top N unread right now" for the system-prompt block.
+    /// Not time-windowed — always returns the user's freshest unread mail.
+    private func fetchUnreadSnapshotWithRetry() async -> [UnreadEmail]? {
         var delayNs: UInt64 = 1_000_000_000
         for attempt in 1...3 {
-            if let emails = await fetchUnreadEmailsOnce() {
+            if let emails = await fetchUnreadSnapshotOnce() {
                 cachedUnread = emails
                 lastSuccessfulFetch = Date()
                 return emails
@@ -158,7 +178,25 @@ actor GoogleWorkspaceService {
                 delayNs *= 2
             }
         }
-        print("[GoogleWorkspaceService] fetchUnreadEmails: all retries exhausted — continuing without email context")
+        print("[GoogleWorkspaceService] fetchUnreadSnapshot: all retries exhausted — continuing without email context")
+        return nil
+    }
+
+    /// Arrival fetch: "unread mail delivered after <epoch>" for the poller.
+    /// Returns ONLY new arrivals; a mailbox with 500 pre-existing unread will
+    /// return 0 rows if nothing new landed in the poll window.
+    private func fetchEmailsArrivedSinceWithRetry(sinceEpoch: Int) async -> [UnreadEmail]? {
+        var delayNs: UInt64 = 1_000_000_000
+        for attempt in 1...3 {
+            if let emails = await fetchEmailsArrivedSinceOnce(sinceEpoch: sinceEpoch) {
+                return emails
+            }
+            if attempt < 3 {
+                try? await Task.sleep(nanoseconds: delayNs)
+                delayNs *= 2
+            }
+        }
+        print("[GoogleWorkspaceService] fetchEmailsArrivedSince(\(sinceEpoch)): all retries exhausted — skipping this tick")
         return nil
     }
 
@@ -189,12 +227,25 @@ actor GoogleWorkspaceService {
         let date: String?
     }
 
-    private func fetchUnreadEmailsOnce() async -> [UnreadEmail]? {
-        // Step 1 — get unread IDs + metadata.
+    private func fetchUnreadSnapshotOnce() async -> [UnreadEmail]? {
+        return await triageAndEnrich(query: "is:unread", maxResults: maxUnread)
+    }
+
+    /// The arrival path uses a wider cap (50) because the realistic worst case
+    /// — a dormant account suddenly receiving a burst — is still bounded, and
+    /// triage + snippet fetches are cheap.
+    private func fetchEmailsArrivedSinceOnce(sinceEpoch: Int) async -> [UnreadEmail]? {
+        return await triageAndEnrich(query: "is:unread after:\(sinceEpoch)", maxResults: 50)
+    }
+
+    /// Runs `gws gmail +triage` for the given query, then enriches each result
+    /// with `users.messages.get(format=metadata).snippet` so the preview lines
+    /// match the legacy EmailService format.
+    private func triageAndEnrich(query: String, maxResults: Int) async -> [UnreadEmail]? {
         let triageArgs = [
             "gmail", "+triage",
-            "--query", "is:unread",
-            "--max", "\(maxUnread)",
+            "--query", query,
+            "--max", "\(maxResults)",
             "--format", "json",
         ]
         guard let out = await runGws(args: triageArgs, timeoutSeconds: 20) else { return nil }
@@ -205,8 +256,8 @@ actor GoogleWorkspaceService {
             return nil
         }
 
-        // Step 2 — fetch snippet per id for body previews. Serial is fine: 10 calls
-        // happen every 5 min in the background, latency is irrelevant.
+        // Serial snippet fetch — latency is irrelevant for a 5-min poller, and
+        // parallelizing would risk burning through OAuth rate limits on bursts.
         var results: [UnreadEmail] = []
         for msg in triage.messages {
             let snippet = await fetchSnippet(messageId: msg.id) ?? ""
