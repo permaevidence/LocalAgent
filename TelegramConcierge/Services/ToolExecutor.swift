@@ -247,9 +247,16 @@ actor ToolExecutor {
         case "list_shortcuts":
             content = await executeListShortcuts(call)
         // run_shortcut is handled above with file attachment for media output
-            
+
         default:
-            content = "{\"error\": \"Unknown tool: \(call.function.name)}\"}"
+            if MCPRegistry.isMCPPrefixed(call.function.name) {
+                content = await MCPRegistry.shared.callTool(
+                    prefixedName: call.function.name,
+                    argumentsJSON: call.function.arguments
+                )
+            } else {
+                content = "{\"error\": \"Unknown tool: \(call.function.name)}\"}"
+            }
         }
         
         return ToolResultMessage(toolCallId: call.id, content: content)

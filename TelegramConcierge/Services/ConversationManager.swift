@@ -1292,9 +1292,11 @@ class ConversationManager: ObservableObject {
             
             // Call LLM (with tools available for chaining)
             let llmStartTime = Date()
-            let toolsForRound = AvailableTools.all(
+            let nativeTools = AvailableTools.all(
                 includeWebSearch: !serperKey.isEmpty
             )
+            let mcpTools = await MCPRegistry.shared.allToolDefinitions()
+            let toolsForRound = nativeTools + mcpTools
             let allowedToolNames = Set(toolsForRound.map { $0.function.name })
             let response = try await openRouterService.generateResponse(
                 messages: messagesForLLM,

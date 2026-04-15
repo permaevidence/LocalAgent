@@ -55,6 +55,10 @@
 		LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPLANG000123456789AB1B /* LSPLanguages.swift */; };
 		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
 		LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPTYPES00123456789AB1B /* LSPTypes.swift */; };
+		MCPTYPES00123456789AB1A /* MCPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPTYPES00123456789AB1B /* MCPTypes.swift */; };
+		MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPFRAME00123456789AB1B /* MCPFraming.swift */; };
+		MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPCLIENT0123456789AB1B /* MCPClient.swift */; };
+		MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPREGISTRY0123456789A1B /* MCPRegistry.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
@@ -116,6 +120,10 @@
 		LSPLANG000123456789AB1B /* LSPLanguages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPLanguages.swift; sourceTree = "<group>"; };
 		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
 		LSPTYPES00123456789AB1B /* LSPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
+		MCPTYPES00123456789AB1B /* MCPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPTypes.swift; sourceTree = "<group>"; };
+		MCPFRAME00123456789AB1B /* MCPFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPFraming.swift; sourceTree = "<group>"; };
+		MCPCLIENT0123456789AB1B /* MCPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPClient.swift; sourceTree = "<group>"; };
+		MCPREGISTRY0123456789A1B /* MCPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPRegistry.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
@@ -210,6 +218,10 @@
 				LSPLANG000123456789AB1B /* LSPLanguages.swift */,
 				LSPREGISTRY0123456789A1B /* LSPRegistry.swift */,
 				LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */,
+				MCPTYPES00123456789AB1B /* MCPTypes.swift */,
+				MCPFRAME00123456789AB1B /* MCPFraming.swift */,
+				MCPCLIENT0123456789AB1B /* MCPClient.swift */,
+				MCPREGISTRY0123456789A1B /* MCPRegistry.swift */,
 				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
 				DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */,
 			);
@@ -378,6 +390,10 @@
 				LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */,
 				LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */,
 				LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */,
+				MCPTYPES00123456789AB1A /* MCPTypes.swift in Sources */,
+				MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */,
+				MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */,
+				MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */,
 				TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */,
 				DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */,
 			);
