@@ -41,6 +41,13 @@ struct AgentsSettingsView: View {
     @State private var errorNote: String?
     @State private var isLoading: Bool = true
 
+    // Subagent editor sheet
+    @State private var showingEditorSheet: Bool = false
+    @State private var editorMode: SubagentEditorSheet.Mode = .create
+    @State private var editorInitialDraft: SubagentEditorDraft? = nil
+    @State private var showingDeleteConfirmation: Bool = false
+    @State private var pendingDeleteName: String? = nil
+
     // MARK: - Body
 
     var body: some View {
@@ -48,8 +55,22 @@ struct AgentsSettingsView: View {
             Section {
                 agentPicker
                 agentDescription
+                agentActionsRow
             } header: {
-                Label("Agent", systemImage: "person.2.wave.2")
+                HStack {
+                    Label("Agent", systemImage: "person.2.wave.2")
+                    Spacer()
+                    Button {
+                        editorMode = .create
+                        editorInitialDraft = nil
+                        showingEditorSheet = true
+                    } label: {
+                        Label("New Agent", systemImage: "plus.circle")
+                            .labelStyle(.titleAndIcon)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
 
             Section {
@@ -121,6 +142,50 @@ struct AgentsSettingsView: View {
         .task {
             await reload()
         }
+        .sheet(isPresented: $showingEditorSheet) {
+            SubagentEditorSheet(
+                mode: editorMode,
+                availableNativeTools: AvailableTools.all(includeWebSearch: true)
+                    .map { $0.function.name }
+                    .filter { $0 != "Agent" },
+                availableMcpServers: Array(serverTools.keys),
+                initialDraft: editorInitialDraft,
+                onSave: { savedName in
+                    showingEditorSheet = false
+                    statusNote = "Saved agent '\(savedName)'"
+                    errorNote = nil
+                    Task {
+                        await reload()
+                        selectedAgent = savedName
+                        loadWorkingSet(for: savedName)
+                    }
+                },
+                onCancel: {
+                    showingEditorSheet = false
+                }
+            )
+        }
+        .alert("Delete subagent?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { pendingDeleteName = nil }
+            Button("Delete", role: .destructive) {
+                if let name = pendingDeleteName {
+                    SubagentSerializer.delete(name: name)
+                    // Also purge its routing entry.
+                    var cfg = MCPAgentRouting.currentConfig()
+                    cfg.removeValue(forKey: name)
+                    try? MCPAgentRouting.save(config: cfg)
+                    pendingDeleteName = nil
+                    Task {
+                        await reload()
+                        selectedAgent = "main"
+                        loadWorkingSet(for: "main")
+                        statusNote = "Deleted subagent"
+                    }
+                }
+            }
+        } message: {
+            Text("Removes ~/LocalAgent/agents/\(pendingDeleteName ?? "?").md and its entry from mcp-routing.json. Cannot be undone.")
+        }
     }
 
     // MARK: - Agent picker + metadata
@@ -139,6 +204,38 @@ struct AgentsSettingsView: View {
                 isDirty = false
             }
             loadWorkingSet(for: newValue)
+        }
+    }
+
+    @ViewBuilder
+    private var agentActionsRow: some View {
+        if let agent = agents.first(where: { $0.name == selectedAgent }), agent.isUserDefined {
+            HStack(spacing: 10) {
+                Button {
+                    if let draft = SubagentSerializer.loadForEditing(name: agent.name) {
+                        editorMode = .edit(originalName: agent.name)
+                        editorInitialDraft = draft
+                        showingEditorSheet = true
+                    } else {
+                        errorNote = "Couldn't load \(agent.name) for editing."
+                    }
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+
+                Button(role: .destructive) {
+                    pendingDeleteName = agent.name
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+
+                Spacer()
+            }
         }
     }
 
@@ -280,19 +377,24 @@ struct AgentsSettingsView: View {
             displayLabel: "Main agent",
             description: "The primary assistant that talks to you. By default has no MCP tools — opt them in below only for capabilities you want always-on.",
             originLabel: "built-in",
-            allowedNativeTools: nil
+            allowedNativeTools: nil,
+            isUserDefined: false
         ))
         for subagent in SubagentTypes.all() {
+            let isStatic = SubagentTypes.staticBuiltIns.contains { $0.name == subagent.name }
+            let isDynamic = SubagentTypes.activeDynamicBuiltIns().contains { $0.name == subagent.name }
+            let userDefined = !isStatic && !isDynamic
             rows.append(AgentRow(
                 name: subagent.name,
                 displayLabel: "Subagent: \(subagent.name)",
                 description: subagent.description,
-                originLabel: SubagentTypes.staticBuiltIns.contains(where: { $0.name == subagent.name })
+                originLabel: isStatic
                     ? "built-in"
-                    : (SubagentTypes.activeDynamicBuiltIns().contains(where: { $0.name == subagent.name })
+                    : (isDynamic
                         ? "dynamic built-in (active because backing MCP is installed)"
                         : "user-defined (~/LocalAgent/agents/\(subagent.name).md)"),
-                allowedNativeTools: subagent.allowedToolNames
+                allowedNativeTools: subagent.allowedToolNames,
+                isUserDefined: userDefined
             ))
         }
 
@@ -394,4 +496,5 @@ private struct AgentRow {
     let description: String
     let originLabel: String?
     let allowedNativeTools: Set<String>?
+    let isUserDefined: Bool
 }
