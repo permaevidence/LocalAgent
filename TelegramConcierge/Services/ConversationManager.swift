@@ -300,6 +300,10 @@ class ConversationManager: ObservableObject {
                     // Check for pending bash_watch matches (mid-stream output triggers)
                     await checkBashWatchMatches()
 
+                    if DebugTelemetry.shared.verbose {
+                        DebugTelemetry.log(.pollTick, summary: "poll tick")
+                    }
+
                     let updates = try await telegramService.getUpdates()
                     
                     for update in updates {
@@ -384,11 +388,18 @@ class ConversationManager: ObservableObject {
         }
         
         if activeRunId != nil {
+            DebugTelemetry.log(
+                .messageDrop,
+                summary: "dropped msg during active turn",
+                detail: String((telegramMessage.text ?? "<non-text>").prefix(200)),
+                isError: true
+            )
             if let chatId = pairedChatId {
                 try? await telegramService.sendMessage(
                     chatId: chatId,
                     text: "⏳ I'm still working on your previous request. Send /stop to interrupt it."
                 )
+                DebugTelemetry.log(.busyReply, summary: "sent busy auto-reply")
             }
             return
         }
@@ -734,9 +745,16 @@ class ConversationManager: ObservableObject {
                 activeProcessingTask = nil
             }
         }
-        
+
+        let turnStartedAt = Date()
+        DebugTelemetry.log(
+            .turnStart,
+            summary: "turn for msg \(userMessage.id.uuidString.prefix(8))",
+            detail: String(userMessage.content.prefix(200))
+        )
+
         do {
-            let turnStartDate = Date()
+            let turnStartDate = turnStartedAt
             try Task.checkCancellation()
             let response = try await generateResponseWithTools(currentUserMessageId: userMessage.id, turnStartDate: turnStartDate)
             try Task.checkCancellation()
@@ -826,15 +844,24 @@ class ConversationManager: ObservableObject {
             }
             
             guard activeRunId == runId else { return }
+            let turnMs = Int(Date().timeIntervalSince(turnStartedAt) * 1000)
+            DebugTelemetry.log(.turnEnd, summary: "turn complete", durationMs: turnMs)
             statusMessage = "Listening... (Last check: \(formattedTime()))"
         } catch is CancellationError {
             ToolExecutor.clearPendingToolOutputs()
+            DebugTelemetry.log(.turnCancelled, summary: "turn cancelled")
             if activeRunId == runId {
                 statusMessage = "Cancelled"
             }
             print("[ConversationManager] Active run cancelled")
         } catch {
             ToolExecutor.clearPendingToolOutputs()
+            DebugTelemetry.log(
+                .turnError,
+                summary: "turn failed",
+                detail: String(describing: error),
+                isError: true
+            )
             if activeRunId == runId {
                 self.error = "Failed to generate response: \(error.localizedDescription)"
                 statusMessage = "Error generating response"
@@ -2395,6 +2422,21 @@ class ConversationManager: ObservableObject {
             case .running: statusLabel = "unexpectedly still running"
             }
 
+            let bashIsError: Bool = {
+                switch completion.status {
+                case .exited: return completion.exitCode != 0
+                case .killed, .crashed: return true
+                case .running: return true
+                }
+            }()
+            DebugTelemetry.log(
+                .bashComplete,
+                summary: "bash \(completion.handleId) \(statusLabel)",
+                detail: "command: \(completion.command)\nexit: \(completion.exitCode)\nduration: \(completion.durationSeconds)s",
+                durationMs: completion.durationSeconds * 1000,
+                isError: bashIsError
+            )
+
             let durationStr: String = {
                 let secs = completion.durationSeconds
                 if secs < 60 { return "\(secs)s" }
@@ -2474,6 +2516,15 @@ class ConversationManager: ObservableObject {
         for completion in completions {
             let duration = completion.completedAt.timeIntervalSince(completion.handle.startedAt)
             let durationStr = String(format: "%.1fs", duration)
+
+            let subagentErr = completion.result.error ?? ""
+            DebugTelemetry.log(
+                .subagentComplete,
+                summary: "subagent \(completion.handle.id) (\(completion.handle.subagentType)) done",
+                detail: "description: \(completion.handle.description)\nturns: \(completion.result.turnsUsed)\nspend: $\(String(format: "%.4f", completion.result.spendUSD))\(subagentErr.isEmpty ? "" : "\nerror: \(subagentErr)")",
+                durationMs: Int(duration * 1000),
+                isError: !subagentErr.isEmpty
+            )
 
             let toolsStr = completion.result.toolsCalled.isEmpty
                 ? "(none)"
@@ -2584,6 +2635,12 @@ class ConversationManager: ObservableObject {
             // metadata per line for the agent's benefit.
             let first = group[0]
             let totalCount = group.count
+
+            DebugTelemetry.log(
+                .watchMatch,
+                summary: "watch match on \(first.handle) (\(totalCount) line\(totalCount == 1 ? "" : "s"))",
+                detail: "pattern: \(first.pattern)\nfirst line: \(first.line)"
+            )
             var body = "[BASH WATCH MATCH]\n"
             body += "handle: \(first.handle)\n"
 

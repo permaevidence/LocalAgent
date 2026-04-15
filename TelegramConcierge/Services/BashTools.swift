@@ -299,6 +299,16 @@ actor BackgroundProcessRegistry {
         let id = "bash_\(nextCounter)"
         nextCounter += 1
 
+        DebugTelemetry.log(
+            .bashSpawn,
+            summary: "spawn \(id): \(command.prefix(60))",
+            detail: [
+                "command: \(command)",
+                workdir.map { "workdir: \($0)" } ?? nil,
+                description.map { "description: \($0)" } ?? nil
+            ].compactMap { $0 }.joined(separator: "\n")
+        )
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", command]

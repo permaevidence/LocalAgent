@@ -53,6 +53,12 @@ actor SubagentBackgroundRegistry {
         )
         running[id] = handle
 
+        DebugTelemetry.log(
+            .subagentSpawn,
+            summary: "spawn subagent \(id) (\(invocation.subagentType))",
+            detail: invocation.description
+        )
+
         let task = Task.detached { [weak self] in
             let runner = SubagentRunner()
             let result = await runner.run(

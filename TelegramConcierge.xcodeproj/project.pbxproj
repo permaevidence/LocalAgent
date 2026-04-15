@@ -65,6 +65,8 @@
 		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
 		SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */; };
 		USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = USERAGNTL0123456789AB1B /* UserAgentLoader.swift */; };
+		DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */; };
+		DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -126,6 +128,8 @@
 		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
 		SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentBackgroundRegistry.swift; sourceTree = "<group>"; };
 		USERAGNTL0123456789AB1B /* UserAgentLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UserAgentLoader.swift; sourceTree = "<group>"; };
+		DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetry.swift; sourceTree = "<group>"; };
+		DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetryPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -205,6 +209,7 @@
 				SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */,
 				SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */,
 				USERAGNTL0123456789AB1B /* UserAgentLoader.swift */,
+				DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */,
 				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
 				LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */,
 				LSPCLIENT0123456789AB1B /* LSPClient.swift */,
@@ -225,6 +230,7 @@
 				A10000A1282D4F0100000001 /* OnboardingView.swift */,
 				A1000016282D4F0100000001 /* MessageBubbleView.swift */,
 				CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */,
+				DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -372,6 +378,8 @@
 				SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */,
 				SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */,
 				USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */,
+				DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */,
+				DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */,
 				LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */,
 				LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */,
 				LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */,

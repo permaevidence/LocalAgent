@@ -88,7 +88,83 @@ actor ToolExecutor {
     /// Execute a single tool call and return the result
     func execute(_ call: ToolCall) async throws -> ToolResultMessage {
         try Task.checkCancellation()
-        
+        return try await withTelemetry(call) {
+            try await self.executeBody(call)
+        }
+    }
+
+    /// Wraps tool execution with telemetry (toolStart/toolEnd/toolError + timing).
+    /// The telemetry stream is user-only and NEVER sent to the LLM.
+    private func withTelemetry(
+        _ call: ToolCall,
+        _ body: () async throws -> ToolResultMessage
+    ) async throws -> ToolResultMessage {
+        let started = Date()
+        let argSummary = Self.shortArgSummary(call.function.arguments)
+        let startSummary = argSummary.isEmpty
+            ? call.function.name
+            : "\(call.function.name)  \(argSummary)"
+        DebugTelemetry.log(
+            .toolStart,
+            summary: startSummary,
+            detail: call.function.arguments
+        )
+        do {
+            let result = try await body()
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            let isError = result.content.contains("\"error\"")
+            DebugTelemetry.log(
+                isError ? .toolError : .toolEnd,
+                summary: "\(call.function.name) (\(ms)ms)",
+                durationMs: ms,
+                isError: isError
+            )
+            return result
+        } catch {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            DebugTelemetry.log(
+                .toolError,
+                summary: "\(call.function.name) threw",
+                detail: String(describing: error),
+                durationMs: ms,
+                isError: true
+            )
+            throw error
+        }
+    }
+
+    /// Pulls 1–2 identifying fields from a tool's JSON argument string for a
+    /// compact, single-line summary in the telemetry view. Falls back to the
+    /// first 60 chars of the raw arg string when parsing fails.
+    static func shortArgSummary(_ jsonArgs: String) -> String {
+        let preferredKeys = ["path", "file_path", "handle", "query", "command", "url", "pattern", "search_term", "target"]
+        if let data = jsonArgs.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            var parts: [String] = []
+            for key in preferredKeys {
+                if parts.count >= 2 { break }
+                if let v = obj[key] {
+                    let strVal: String
+                    if let s = v as? String { strVal = s }
+                    else { strVal = String(describing: v) }
+                    parts.append("\(key)=\(strVal)")
+                }
+            }
+            if !parts.isEmpty {
+                let joined = parts.joined(separator: " ")
+                if joined.count <= 60 { return joined }
+                return String(joined.prefix(60)) + "…"
+            }
+        }
+        let trimmed = jsonArgs.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        if trimmed.count <= 60 { return trimmed }
+        return String(trimmed.prefix(60)) + "…"
+    }
+
+    /// Internal dispatch body (formerly the body of `execute`). Kept separate so
+    /// `withTelemetry` can wrap the whole thing uniformly.
+    private func executeBody(_ call: ToolCall) async throws -> ToolResultMessage {
         // Special cases for tools that return ToolResultMessage with file attachment for multimodal injection
         switch call.function.name {
         case "read_file":

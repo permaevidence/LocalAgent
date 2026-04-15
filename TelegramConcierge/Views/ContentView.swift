@@ -9,12 +9,59 @@ struct ContentView: View {
     @State private var showAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
-    
+    /// User-only debug telemetry panel visibility. The telemetry data is never
+    /// sent to the LLM — it's a pure UI diagnostic.
+    @State private var showTelemetry = true
+
     var body: some View {
+        HSplitView {
+            mainContent
+                .frame(minWidth: 520, idealWidth: 640)
+            if showTelemetry {
+                DebugTelemetryPanel()
+                    .frame(minWidth: 280, idealWidth: 360)
+            }
+        }
+        .frame(minWidth: showTelemetry ? 820 : 520, minHeight: 500)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showTelemetry.toggle()
+                } label: {
+                    Image(systemName: showTelemetry ? "sidebar.right" : "sidebar.squares.right")
+                }
+                .help(showTelemetry ? "Hide telemetry panel" : "Show telemetry panel")
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            }
+        }
+        .task {
+            await loadFileDescriptionsAsync()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProjectsZipAutoExtractor.invalidRootFilesDetectedNotification)) { notification in
+            guard let filenames = notification.userInfo?["filenames"] as? [String], !filenames.isEmpty else { return }
+            let preview = filenames.prefix(5).joined(separator: ", ")
+            let extraCount = max(0, filenames.count - 5)
+            let filesText = extraCount > 0 ? "\(preview), +\(extraCount) more" : preview
+            presentAlert(
+                title: "Unsupported Files in Projects Folder",
+                message: "Only folders or .zip files are supported directly in this location. Move these file(s) into a folder or zip archive: \(filesText)"
+            )
+        }
+        .alert(alertTitle, isPresented: $showAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(alertMessage)
+        }
+    }
+    
+    // MARK: - Main Content (chat column)
+
+    private var mainContent: some View {
         VStack(spacing: 0) {
             // Header
             headerView
-            
+
             if conversationManager.isPrivacyModeEnabled {
                 privacyModeView
             } else {
@@ -28,7 +75,7 @@ struct ContentView: View {
                                     if shouldShowDateHeader(at: index) {
                                         dateSeparator(for: message.timestamp)
                                     }
-                                    
+
                                     MessageBubbleView(
                                         message: message,
                                         imageURLs: conversationManager.imageURLs(for: message),
@@ -50,34 +97,14 @@ struct ContentView: View {
                     }
                 }
             }
-            
+
             Divider()
-            
+
             // Status bar
             statusBar
         }
-        .frame(minWidth: 520, minHeight: 500)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .task {
-            await loadFileDescriptionsAsync()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: ProjectsZipAutoExtractor.invalidRootFilesDetectedNotification)) { notification in
-            guard let filenames = notification.userInfo?["filenames"] as? [String], !filenames.isEmpty else { return }
-            let preview = filenames.prefix(5).joined(separator: ", ")
-            let extraCount = max(0, filenames.count - 5)
-            let filesText = extraCount > 0 ? "\(preview), +\(extraCount) more" : preview
-            presentAlert(
-                title: "Unsupported Files in Projects Folder",
-                message: "Only folders or .zip files are supported directly in this location. Move these file(s) into a folder or zip archive: \(filesText)"
-            )
-        }
-        .alert(alertTitle, isPresented: $showAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(alertMessage)
-        }
     }
-    
+
     // MARK: - Date Separator
 
     private var privacyModeView: some View {
