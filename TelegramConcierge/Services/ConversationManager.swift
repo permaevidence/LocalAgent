@@ -56,6 +56,8 @@ class ConversationManager: ObservableObject {
         let editedFilePaths: [String]
         /// Absolute paths of files newly created during the turn (FilesLedger diff).
         let generatedFilePaths: [String]
+        /// Subagent session events that occurred during this turn.
+        var subagentSessionEvents: [SubagentSessionEvent]
     }
 
     private struct SpendLimitStatus {
@@ -755,6 +757,7 @@ class ConversationManager: ObservableObject {
                 editedFilePaths: response.editedFilePaths,
                 generatedFilePaths: response.generatedFilePaths,
                 accessedProjectIds: response.accessedProjects ?? [],
+                subagentSessionEvents: response.subagentSessionEvents,
                 toolInteractions: response.toolInteractions,
                 compactToolLog: response.compactToolLog
             )
@@ -1282,10 +1285,13 @@ class ConversationManager: ObservableObject {
                 toolInteractions: [],
                 accessedProjects: [],
                 editedFilePaths: changed.edited,
-                generatedFilePaths: changed.generated
+                generatedFilePaths: changed.generated,
+                subagentSessionEvents: []
             )
         }
-        
+
+        var sessionEvents: [SubagentSessionEvent] = []
+
         toolLoop: for round in 1...maxToolRoundsSafetyLimit {
             try Task.checkCancellation()
             print("[ConversationManager] Tool round \(round) (turn spend: $\(formatUSD(cumulativeToolSpendUSD)) / $\(formatUSD(toolSpendLimitPerTurnUSD)), today: $\(formatUSD(todaySpentUSD)), month: $\(formatUSD(monthSpentUSD)))")
@@ -1350,7 +1356,8 @@ class ConversationManager: ObservableObject {
                     toolInteractions: toolInteractions,
                     accessedProjects: accessedProjects,
                     editedFilePaths: changed.edited,
-                    generatedFilePaths: changed.generated
+                    generatedFilePaths: changed.generated,
+                subagentSessionEvents: sessionEvents
                 )
 
             case .toolCalls(let assistantMessage, let calls, _, _):
@@ -1378,7 +1385,8 @@ class ConversationManager: ObservableObject {
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
                         editedFilePaths: changed.edited,
-                        generatedFilePaths: changed.generated
+                        generatedFilePaths: changed.generated,
+                        subagentSessionEvents: sessionEvents
                     )
                 }
 
@@ -1421,6 +1429,27 @@ class ConversationManager: ObservableObject {
                 if !remainingToolResults.isEmpty {
                     print("[ConversationManager] Round \(round): appending \(remainingToolResults.count) unmatched tool result(s) after ordered results")
                     orderedToolResults.append(contentsOf: remainingToolResults)
+                }
+
+                // Extract subagent session events from Agent tool results.
+                for (idx, call) in calls.enumerated() where call.function.name == "Agent" {
+                    if let result = orderedToolResults.first(where: { $0.toolCallId == call.id }),
+                       let data = result.content.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let sid = json["session_id"] as? String {
+                        let isNew = (json["is_new_session"] as? Bool) ?? true
+                        let desc = (json["final_message"] as? String).map { String($0.prefix(80)) } ?? ""
+                        if let argData = call.function.arguments.data(using: .utf8),
+                           let argJson = try? JSONSerialization.jsonObject(with: argData) as? [String: Any],
+                           let subType = argJson["subagent_type"] as? String {
+                            sessionEvents.append(SubagentSessionEvent(
+                                kind: isNew ? .opened : .continued,
+                                sessionId: sid,
+                                subagentType: subType,
+                                description: (argJson["description"] as? String) ?? ""
+                            ))
+                        }
+                    }
                 }
 
                 let toolInternalSpendUSD = toolSpendUSD(from: orderedToolResults)
@@ -1489,7 +1518,8 @@ class ConversationManager: ObservableObject {
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
                         editedFilePaths: changed.edited,
-                        generatedFilePaths: changed.generated
+                        generatedFilePaths: changed.generated,
+                        subagentSessionEvents: sessionEvents
                     )
                 }
                 
@@ -1546,7 +1576,8 @@ class ConversationManager: ObservableObject {
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
                 editedFilePaths: changed.edited,
-                generatedFilePaths: changed.generated
+                generatedFilePaths: changed.generated,
+                subagentSessionEvents: sessionEvents
             )
         case .toolCalls(_, _, _, _):
             return ToolAwareResponse(
@@ -1555,7 +1586,8 @@ class ConversationManager: ObservableObject {
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
                 editedFilePaths: changed.edited,
-                generatedFilePaths: changed.generated
+                generatedFilePaths: changed.generated,
+                subagentSessionEvents: sessionEvents
             )
         }
     }
