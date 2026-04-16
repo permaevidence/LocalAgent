@@ -63,6 +63,11 @@ struct MessageBubbleView: View {
                     generatedFilesView
                 }
 
+                // Subagent session events (opened / continued) during this turn.
+                if !message.subagentSessionEvents.isEmpty {
+                    subagentSessionsView
+                }
+
                 // Accessed projects (permanent log)
                 if !message.accessedProjectIds.isEmpty {
                     accessedProjectsView
@@ -227,6 +232,47 @@ struct MessageBubbleView: View {
                 )
             }
         }
+    }
+
+    // MARK: - Subagent sessions
+
+    private var subagentSessionsView: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
+            ForEach(Array(message.subagentSessionEvents.enumerated()), id: \.offset) { _, event in
+                sessionChip(event: event)
+            }
+        }
+    }
+
+    private func sessionChip(event: SubagentSessionEvent) -> some View {
+        let isOpened = event.kind == .opened
+        return HStack(spacing: 5) {
+            Image(systemName: isOpened ? "bolt.circle.fill" : "arrow.clockwise.circle.fill")
+                .font(.caption2)
+                .foregroundColor(.indigo)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(isOpened ? "Subagent opened" : "Subagent continued")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.indigo)
+                Text("session \(event.sessionId) — \(event.subagentType)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                if !event.description.isEmpty {
+                    Text(event.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.indigo.opacity(0.08))
+        .cornerRadius(4)
     }
 
     // MARK: - Generated Files
