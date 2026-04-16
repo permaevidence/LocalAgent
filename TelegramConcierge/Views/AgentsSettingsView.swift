@@ -58,126 +58,21 @@ struct AgentsSettingsView: View {
     // MARK: - Body
 
     var body: some View {
-        Form {
-            Section {
-                agentPicker
-                agentDescription
-                agentActionsRow
-            } header: {
-                HStack {
-                    Label("Agent", systemImage: "person.2.wave.2")
-                    Spacer()
-                    Button {
-                        editorMode = .create
-                        editorInitialDraft = nil
-                        showingEditorSheet = true
-                    } label: {
-                        Label("New Agent", systemImage: "plus.circle")
-                            .labelStyle(.titleAndIcon)
-                            .font(.caption)
-                    }
-                    .buttonStyle(.borderless)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                heroHeader
+                agentTilesSection
+                selectedAgentCard
+                capabilitiesCard
+                modelCard
+                mcpCard
+                if selectedAgent != "main" { sessionMemoryCard }
+                footerActions
             }
-
-            Section {
-                nativeToolsView
-            } header: {
-                Label("Native tools (read-only)", systemImage: "hammer")
-            }
-
-            Section {
-                modelOverrideView
-            } header: {
-                Label("Model & reasoning", systemImage: "cpu")
-            }
-
-            Section {
-                if isLoading {
-                    HStack {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Loading MCP servers…")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } else if serverTools.isEmpty {
-                    Text("No MCP servers configured. Edit ~/LocalAgent/mcp.json to install one.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(serverTools.keys.sorted(), id: \.self) { server in
-                        mcpServerPanel(server: server)
-                    }
-                }
-            } header: {
-                Label("MCP tool access", systemImage: "gear.badge")
-            }
-
-            Section {
-                HStack(spacing: 8) {
-                    Text("Session token budget")
-                        .font(.caption)
-                    TextField("100000", text: $sessionTokenBudget)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-                        .onChange(of: sessionTokenBudget) { newValue in
-                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
-                            if let val = Int(trimmed), val > 0 {
-                                try? KeychainHelper.save(key: KeychainHelper.subagentSessionTokenBudgetKey, value: trimmed)
-                            }
-                        }
-                    Text("tokens")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                Text("Max context size for a subagent session before older messages are trimmed on resume. Default 100k.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Label("Session context", systemImage: "text.badge.minus")
-            }
-
-            Section {
-                HStack {
-                    Button("Save routing") {
-                        saveRouting()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isDirty)
-
-                    Button("Revert") {
-                        loadWorkingSet(for: selectedAgent)
-                        isDirty = false
-                    }
-                    .disabled(!isDirty)
-
-                    Button("Reload MCPs") {
-                        Task { await reload() }
-                    }
-
-                    Spacer()
-
-                    if let note = statusNote {
-                        Label(note, systemImage: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.caption)
-                    } else if let err = errorNote {
-                        Label(err, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                            .font(.caption)
-                    }
-                }
-
-                Text(editingConfigPath)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
-        .formStyle(.grouped)
-        .padding(.horizontal)
+        .background(Color(NSColor.windowBackgroundColor))
         .task {
             sessionTokenBudget = KeychainHelper.load(key: KeychainHelper.subagentSessionTokenBudgetKey)
                 ?? String(KeychainHelper.defaultSubagentSessionTokenBudget)
@@ -229,7 +124,338 @@ struct AgentsSettingsView: View {
         }
     }
 
-    // MARK: - Agent picker + metadata
+    // MARK: - Hero header
+
+    private var heroHeader: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Agents")
+                    .font(.title.weight(.semibold))
+                Text("Configure each AI agent: its model, its tools, and which MCPs it can access.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button {
+                editorMode = .create
+                editorInitialDraft = nil
+                showingEditorSheet = true
+            } label: {
+                Label("New Agent", systemImage: "plus.circle.fill")
+                    .font(.body.weight(.medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
+    // MARK: - Agent tile picker
+
+    private var agentTilesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Select an agent to configure")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(agents, id: \.name) { agent in
+                        agentTile(agent)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func agentTile(_ agent: AgentRow) -> some View {
+        let isSelected = agent.name == selectedAgent
+        Button {
+            if selectedAgent != agent.name {
+                isDirty = false
+                selectedAgent = agent.name
+                loadWorkingSet(for: agent.name)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: iconFor(agent: agent))
+                        .font(.title3)
+                        .foregroundColor(isSelected ? .white : .accentColor)
+                    Text(agent.displayShortName)
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(isSelected ? .white : .primary)
+                        .lineLimit(1)
+                }
+                Text(agent.originTag)
+                    .font(.caption2)
+                    .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minWidth: 140, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.accentColor : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func iconFor(agent: AgentRow) -> String {
+        if agent.name == "main" { return "person.crop.circle.fill" }
+        if !agent.isUserDefined { return "cube.fill" }
+        return "wand.and.stars"
+    }
+
+    // MARK: - Selected agent card
+
+    @ViewBuilder
+    private var selectedAgentCard: some View {
+        if let agent = agents.first(where: { $0.name == selectedAgent }) {
+            cardContainer {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Image(systemName: iconFor(agent: agent))
+                                    .foregroundColor(.accentColor)
+                                Text(agent.displayShortName)
+                                    .font(.title3.weight(.semibold))
+                            }
+                            if let origin = agent.originLabel {
+                                Text(origin)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if agent.isUserDefined {
+                            HStack(spacing: 6) {
+                                Button {
+                                    if let draft = SubagentSerializer.loadForEditing(name: agent.name) {
+                                        editorMode = .edit(originalName: agent.name)
+                                        editorInitialDraft = draft
+                                        showingEditorSheet = true
+                                    } else {
+                                        errorNote = "Couldn't load \(agent.name) for editing."
+                                    }
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .buttonStyle(.bordered)
+                                Button(role: .destructive) {
+                                    pendingDeleteName = agent.name
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                    Text(agent.description)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    // MARK: - Capabilities (built-in tools)
+
+    private var capabilitiesCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 8) {
+                cardTitle("Built-in capabilities", systemImage: "hammer.fill",
+                          subtitle: selectedAgent == "main"
+                              ? "What this agent can do natively."
+                              : "Native tools this subagent inherits. Edit via the Edit button to change.")
+                nativeToolsView
+            }
+        }
+    }
+
+    // MARK: - Model card
+
+    private var modelCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("AI model & reasoning", systemImage: "cpu",
+                          subtitle: selectedAgent == "main"
+                              ? "Main agent's model is configured in Settings → Connection."
+                              : "Pick the model and reasoning effort for this subagent. Leave empty to use the default.")
+                modelOverrideView
+            }
+        }
+    }
+
+    // MARK: - MCP card
+
+    private var mcpCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("External tools (MCPs)", systemImage: "app.connected.to.app.below.fill",
+                          subtitle: "Toggle which external tool servers \(selectedAgentShortName) can use. Changes are per-agent — the toggles below apply only to this agent.")
+
+                if isLoading {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading MCP servers…")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
+                } else if serverTools.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No MCP servers installed.")
+                            .font(.callout)
+                        Text("Add one from the MCPs tab (Playwright, GitHub, Postgres, etc.) and it'll appear here.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(serverTools.keys.sorted(), id: \.self) { server in
+                            mcpServerPanel(server: server)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Session memory card
+
+    private var sessionMemoryCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("Session memory budget", systemImage: "brain.head.profile",
+                          subtitle: "When a subagent's conversation grows past this size, oldest messages are trimmed so it stays usable. Applies globally to all subagents.")
+                HStack(spacing: 10) {
+                    TextField("100000", text: $sessionTokenBudget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 160)
+                        .font(.body.monospacedDigit())
+                        .onChange(of: sessionTokenBudget) { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                            if let val = Int(trimmed), val > 0 {
+                                try? KeychainHelper.save(key: KeychainHelper.subagentSessionTokenBudgetKey, value: trimmed)
+                            }
+                        }
+                    Text("tokens")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("default 100,000")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Footer actions
+
+    private var footerActions: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("MCP changes",
+                          systemImage: "arrow.triangle.2.circlepath",
+                          subtitle: "Model and memory settings above auto-save as you edit. MCP tool toggles require an explicit Apply below so you can batch multiple changes before committing them.")
+
+                HStack(spacing: 10) {
+                    Button {
+                        saveRouting()
+                    } label: {
+                        Label("Apply MCP changes", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!isDirty)
+
+                    Button {
+                        loadWorkingSet(for: selectedAgent)
+                        isDirty = false
+                    } label: {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(!isDirty)
+
+                    Button {
+                        Task { await reload() }
+                    } label: {
+                        Label("Refresh MCPs", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .help("Re-query installed MCP servers and their tool catalogue.")
+                }
+
+                if let note = statusNote {
+                    Label(note, systemImage: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundColor(.green)
+                } else if let err = errorNote {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundColor(.red)
+                }
+
+                Text(editingConfigPath)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var selectedAgentShortName: String {
+        agents.first(where: { $0.name == selectedAgent })?.displayShortName ?? selectedAgent
+    }
+
+    // MARK: - Card shell
+
+    @ViewBuilder
+    private func cardContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+    }
+
+    private func cardTitle(_ title: String, systemImage: String, subtitle: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            if let subtitle = subtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Agent picker + metadata (legacy helpers kept for compatibility)
 
     private var agentPicker: some View {
         Picker("Agent", selection: $selectedAgent) {
@@ -654,4 +880,17 @@ private struct AgentRow {
     let originLabel: String?
     let allowedNativeTools: Set<String>?
     let isUserDefined: Bool
+
+    /// Compact label shown inside an agent tile — drops the "Subagent:" prefix
+    /// the dropdown used.
+    var displayShortName: String { name }
+
+    /// One-word origin tag rendered under the tile name.
+    var originTag: String {
+        guard let origin = originLabel else { return "" }
+        if origin.contains("user-defined") { return "custom" }
+        if origin.contains("dynamic") { return "dynamic" }
+        if origin.contains("built-in") { return "built-in" }
+        return origin
+    }
 }
