@@ -72,6 +72,7 @@
 		SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */; };
 		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
 		SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */; };
+		SUBSESSREG0123456789AB1A /* SubagentSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */; };
 		USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = USERAGNTL0123456789AB1B /* UserAgentLoader.swift */; };
 		DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */; };
 		DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */; };
@@ -143,6 +144,7 @@
 		SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentTypes.swift; sourceTree = "<group>"; };
 		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
 		SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentBackgroundRegistry.swift; sourceTree = "<group>"; };
+		SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSessionRegistry.swift; sourceTree = "<group>"; };
 		USERAGNTL0123456789AB1B /* UserAgentLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UserAgentLoader.swift; sourceTree = "<group>"; };
 		DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetry.swift; sourceTree = "<group>"; };
 		DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetryPanel.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */,
 				SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */,
 				SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */,
+				SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */,
 				USERAGNTL0123456789AB1B /* UserAgentLoader.swift */,
 				DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */,
 				LSPTYPES00123456789AB1B /* LSPTypes.swift */,
@@ -399,6 +402,7 @@
 				SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */,
 				SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */,
 				SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */,
+				SUBSESSREG0123456789AB1A /* SubagentSessionRegistry.swift in Sources */,
 				USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */,
 				DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */,
 				DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */,

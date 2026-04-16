@@ -14,6 +14,8 @@ actor SubagentRunner {
     }
 
     struct RunResult {
+        let sessionId: String             // persistent session handle
+        let isNewSession: Bool            // true if freshly created, false if resumed
         let finalMessage: String          // capped at 32 KB
         let turnsUsed: Int
         let toolsCalled: [String]         // unique tool names in call order
@@ -23,6 +25,8 @@ actor SubagentRunner {
 
         func asJSON() -> String {
             var obj: [String: Any] = [
+                "session_id": sessionId,
+                "is_new_session": isNewSession,
                 "final_message": finalMessage,
                 "turns_used": turnsUsed,
                 "tools_called": toolsCalled,
@@ -46,6 +50,7 @@ actor SubagentRunner {
 
     func run(
         invocation: Invocation,
+        sessionId: String?,
         openRouterService: OpenRouterService,
         toolExecutor: ToolExecutor,
         imagesDirectory: URL,
@@ -55,22 +60,18 @@ actor SubagentRunner {
         // 1. Resolve subagent type
         guard let subagentType = SubagentTypes.find(name: invocation.subagentType) else {
             return RunResult(
+                sessionId: sessionId ?? "",
+                isNewSession: false,
                 finalMessage: "",
                 turnsUsed: 0,
                 toolsCalled: [],
                 filesTouched: [],
                 spendUSD: 0,
-                error: "Unknown subagent_type '\(invocation.subagentType)'. Valid values: general-purpose, Explore, Plan."
+                error: "Unknown subagent_type '\(invocation.subagentType)'. Valid values: \(SubagentTypes.allNames().joined(separator: ", "))."
             )
         }
 
-        // 2. Build filtered tool list.
-        //    - Always strip the Agent tool (recursion guard).
-        //    - If a native whitelist is set, keep only whitelisted names.
-        //    - Append MCP tools scoped to this subagent's routing entry
-        //      (mcp-routing.json per-agent override → subagent type fallback
-        //      patterns → nothing). parentTools is native-only, so MCP tools
-        //      come in fresh from the registry, filtered per-agent.
+        // 2. Build filtered tool list (rebuilt fresh each run so new MCPs are picked up).
         var filteredTools = parentTools.filter { $0.function.name != "Agent" }
         if let whitelist = subagentType.allowedToolNames {
             filteredTools = filteredTools.filter { whitelist.contains($0.function.name) }
@@ -84,13 +85,30 @@ actor SubagentRunner {
         filteredTools += subagentMcpTools
         let allowedToolNames = Set(filteredTools.map { $0.function.name })
 
-        // 3. Build an isolated message history — a single synthetic user message.
-        let syntheticUser = Message(
-            role: .user,
-            content: invocation.taskPrompt,
-            timestamp: Date()
-        )
-        var messagesForLLM: [Message] = [syntheticUser]
+        // 3. Session: create or resume.
+        let registry = SubagentSessionRegistry.shared
+        let resolvedSessionId: String
+        let isNew: Bool
+        var messagesForLLM: [Message]
+        var priorToolInteractions: [ToolInteraction]
+
+        if let sid = sessionId, let session = await registry.prepareResume(sessionId: sid, continuationPrompt: invocation.taskPrompt) {
+            resolvedSessionId = sid
+            isNew = false
+            messagesForLLM = session.messages
+            priorToolInteractions = session.toolInteractions
+        } else {
+            let (newId, session) = await registry.create(
+                subagentType: invocation.subagentType,
+                description: invocation.description,
+                initialPrompt: invocation.taskPrompt
+            )
+            resolvedSessionId = newId
+            isNew = true
+            messagesForLLM = session.messages
+            priorToolInteractions = session.toolInteractions
+        }
+        let syntheticUser = messagesForLLM.last ?? Message(role: .user, content: invocation.taskPrompt, timestamp: Date())
 
         // 4. Pick the model.
         //    - .cheapFast → gpt-oss-120b via Groq/Vertex (cost + cache isolation).
@@ -137,7 +155,7 @@ actor SubagentRunner {
         let preSnapshot = await FilesLedgerDiff.snapshot()
 
         // 6. Tool loop
-        var toolInteractions: [ToolInteraction] = []
+        var toolInteractions: [ToolInteraction] = priorToolInteractions
         var toolsCalledOrdered: [String] = []
         var seenToolNames = Set<String>()
         var totalSpendUSD: Double = 0
@@ -243,7 +261,20 @@ actor SubagentRunner {
         // 8. Cap the final message at 32 KB (runaway-protection backstop).
         let cappedFinal = Self.capToBytes(finalText, limit: Self.finalMessageByteCap)
 
+        // 9. Commit run state to the session registry so the session is resumable.
+        let newInteractions = Array(toolInteractions.dropFirst(priorToolInteractions.count))
+        await registry.commitRun(
+            sessionId: resolvedSessionId,
+            additionalTurns: turnsUsed,
+            additionalSpend: totalSpendUSD,
+            newToolsCalled: toolsCalledOrdered,
+            newToolInteractions: newInteractions,
+            finalAssistantText: finalText.isEmpty ? nil : finalText
+        )
+
         return RunResult(
+            sessionId: resolvedSessionId,
+            isNewSession: isNew,
             finalMessage: cappedFinal,
             turnsUsed: turnsUsed,
             toolsCalled: toolsCalledOrdered,

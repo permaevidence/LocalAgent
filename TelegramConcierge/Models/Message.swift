@@ -14,6 +14,20 @@ enum MessageKind: String, Codable {
     case reminderFired    // Scheduled reminder fired
 }
 
+/// Per-turn breadcrumb for subagent session lifecycle events.
+/// Stored on `Message.subagentSessionEvents`, rendered inline in
+/// the Telegram UI and preserved in FractalMind summaries.
+struct SubagentSessionEvent: Codable, Equatable {
+    enum Kind: String, Codable {
+        case opened     // New session created
+        case continued  // Existing session resumed
+    }
+    let kind: Kind
+    let sessionId: String
+    let subagentType: String
+    let description: String
+}
+
 struct Message: Identifiable, Codable, Equatable {
     let id: UUID
     let role: Role
@@ -42,6 +56,9 @@ struct Message: Identifiable, Codable, Equatable {
 
     // Project workspaces accessed during the turn
     var accessedProjectIds: [String]
+
+    // Subagent session events that occurred during this turn
+    var subagentSessionEvents: [SubagentSessionEvent]
 
     // Tool interactions from the agentic loop (persisted for prompt cache continuity)
     var toolInteractions: [ToolInteraction]
@@ -87,6 +104,7 @@ struct Message: Identifiable, Codable, Equatable {
         editedFilePaths: [String] = [],
         generatedFilePaths: [String] = [],
         accessedProjectIds: [String] = [],
+        subagentSessionEvents: [SubagentSessionEvent] = [],
         toolInteractions: [ToolInteraction] = [],
         compactToolLog: String? = nil,
         kind: MessageKind = .userText
@@ -106,6 +124,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.editedFilePaths = editedFilePaths
         self.generatedFilePaths = generatedFilePaths
         self.accessedProjectIds = accessedProjectIds
+        self.subagentSessionEvents = subagentSessionEvents
         self.toolInteractions = toolInteractions
         self.compactToolLog = compactToolLog
         self.kind = kind
@@ -119,7 +138,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, toolInteractions, compactToolLog, kind
+        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -202,6 +221,9 @@ struct Message: Identifiable, Codable, Equatable {
         // Accessed projects (new field, default to empty for old messages)
         accessedProjectIds = (try? container.decode([String].self, forKey: .accessedProjectIds)) ?? []
 
+        // Subagent session events (new field, default to empty for old messages)
+        subagentSessionEvents = (try? container.decode([SubagentSessionEvent].self, forKey: .subagentSessionEvents)) ?? []
+
         // Tool interactions (new field, default to empty for old messages)
         toolInteractions = (try? container.decode([ToolInteraction].self, forKey: .toolInteractions)) ?? []
 
@@ -237,6 +259,9 @@ struct Message: Identifiable, Codable, Equatable {
             try container.encode(generatedFilePaths, forKey: .generatedFilePaths)
         }
         try container.encode(accessedProjectIds, forKey: .accessedProjectIds)
+        if !subagentSessionEvents.isEmpty {
+            try container.encode(subagentSessionEvents, forKey: .subagentSessionEvents)
+        }
         if !toolInteractions.isEmpty {
             try container.encode(toolInteractions, forKey: .toolInteractions)
         }

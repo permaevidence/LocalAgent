@@ -902,7 +902,7 @@ enum AvailableTools {
                     properties: [
                         "subagent_type": ParameterProperty(
                             type: "string",
-                            description: "Which subagent to spawn.",
+                            description: "Which subagent to spawn (for new sessions) or which type the existing session belongs to (for resumes).",
                             enumValues: subagentNames
                         ),
                         "description": ParameterProperty(
@@ -911,7 +911,11 @@ enum AvailableTools {
                         ),
                         "prompt": ParameterProperty(
                             type: "string",
-                            description: "The full task for the subagent. Must be self-contained — include all context the subagent needs, since it sees none of your conversation."
+                            description: "The task or continuation message. For new sessions: the full self-contained task. For resumed sessions: the follow-up instruction (the subagent already has its prior context)."
+                        ),
+                        "session_id": ParameterProperty(
+                            type: "string",
+                            description: "Optional. Pass a session_id from a prior Agent call to resume that subagent's conversation with its full prior context intact. Omit to start a fresh session. Every Agent call returns a session_id in its result — save it if you might want to continue later. Use list_subagent_sessions to see all available sessions."
                         ),
                         "run_in_background": ParameterProperty(
                             type: "string",
@@ -934,6 +938,20 @@ enum AvailableTools {
             name: "list_running_subagents",
             description: "List every subagent currently running in the background (spawned via Agent with run_in_background='true'). Returns a JSON array of {handle, subagent_type, description, started_at, running_seconds}. Use to check what's in flight before cancelling or to confirm a background spawn is still working.",
             parameters: FunctionParameters(properties: [:], required: [])
+        )
+    )
+
+    static let listSubagentSessions = ToolDefinition(
+        function: FunctionDefinition(
+            name: "list_subagent_sessions",
+            description: "List all subagent sessions from this app run, sorted by most-recently-used first. Each session is resumable by passing its session_id to the Agent tool. Use this to find session IDs for resuming a prior subagent conversation.",
+            parameters: FunctionParameters(
+                properties: [
+                    "limit": ParameterProperty(type: "integer", description: "Max sessions to return. Default 20."),
+                    "offset": ParameterProperty(type: "integer", description: "Number of sessions to skip (for pagination). Default 0.")
+                ],
+                required: []
+            )
         )
     )
 
@@ -964,7 +982,7 @@ enum AvailableTools {
     /// snapshot + 30-day agenda are still injected into the system prompt via
     /// GoogleWorkspaceService.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, cancelSubagent]
+        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent]
     }
 
     /// All available tools. `includeWebSearch` toggles whether the four web tools

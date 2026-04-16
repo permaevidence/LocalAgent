@@ -219,6 +219,8 @@ actor ToolExecutor {
             content = await executeListRunningSubagents(call)
         case "cancel_subagent":
             content = await executeCancelSubagent(call)
+        case "list_subagent_sessions":
+            content = await executeListSubagentSessions(call)
         case "lsp_hover":
             content = await executeLSPHover(call)
         case "lsp_definition":
@@ -2451,6 +2453,8 @@ struct SubagentInvocationArguments: Codable {
     let subagent_type: String
     let description: String
     let prompt: String
+    let session_id: String?
+    let close_session: String?
     let run_in_background: String?
     let model: String?
 }
@@ -2508,6 +2512,7 @@ extension ToolExecutor {
         let runner = SubagentRunner()
         let result = await runner.run(
             invocation: invocation,
+            sessionId: args.session_id,
             openRouterService: openRouter,
             toolExecutor: self,
             imagesDirectory: imagesDir,
@@ -2572,6 +2577,7 @@ extension ToolExecutor {
         let runner = SubagentRunner()
         let result = await runner.run(
             invocation: invocation,
+            sessionId: args.session_id,
             openRouterService: openRouter,
             toolExecutor: self,
             imagesDirectory: imagesDir,
@@ -2641,5 +2647,43 @@ extension ToolExecutor {
             return str
         }
         return "{\"error\": \"failed to encode cancel_subagent result\"}"
+    }
+
+    func executeListSubagentSessions(_ call: ToolCall) async -> String {
+        struct Args: Decodable { let limit: Int?; let offset: Int? }
+        let args: Args
+        if let data = call.function.arguments.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(Args.self, from: data) {
+            args = decoded
+        } else {
+            args = Args(limit: nil, offset: nil)
+        }
+        let limit = args.limit ?? 20
+        let offset = args.offset ?? 0
+        let (sessions, total) = await SubagentSessionRegistry.shared.list(limit: limit, offset: offset)
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let rows: [[String: Any]] = sessions.map { s in
+            [
+                "session_id": s.id,
+                "subagent_type": s.subagentType,
+                "description": s.description,
+                "created": iso.string(from: s.created),
+                "last_used": iso.string(from: s.lastUsed),
+                "total_turns": s.totalTurns,
+                "message_count": s.messages.count,
+                "spend_usd": s.totalSpendUSD
+            ]
+        }
+        let payload: [String: Any] = [
+            "sessions": rows,
+            "total": total,
+            "has_more": offset + limit < total
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"error\": \"failed to encode list_subagent_sessions result\"}"
     }
 }

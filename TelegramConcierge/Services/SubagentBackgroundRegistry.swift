@@ -63,6 +63,7 @@ actor SubagentBackgroundRegistry {
             let runner = SubagentRunner()
             let result = await runner.run(
                 invocation: invocation,
+                sessionId: nil,
                 openRouterService: openRouterService,
                 toolExecutor: toolExecutor,
                 imagesDirectory: imagesDirectory,
