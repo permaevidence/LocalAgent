@@ -238,12 +238,70 @@ struct ContextViewerView: View {
                                         .font(.caption)
                                         .foregroundColor(.orange)
                                 }
+                                if !message.editedFilePaths.isEmpty {
+                                    Label("\(message.editedFilePaths.count)", systemImage: "pencil")
+                                        .font(.caption2)
+                                        .foregroundColor(.purple)
+                                }
+                                if !message.generatedFilePaths.isEmpty {
+                                    Label("\(message.generatedFilePaths.count)", systemImage: "sparkles")
+                                        .font(.caption2)
+                                        .foregroundColor(.pink)
+                                }
                             }
-                            
+
                             Text(message.content.prefix(200) + (message.content.count > 200 ? "..." : ""))
                                 .font(.caption)
                                 .foregroundColor(.primary)
                                 .textSelection(.enabled)
+
+                            // File breadcrumbs (edited/generated paths)
+                            if !message.editedFilePaths.isEmpty || !message.generatedFilePaths.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    ForEach(message.editedFilePaths, id: \.self) { path in
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "pencil")
+                                                .font(.caption2)
+                                                .foregroundColor(.purple)
+                                            Text(path)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                        }
+                                    }
+                                    ForEach(message.generatedFilePaths, id: \.self) { path in
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "sparkles")
+                                                .font(.caption2)
+                                                .foregroundColor(.pink)
+                                            Text(path)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Subagent session breadcrumbs
+                            if !message.subagentSessionEvents.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    ForEach(Array(message.subagentSessionEvents.enumerated()), id: \.offset) { _, event in
+                                        HStack(spacing: 4) {
+                                            Image(systemName: event.kind == .opened ? "bolt.circle" : "arrow.clockwise.circle")
+                                                .font(.caption2)
+                                                .foregroundColor(.indigo)
+                                            Text("session \(event.sessionId) — \(event.kind == .opened ? "opened" : "continued"): \(event.subagentType) (\(event.description))")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.vertical, 4)
