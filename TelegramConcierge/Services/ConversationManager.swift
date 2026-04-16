@@ -2860,10 +2860,8 @@ class ConversationManager: ObservableObject {
 
         let emailContent = """
         [SYSTEM: NEW EMAILS ARRIVED]
-        The following new UNREAD emails have just arrived in your inbox. Decide whether any of these are worth notifying the user about.
-        If these emails are clearly unimportant (spam, promotions, newsletters, automated notifications, receipts, no-reply marketing), reply with exactly `[SKIP]` (and nothing else) to stay silent — no Telegram notification will be sent.
-        If any of these emails IS worth the user's attention (personal correspondence, work, account security, time-sensitive matters, anything they'd want to know about promptly), reply normally with a short summary. When multiple emails arrive together and only some matter, mention the important ones and briefly note the rest (or omit them entirely).
-        You have the `gws` CLI available via `bash` for any follow-up action (read full body with `gws gmail +read --id <id>`, reply with `gws gmail +reply`, etc.).
+        Decide whether these are worth notifying the user about. If not, reply with exactly `[SKIP]` (and nothing else) — no Telegram notification will be sent. Otherwise, reply normally with a short summary.
+        Use `gws` via `bash` for follow-up actions when needed (e.g. `gws gmail +read --id <id>`, `gws gmail +reply`).
 
         New emails:
         \(emailDetails.joined(separator: "\n"))
