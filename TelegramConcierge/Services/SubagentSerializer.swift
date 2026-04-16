@@ -165,7 +165,7 @@ enum SubagentSerializer {
         var tools: [String]? = nil
         var mcpTools: [String]? = nil
         var model = "inherit"
-        var maxTurns = 20
+        var maxTurns = 80
 
         var i = 0
         while i < fmLines.count {
@@ -248,7 +248,7 @@ struct SubagentEditorDraft {
             nativeTools: nil,
             mcpToolPatterns: nil,
             model: "cheapFast",
-            maxTurns: 20
+            maxTurns: 80
         )
     }
 }

@@ -65,7 +65,7 @@ enum SubagentTypes {
         systemPromptSuffix:
             "You are a focused general-purpose subagent. Return a concrete final message with findings — file paths, line numbers, verbatim quotes when relevant. Do not ask clarifying questions.",
         allowedToolNames: nil,
-        defaultMaxTurns: 20,
+        defaultMaxTurns: 80,
         preferredModel: .cheapFast
     )
 
@@ -79,7 +79,7 @@ enum SubagentTypes {
             "lsp_hover", "lsp_definition", "lsp_references",
             "web_fetch", "web_search", "bash"
         ],
-        defaultMaxTurns: 15,
+        defaultMaxTurns: 80,
         preferredModel: .cheapFast
     )
 
@@ -93,7 +93,7 @@ enum SubagentTypes {
             "lsp_hover", "lsp_definition", "lsp_references",
             "web_fetch", "web_search", "bash"
         ],
-        defaultMaxTurns: 20,
+        defaultMaxTurns: 80,
         preferredModel: .cheapFast
     )
 
@@ -106,7 +106,7 @@ enum SubagentTypes {
         systemPromptSuffix:
             "You are a browser automation specialist. Use the mcp__playwright__* tools to navigate, snapshot, click, type, and evaluate pages. Prefer `browser_snapshot` (cheap, structured accessibility tree) over `browser_take_screenshot` unless a visual is specifically requested. Return a concise report with what you found, what you clicked, and any extracted data. If navigating to a sensitive site (bank, admin console), stop and report back rather than acting.",
         allowedToolNames: ["read_file", "grep", "bash", "web_fetch"],
-        defaultMaxTurns: 25,
+        defaultMaxTurns: 80,
         preferredModel: .cheapFast,
         mcpToolPatterns: ["mcp__playwright__*"]
     )
@@ -120,7 +120,7 @@ enum SubagentTypes {
         systemPromptSuffix:
             "You are a database analysis specialist. Use the mcp__postgres__* / mcp__sqlite__* / mcp__mysql__* tools (whichever are present) to list schemas, inspect tables, and run read queries. For destructive writes (INSERT/UPDATE/DELETE/DROP), stop and confirm intent before executing. Return results as a concise summary with row counts and key values — do not dump large tables verbatim.",
         allowedToolNames: ["read_file", "grep", "bash"],
-        defaultMaxTurns: 20,
+        defaultMaxTurns: 80,
         preferredModel: .cheapFast,
         mcpToolPatterns: ["mcp__postgres__*", "mcp__sqlite__*", "mcp__mysql__*"]
     )

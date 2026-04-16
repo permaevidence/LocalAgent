@@ -39,7 +39,9 @@ class ConversationManager: ObservableObject {
     private let maxAssistantMessageChars = 4000
     private let defaultToolSpendLimitPerTurnUSD = 0.20
     private let minimumToolSpendLimitPerTurnUSD = 0.001
-    private let maxToolRoundsSafetyLimit = 120
+    private var maxToolRoundsSafetyLimit: Int {
+        AgentTurnOverrides.override(forAgent: "main") ?? AgentTurnOverrides.mainAgentDefault
+    }
     private let shouldResumePollingDefaultsKey = "should_resume_polling_on_launch"
     private let privacyModeDefaultsKey = "telegram_privacy_mode_enabled"
     private let systemPromptTimestampKey = "system_prompt_cache_epoch"

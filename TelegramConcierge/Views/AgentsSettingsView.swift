@@ -55,6 +55,11 @@ struct AgentsSettingsView: View {
     @State private var reasoningDrafts: [String: String] = [:]
     @State private var modelSaveNote: String?
 
+    // Per-agent max-turn override drafts (stringly typed so partial edits
+    // don't clobber each other while the user is still typing).
+    @State private var turnDrafts: [String: String] = [:]
+    @State private var turnSaveNote: String?
+
     // MARK: - Body
 
     var body: some View {
@@ -65,6 +70,7 @@ struct AgentsSettingsView: View {
                 selectedAgentCard
                 capabilitiesCard
                 modelCard
+                maxTurnsCard
                 mcpCard
                 if selectedAgent != "main" { sessionMemoryCard }
                 footerActions
@@ -295,6 +301,95 @@ struct AgentsSettingsView: View {
                               : "Pick the model and reasoning effort for this subagent. Leave empty to use the default.")
                 modelOverrideView
             }
+        }
+    }
+
+    // MARK: - Max turns card
+
+    private var maxTurnsCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("Max turns", systemImage: "arrow.triangle.2.circlepath.circle",
+                          subtitle: selectedAgent == "main"
+                              ? "Safety ceiling on tool-use rounds per user turn. If the agent hits this cap, it's forced to stop and reply. Raise for long multi-step tasks; lower if you want a tighter leash."
+                              : "Maximum tool-use rounds this subagent can run before it's forced to return. Raise for long research/planning runs; lower if you want shorter bursts.")
+                maxTurnsView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var maxTurnsView: some View {
+        let agent = selectedAgent
+        let builtInDefault = turnsDefaultLabel(for: agent)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                TextField(String(builtInDefault), text: Binding(
+                    get: { turnDrafts[agent] ?? "" },
+                    set: { newValue in
+                        turnDrafts[agent] = newValue
+                        saveTurnOverride(for: agent)
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 100)
+                .font(.body.monospacedDigit())
+                Text("turns")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("default \(builtInDefault) · max \(AgentTurnOverrides.maximumAllowed)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if let note = turnSaveNote {
+                Label(note, systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+            }
+
+            Text("Leave empty to use the default (\(builtInDefault)). Allowed range: 1–\(AgentTurnOverrides.maximumAllowed). Values outside the range are clamped on save.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func turnsDefaultLabel(for agent: String) -> Int {
+        if agent == "main" { return AgentTurnOverrides.mainAgentDefault }
+        if let subagent = SubagentTypes.find(name: agent) {
+            return subagent.defaultMaxTurns
+        }
+        return 80
+    }
+
+    private func saveTurnOverride(for agent: String) {
+        let raw = (turnDrafts[agent] ?? "").trimmingCharacters(in: .whitespaces)
+
+        do {
+            if raw.isEmpty {
+                try AgentTurnOverrides.setOverride(nil, forAgent: agent)
+                turnSaveNote = "Cleared override for \(agent)"
+            } else if let parsed = Int(raw), parsed > 0 {
+                let clamped = min(parsed, AgentTurnOverrides.maximumAllowed)
+                try AgentTurnOverrides.setOverride(clamped, forAgent: agent)
+                turnSaveNote = "Saved \(clamped) turns for \(agent)"
+            } else {
+                // Non-numeric input — don't save, don't clear, just wait for
+                // the user to finish typing.
+                return
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if turnSaveNote?.contains("turns for") == true
+                    || turnSaveNote?.contains("Cleared") == true {
+                    turnSaveNote = nil
+                }
+            }
+        } catch {
+            turnSaveNote = nil
+            errorNote = "Save failed: \(error.localizedDescription)"
         }
     }
 
@@ -821,6 +916,12 @@ struct AgentsSettingsView: View {
         } else {
             modelDrafts[agent] = ""
             reasoningDrafts[agent] = ""
+        }
+
+        if let turns = AgentTurnOverrides.override(forAgent: agent) {
+            turnDrafts[agent] = String(turns)
+        } else {
+            turnDrafts[agent] = ""
         }
     }
 

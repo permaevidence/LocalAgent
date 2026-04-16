@@ -186,7 +186,8 @@ actor SubagentRunner {
         var runError: String? = nil
         var finalText: String = ""
 
-        let maxTurns = subagentType.defaultMaxTurns
+        let maxTurns = AgentTurnOverrides.override(forAgent: subagentType.name)
+            ?? subagentType.defaultMaxTurns
         let turnStartDate = Date()
 
         loop: for round in 1...maxTurns {

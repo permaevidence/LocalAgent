@@ -108,7 +108,7 @@ enum UserAgentLoader {
             preferredModel = .cheapFast
         }
 
-        var maxTurns = 20
+        var maxTurns = 80
         if let raw = fields["max_turns"]?.stringValue?.trimmingCharacters(in: .whitespaces),
            let parsed = Int(raw), parsed > 0 {
             maxTurns = min(parsed, 200)
