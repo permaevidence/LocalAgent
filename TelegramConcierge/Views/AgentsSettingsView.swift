@@ -47,6 +47,7 @@ struct AgentsSettingsView: View {
     @State private var editorInitialDraft: SubagentEditorDraft? = nil
     @State private var showingDeleteConfirmation: Bool = false
     @State private var pendingDeleteName: String? = nil
+    @State private var sessionTokenBudget: String = ""
 
     // MARK: - Body
 
@@ -102,6 +103,32 @@ struct AgentsSettingsView: View {
             }
 
             Section {
+                HStack(spacing: 8) {
+                    Text("Session token budget")
+                        .font(.caption)
+                    TextField("100000", text: $sessionTokenBudget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 100)
+                        .onChange(of: sessionTokenBudget) { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                            if let val = Int(trimmed), val > 0 {
+                                try? KeychainHelper.save(key: KeychainHelper.subagentSessionTokenBudgetKey, value: trimmed)
+                            }
+                        }
+                    Text("tokens")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                Text("Max context size for a subagent session before older messages are trimmed on resume. Default 100k.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Label("Session context", systemImage: "text.badge.minus")
+            }
+
+            Section {
                 HStack {
                     Button("Save routing") {
                         saveRouting()
@@ -140,6 +167,8 @@ struct AgentsSettingsView: View {
         .formStyle(.grouped)
         .padding(.horizontal)
         .task {
+            sessionTokenBudget = KeychainHelper.load(key: KeychainHelper.subagentSessionTokenBudgetKey)
+                ?? String(KeychainHelper.defaultSubagentSessionTokenBudget)
             await reload()
         }
         .sheet(isPresented: $showingEditorSheet) {

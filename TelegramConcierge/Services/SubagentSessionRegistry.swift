@@ -60,6 +60,12 @@ actor SubagentSessionRegistry {
     /// Prepare a session for resumption by appending a new user message.
     /// Returns the updated session (with the new message + prior assistant
     /// text converted to a message), or nil if the session_id is unknown.
+    ///
+    /// On resume, estimates total token count and trims oldest messages +
+    /// tool interactions if the session exceeds the configurable budget
+    /// (default 100k tokens). Trimming drops from the front, keeping the
+    /// most recent context. A future version will replace this with
+    /// summarization-based compaction.
     func prepareResume(sessionId: String, continuationPrompt: String) -> Session? {
         guard var session = sessions[sessionId] else { return nil }
 
@@ -74,8 +80,65 @@ actor SubagentSessionRegistry {
         let userMsg = Message(role: .user, content: continuationPrompt, timestamp: Date())
         session.messages.append(userMsg)
         session.lastUsed = Date()
+
+        // Trim if over budget.
+        let budget = Self.tokenBudget()
+        trimIfNeeded(&session, budget: budget)
+
         sessions[sessionId] = session
         return session
+    }
+
+    // MARK: - Context trimming
+
+    /// Rough token estimate: 1 token ≈ 4 characters. Good enough for
+    /// budgeting — off by 10-20% is fine since the threshold is conservative.
+    private func estimateTokens(_ session: Session) -> Int {
+        var chars = 0
+        for msg in session.messages {
+            chars += msg.content.count
+        }
+        for interaction in session.toolInteractions {
+            chars += interaction.assistantMessage.content?.count ?? 0
+            for tc in interaction.assistantMessage.toolCalls {
+                chars += tc.function.arguments.count
+            }
+            for result in interaction.results {
+                chars += result.content.count
+            }
+        }
+        return chars / 4
+    }
+
+    /// Drop oldest messages and tool interactions until we're under budget.
+    /// Keeps at least the last message (the new user prompt) and the last
+    /// 3 tool interactions so the subagent has recent context.
+    private func trimIfNeeded(_ session: inout Session, budget: Int) {
+        let estimated = estimateTokens(session)
+        guard estimated > budget else { return }
+
+        let minKeepInteractions = 3
+        let minKeepMessages = 2  // at least last assistant + new user prompt
+
+        // Trim tool interactions from the front first (they're the biggest).
+        while estimateTokens(session) > budget,
+              session.toolInteractions.count > minKeepInteractions {
+            session.toolInteractions.removeFirst()
+        }
+
+        // If still over, trim older messages from the front.
+        while estimateTokens(session) > budget,
+              session.messages.count > minKeepMessages {
+            session.messages.removeFirst()
+        }
+    }
+
+    private static func tokenBudget() -> Int {
+        if let raw = KeychainHelper.load(key: KeychainHelper.subagentSessionTokenBudgetKey),
+           let parsed = Int(raw), parsed > 0 {
+            return parsed
+        }
+        return KeychainHelper.defaultSubagentSessionTokenBudget
     }
 
     /// Update session after a run completes.

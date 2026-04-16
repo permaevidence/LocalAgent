@@ -191,6 +191,9 @@ extension KeychainHelper {
     static let maxContextTokensKey = "max_context_tokens"
     static let targetContextTokensKey = "target_context_tokens"
 
+    // Subagent Session Settings
+    static let subagentSessionTokenBudgetKey = "subagent_session_token_budget"
+    static let defaultSubagentSessionTokenBudget = 100000
 }
 
 // MARK: - OpenRouter Spend Ledger (UserDefaults-backed)
