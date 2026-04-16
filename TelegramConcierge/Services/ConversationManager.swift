@@ -1172,21 +1172,30 @@ class ConversationManager: ObservableObject {
     
     private func stopActiveExecution() async {
         let wasRunning = activeRunId != nil
-        
+
         activeProcessingTask?.cancel()
         activeProcessingTask = nil
         activeRunId = nil
-        
+        currentTurnLogIsActive = false
+
+        // Kill every background subagent too — /stop is a blanket halt for all
+        // active cost-accruing work the user invoked. (In-flight archiving /
+        // user-context extraction are deliberately NOT cancelled here; they
+        // run on detached tasks that continue to completion so we don't lose
+        // summaries or fact extraction mid-flight.)
+        let killedBackgroundSubagents = await SubagentBackgroundRegistry.shared.cancelAll()
+
         await toolExecutor.cancelAllRunningProcesses()
         ToolExecutor.clearPendingToolOutputs()
-        
+
         if let chatId = pairedChatId {
-            let text = wasRunning
-                ? "⛔ Stopped current execution."
-                : "Nothing is currently running."
+            var text = wasRunning ? "⛔ Stopped current execution." : "Nothing is currently running."
+            if killedBackgroundSubagents > 0 {
+                text += " Also cancelled \(killedBackgroundSubagents) background subagent\(killedBackgroundSubagents == 1 ? "" : "s")."
+            }
             try? await telegramService.sendMessage(chatId: chatId, text: text)
         }
-        
+
         statusMessage = wasRunning ? "Cancelled" : "Listening... (Last check: \(formattedTime()))"
     }
 
@@ -1280,51 +1289,63 @@ class ConversationManager: ObservableObject {
         try Task.checkCancellation()
         print("[TIMING] Context fetch took: \(String(format: "%.2f", Date().timeIntervalSince(contextStartTime)))s")
         
-        // Archive messages if threshold exceeded (based on conversation text weight only)
-        // Summarization is critical: we MUST complete it before proceeding to avoid data loss
+        // Archive messages if threshold exceeded (based on conversation text weight only).
+        // Summarization is critical: we MUST complete it before proceeding to avoid data loss.
+        //
+        // The archive loop runs on a DETACHED task so it's immune to /stop — the user
+        // can abort the turn's LLM + tool work without losing the expensive summary
+        // generation (which also drives user-context fact extraction inside
+        // ConversationArchiveService). Task<Void, Never>.value waits to completion
+        // regardless of the parent's cancellation state.
         if contextResult.needsArchiving && !contextResult.messagesToArchive.isEmpty {
             let archiveStartTime = Date()
-            var archived = false
-            var retryCount = 0
-            let baseDelay: UInt64 = 2_000_000_000 // 2 seconds
-            let maxDelay: UInt64 = 60_000_000_000 // 60 seconds max
-
-            // Notify user that summarization is in progress
-            if let chatId = pairedChatId {
-                try? await telegramService.sendMessage(chatId: chatId, text: "🧠 Summarizing conversation history...")
-            }
-
-            // Build full summarization context for high-quality summaries
+            let messagesToArchive = contextResult.messagesToArchive
             let summarizationContext = buildSummarizationContext(
                 chunkSummaries: chunkSummaries,
                 currentMessages: contextResult.messagesToSend
             )
-            
-            while !archived {
-                try Task.checkCancellation()
-                do {
-                    _ = try await archiveService.archiveMessages(contextResult.messagesToArchive, context: summarizationContext)
-                    print("[ConversationManager] Archived \(contextResult.messagesToArchive.count) messages successfully")
-                    archived = true
-                    
-                    // Remove archived messages from the main conversation array
-                    // They're now safely stored in chunks and available via summaries
-                    let archivedCount = contextResult.messagesToArchive.count
-                    messages.removeFirst(archivedCount)
-                    saveConversation()
-                    print("[ConversationManager] Removed \(archivedCount) archived messages from active conversation")
-                } catch {
-                    retryCount += 1
-                    let delay = min(baseDelay * UInt64(pow(2.0, Double(min(retryCount - 1, 5)))), maxDelay)
-                    print("[ConversationManager] Archive failed (attempt \(retryCount)): \(error). Retrying in \(delay / 1_000_000_000)s...")
-                    
-                    // Notify user that we're working on archival
-                    if retryCount == 1, let chatId = pairedChatId {
-                        try? await telegramService.sendMessage(chatId: chatId, text: "📦 Archiving conversation history, please wait...")
+            let chatIdForNotice = pairedChatId
+            let telegramSvc = telegramService
+            let archiveSvc = archiveService
+
+            if let chatId = chatIdForNotice {
+                try? await telegramService.sendMessage(chatId: chatId, text: "🧠 Summarizing conversation history...")
+            }
+
+            let archiveTask = Task.detached {
+                var archived = false
+                var retryCount = 0
+                let baseDelay: UInt64 = 2_000_000_000
+                let maxDelay: UInt64 = 60_000_000_000
+                while !archived {
+                    do {
+                        _ = try await archiveSvc.archiveMessages(messagesToArchive, context: summarizationContext)
+                        print("[ConversationManager] Archived \(messagesToArchive.count) messages successfully")
+                        archived = true
+                    } catch {
+                        retryCount += 1
+                        let delay = min(baseDelay * UInt64(pow(2.0, Double(min(retryCount - 1, 5)))), maxDelay)
+                        print("[ConversationManager] Archive failed (attempt \(retryCount)): \(error). Retrying in \(delay / 1_000_000_000)s...")
+                        if retryCount == 1, let chatId = chatIdForNotice {
+                            try? await telegramSvc.sendMessage(chatId: chatId, text: "📦 Archiving conversation history, please wait...")
+                        }
+                        try? await Task.sleep(nanoseconds: delay)
                     }
-                    
-                    try await Task.sleep(nanoseconds: delay)
                 }
+            }
+            // Wait for the archive task. For Task<Void, Never>, the await doesn't
+            // throw on parent cancellation — it just waits until the detached work
+            // completes. /stop can't sabotage the archive mid-flight.
+            await archiveTask.value
+
+            // Now back on the main actor — remove archived messages from the
+            // in-memory conversation. This is the ONLY place we mutate `messages`
+            // after archiving, and we're guaranteed the archive finished.
+            let archivedCount = messagesToArchive.count
+            if messages.count >= archivedCount {
+                messages.removeFirst(archivedCount)
+                saveConversation()
+                print("[ConversationManager] Removed \(archivedCount) archived messages from active conversation")
             }
             print("[TIMING] Archive took: \(String(format: "%.2f", Date().timeIntervalSince(archiveStartTime)))s")
         }

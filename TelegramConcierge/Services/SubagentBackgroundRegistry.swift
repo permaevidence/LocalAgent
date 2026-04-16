@@ -124,6 +124,18 @@ actor SubagentBackgroundRegistry {
         return true
     }
 
+    /// Cancel every running background subagent. Invoked by `/stop` so one
+    /// command stops the main turn AND any parallel background work the
+    /// user no longer wants to pay for.
+    @discardableResult
+    func cancelAll() -> Int {
+        let count = tasks.count
+        for (_, task) in tasks {
+            task.cancel()
+        }
+        return count
+    }
+
     // MARK: - Internal
 
     private func markCompleted(id: String, result: SubagentRunner.RunResult) {
