@@ -2223,66 +2223,109 @@ class ConversationManager: ObservableObject {
     /// Get appropriate progress message for tool calls
     private func getProgressMessage(for calls: [ToolCall]) -> String {
         let toolNames = Set(calls.map { $0.function.name })
-        let hasWebSearchOp = toolNames.contains("web_search") || toolNames.contains("deep_research")
-        let hasDeepResearchOp = toolNames.contains("deep_research")
-        
-        // Check for calendar operations
-        let hasCalendarOp = toolNames.contains("manage_calendar")
-        let hasReminderOp = toolNames.contains("manage_reminders")
-        let hasContactOp = toolNames.contains("manage_contacts")
-        
-        // Check for email operations
-        let hasEmailOp = toolNames.contains("read_emails")
-            || toolNames.contains("search_emails")
-            || toolNames.contains("send_email")
-            || toolNames.contains("reply_email")
-            || toolNames.contains("forward_email")
-            || toolNames.contains("gmailreader")
-            || toolNames.contains("gmailcomposer")
-        
-        if hasDeepResearchOp && hasReminderOp {
-            return "🧠🔍 Deep researching and managing reminders..."
-        } else if hasDeepResearchOp && hasCalendarOp {
-            return "🧠🔍📅 Deep researching and managing calendar..."
-        } else if hasDeepResearchOp {
+
+        // Research / search — highest priority since these are long-running.
+        if toolNames.contains("deep_research") {
             return "🧠🔍 Running deep research..."
-        } else if hasWebSearchOp && hasReminderOp {
-            return "🔍 Searching the web and managing reminders..."
-        } else if hasWebSearchOp && hasCalendarOp {
-            return "🔍📅 Searching the web and managing calendar..."
-        } else if hasWebSearchOp {
-            return "🔍 Searching the web..."
-        } else if toolNames.contains("Agent") {
-            return "🤖 Running subagent..."
-        } else if hasReminderOp {
-            return "⏰ Managing reminders..."
-        } else if hasCalendarOp {
-            return "📅 Managing calendar..."
-        } else if hasContactOp {
-            return "👥 Managing contacts..."
-        } else if toolNames.contains("search_emails") {
-            return "🔎 Searching emails..."
-        } else if toolNames.contains("read_emails") {
-            return "📧 Reading emails..."
-        } else if toolNames.contains("send_email") {
-            return "📤 Sending email..."
-        } else if toolNames.contains("reply_email") {
-            return "↩️ Replying to email..."
-        } else if toolNames.contains("forward_email") {
-            return "📨 Forwarding email..."
-        } else if toolNames.contains("gmailreader") {
-            return "📧 Reading Gmail..."
-        } else if toolNames.contains("gmailcomposer") {
-            return "📤 Composing Gmail..."
-        } else if toolNames.contains("shortcuts") {
-            return "⌘ Running shortcuts..."
-        } else if hasEmailOp {
-            return "📧 Managing email..."
-        } else if toolNames.contains("read_document") {
-            return "📄 Opening document..."
-        } else {
-            return "🔧 Processing..."
         }
+        if toolNames.contains("web_search") {
+            return "🔍 Searching the web..."
+        }
+        if toolNames.contains("web_fetch") || toolNames.contains("web_fetch_image") {
+            return "🌐 Fetching web content..."
+        }
+
+        // Subagent delegation.
+        if toolNames.contains("Agent") {
+            return "🤖 Running subagent..."
+        }
+        if toolNames.contains("list_subagent_sessions")
+            || toolNames.contains("list_running_subagents")
+            || toolNames.contains("cancel_subagent") {
+            return "🤖 Managing subagents..."
+        }
+
+        // Image generation.
+        if toolNames.contains("generate_image") {
+            return "🎨 Generating image..."
+        }
+
+        // Reminders / calendar (now via gws CLI, but reminders tool still exists).
+        if toolNames.contains("manage_reminders") {
+            return "⏰ Managing reminders..."
+        }
+
+        // Filesystem writes.
+        if toolNames.contains("write_file")
+            || toolNames.contains("edit_file")
+            || toolNames.contains("apply_patch") {
+            return "✏️ Editing files..."
+        }
+
+        // Filesystem reads / discovery.
+        if toolNames.contains("read_file")
+            || toolNames.contains("grep")
+            || toolNames.contains("glob")
+            || toolNames.contains("list_dir")
+            || toolNames.contains("list_recent_files") {
+            return "🔎 Reading files..."
+        }
+
+        // LSP semantic queries.
+        if toolNames.contains("lsp_hover")
+            || toolNames.contains("lsp_definition")
+            || toolNames.contains("lsp_references") {
+            return "🔬 Analyzing code..."
+        }
+
+        // Bash (catch-all for shell). Check AFTER more specific patterns so
+        // "bash gws gmail" etc. falls here only if no other match applied.
+        if toolNames.contains("bash")
+            || toolNames.contains("bash_output")
+            || toolNames.contains("bash_watch")
+            || toolNames.contains("bash_kill") {
+            return "💻 Running command..."
+        }
+
+        // Document / media sends.
+        if toolNames.contains("send_document_to_chat") || toolNames.contains("download_from_url") {
+            return "📎 Handling files..."
+        }
+
+        // Shortcuts.
+        if toolNames.contains("shortcuts") || toolNames.contains("run_shortcut") || toolNames.contains("list_shortcuts") {
+            return "⌘ Running shortcut..."
+        }
+
+        // Planning / memory.
+        if toolNames.contains("todo_write") {
+            return "📋 Updating plan..."
+        }
+        if toolNames.contains("view_conversation_chunk") {
+            return "🗂 Reading memory..."
+        }
+
+        // MCP tools — grouped by server so "mcp__playwright__*" all get one message.
+        if toolNames.contains(where: { $0.hasPrefix("mcp__playwright__") }) {
+            return "🌐 Browsing..."
+        }
+        if toolNames.contains(where: { $0.hasPrefix("mcp__nano-banana__") }) {
+            return "🎨 Working with images..."
+        }
+        if toolNames.contains(where: { $0.hasPrefix("mcp__") }) {
+            // Extract the server name from the first matching MCP tool for a
+            // friendlier generic message. Format: mcp__<server>__<tool>.
+            if let first = toolNames.first(where: { $0.hasPrefix("mcp__") }) {
+                let parts = first.components(separatedBy: "__")
+                if parts.count >= 2, !parts[1].isEmpty {
+                    return "🔌 Using \(parts[1]) MCP..."
+                }
+            }
+            return "🔌 Using MCP tool..."
+        }
+
+        // Fallback for unrecognized / mixed tool combos.
+        return "🔧 Processing..."
     }
     
     /// Build a compact per-step tool log to persist in conversation memory
