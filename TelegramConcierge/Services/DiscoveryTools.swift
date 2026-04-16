@@ -29,16 +29,33 @@ enum DiscoveryTools {
 
     // MARK: - grep
 
+    enum GrepOutputMode: String {
+        case content
+        case filesWithMatches = "files_with_matches"
+        case count
+    }
+
     /// Search file contents for a pattern.
     /// - Parameters:
     ///   - pattern: regex pattern
     ///   - searchPath: directory root (absolute path)
     ///   - include: optional glob filter (e.g. "*.swift")
-    ///   - maxResults: cap on number of matching lines returned (default 100)
+    ///   - type: optional ripgrep type filter (e.g. "swift", "ts"); requires ripgrep
+    ///   - outputMode: .content (default, match lines), .filesWithMatches (paths only), .count (matches-per-file)
+    ///   - caseInsensitive: case-insensitive matching (-i)
+    ///   - multiline: allow patterns to span newlines (`-U --multiline-dotall`); requires ripgrep
+    ///   - contextBefore/contextAfter: number of lines of surrounding context (content mode only)
+    ///   - maxResults: cap on returned lines/files (default 100)
     static func grep(
         pattern: String,
         searchPath: String,
         include: String? = nil,
+        type: String? = nil,
+        outputMode: GrepOutputMode = .content,
+        caseInsensitive: Bool = false,
+        multiline: Bool = false,
+        contextBefore: Int = 0,
+        contextAfter: Int = 0,
         maxResults: Int = DiscoveryTools.maxResults
     ) async -> OpResult {
         let path = FilesystemTools.normalizePath(searchPath)
@@ -50,24 +67,69 @@ enum DiscoveryTools {
             return OpResult(content: jsonError("search path does not exist or is not a directory: \(path)"))
         }
 
-        if let rgResult = await grepViaRipgrep(pattern: pattern, searchPath: path, include: include, maxResults: maxResults) {
+        if let rgResult = await grepViaRipgrep(
+            pattern: pattern,
+            searchPath: path,
+            include: include,
+            type: type,
+            outputMode: outputMode,
+            caseInsensitive: caseInsensitive,
+            multiline: multiline,
+            contextBefore: contextBefore,
+            contextAfter: contextAfter,
+            maxResults: maxResults
+        ) {
             return rgResult
         }
-        return grepNative(pattern: pattern, searchPath: path, include: include, maxResults: maxResults)
+        return grepNative(
+            pattern: pattern,
+            searchPath: path,
+            include: include,
+            outputMode: outputMode,
+            caseInsensitive: caseInsensitive,
+            multiline: multiline,
+            contextBefore: contextBefore,
+            contextAfter: contextAfter,
+            maxResults: maxResults
+        )
     }
 
-    private static func grepViaRipgrep(pattern: String, searchPath: String, include: String?, maxResults: Int) async -> OpResult? {
+    private static func grepViaRipgrep(
+        pattern: String,
+        searchPath: String,
+        include: String?,
+        type: String?,
+        outputMode: GrepOutputMode,
+        caseInsensitive: Bool,
+        multiline: Bool,
+        contextBefore: Int,
+        contextAfter: Int,
+        maxResults: Int
+    ) async -> OpResult? {
         let rg = locateExecutable("rg")
         guard let rg else { return nil }
 
         var args: [String] = [
-            "--no-heading",
-            "--line-number",
             "--color=never",
-            "--max-count=\(maxResults)",
             "--max-columns=\(maxLineLength)",
             "--sort=modified"
         ]
+        if caseInsensitive { args.append("-i") }
+        if multiline { args.append("-U"); args.append("--multiline-dotall") }
+
+        switch outputMode {
+        case .content:
+            args.append("--no-heading")
+            args.append("--line-number")
+            args.append("--max-count=\(maxResults)")
+            if contextBefore > 0 { args.append("-B"); args.append(String(contextBefore)) }
+            if contextAfter > 0 { args.append("-A"); args.append(String(contextAfter)) }
+        case .filesWithMatches:
+            args.append("-l")
+        case .count:
+            args.append("-c")
+        }
+
         for ignore in bakedInIgnores {
             args.append("--glob")
             args.append("!\(ignore)/")
@@ -76,33 +138,92 @@ enum DiscoveryTools {
             args.append("--glob")
             args.append(include)
         }
+        if let type, !type.isEmpty {
+            args.append("-t")
+            args.append(type)
+        }
         args.append("--")
         args.append(pattern)
         args.append(searchPath)
 
-        let (out, _, status) = runProcess(executable: rg, args: args, timeoutSeconds: 30)
+        let (out, err, status) = runProcess(executable: rg, args: args, timeoutSeconds: 30)
         // rg exits 1 when no matches — treat that as success with empty results.
-        if status == 0 || status == 1 {
-            var matches: [[String: Any]] = []
+        guard status == 0 || status == 1 else {
+            // ripgrep ran but errored — could be an unknown type filter. Surface it.
+            let trimmedErr = err.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedErr.isEmpty {
+                return OpResult(content: jsonError("ripgrep error: \(trimmedErr)"))
+            }
+            return nil
+        }
+
+        switch outputMode {
+        case .filesWithMatches:
+            var files: [String] = []
             var truncated = false
             for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
-                if matches.count >= maxResults { truncated = true; break }
-                let parts = line.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
-                guard parts.count == 3,
-                      let lineNo = Int(parts[1]) else { continue }
-                var text = String(parts[2])
-                if text.count > maxLineLength {
-                    text = String(text.prefix(maxLineLength)) + "… [truncated]"
-                }
-                matches.append([
-                    "file": String(parts[0]),
-                    "line": lineNo,
-                    "text": text
-                ])
+                if files.count >= maxResults { truncated = true; break }
+                files.append(String(line))
             }
             return OpResult(content: jsonString([
                 "success": true,
                 "backend": "ripgrep",
+                "mode": "files_with_matches",
+                "pattern": pattern,
+                "path": searchPath,
+                "files": files,
+                "count": files.count,
+                "truncated": truncated
+            ]))
+
+        case .count:
+            var counts: [[String: Any]] = []
+            var truncated = false
+            for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
+                if counts.count >= maxResults { truncated = true; break }
+                // rg -c format: "path:N"
+                let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2, let n = Int(parts[1]) else { continue }
+                counts.append(["file": String(parts[0]), "count": n])
+            }
+            return OpResult(content: jsonString([
+                "success": true,
+                "backend": "ripgrep",
+                "mode": "count",
+                "pattern": pattern,
+                "path": searchPath,
+                "files": counts,
+                "file_count": counts.count,
+                "truncated": truncated
+            ]))
+
+        case .content:
+            var matches: [[String: Any]] = []
+            var truncated = false
+            let wantContext = contextBefore > 0 || contextAfter > 0
+            for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
+                if matches.count >= maxResults { truncated = true; break }
+                let raw = String(line)
+                if raw == "--" { continue } // ripgrep context-group separator
+                // Matches use `file:N:text`; context lines use `file-N-text`.
+                // We only need to detect which is which; record `kind` for context.
+                guard let (filePath, lineNo, text, kind) = parseRgLine(raw, wantContext: wantContext) else { continue }
+                var clipped = text
+                if clipped.count > maxLineLength {
+                    clipped = String(clipped.prefix(maxLineLength)) + "… [truncated]"
+                }
+                var entry: [String: Any] = [
+                    "file": filePath,
+                    "line": lineNo,
+                    "text": clipped
+                ]
+                if wantContext { entry["kind"] = kind }
+                matches.append(entry)
+            }
+            return OpResult(content: jsonString([
+                "success": true,
+                "backend": "ripgrep",
+                "mode": "content",
                 "pattern": pattern,
                 "path": searchPath,
                 "matches": matches,
@@ -110,21 +231,71 @@ enum DiscoveryTools {
                 "truncated": truncated
             ]))
         }
-        return nil  // ripgrep ran but errored; fall through to native
     }
 
-    private static func grepNative(pattern: String, searchPath: String, include: String?, maxResults: Int) -> OpResult {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+    /// Parse a ripgrep output line where match lines use "path:N:text" and context
+    /// lines use "path-N-text". Returns (path, lineNumber, text, kind) where kind is
+    /// "match" or "context". Returns nil if the line can't be parsed.
+    private static func parseRgLine(_ line: String, wantContext: Bool) -> (String, Int, String, String)? {
+        // Search for the first separator sequence: path ends before `:N:` (match) or `-N-` (context).
+        // We walk from the end-ish to find a numeric segment bracketed by one of the separators.
+        // Simpler approach: try `:` first, then if that gives a non-numeric line segment, try `-`.
+        if let tuple = splitRgLine(line, separator: ":") {
+            return (tuple.0, tuple.1, tuple.2, "match")
+        }
+        if wantContext, let tuple = splitRgLine(line, separator: "-") {
+            return (tuple.0, tuple.1, tuple.2, "context")
+        }
+        return nil
+    }
+
+    private static func splitRgLine(_ line: String, separator: Character) -> (String, Int, String)? {
+        // Find the LAST valid "path<sep>N<sep>text" where N is an integer.
+        // We do this by scanning for a substring "<sep><digits><sep>" from the left,
+        // taking the FIRST occurrence so paths with colons (unusual) still parse.
+        let chars = Array(line)
+        var idx = 0
+        while idx < chars.count {
+            if chars[idx] == separator {
+                // Look for digits followed by same separator.
+                var j = idx + 1
+                while j < chars.count, chars[j].isASCII, chars[j].isNumber { j += 1 }
+                if j > idx + 1, j < chars.count, chars[j] == separator {
+                    let path = String(chars[0..<idx])
+                    guard let lineNo = Int(String(chars[(idx + 1)..<j])) else { idx = j; continue }
+                    let text = j + 1 <= chars.count ? String(chars[(j + 1)..<chars.count]) : ""
+                    return (path, lineNo, text)
+                }
+                idx = j
+            } else {
+                idx += 1
+            }
+        }
+        return nil
+    }
+
+    private static func grepNative(
+        pattern: String,
+        searchPath: String,
+        include: String?,
+        outputMode: GrepOutputMode,
+        caseInsensitive: Bool,
+        multiline: Bool,
+        contextBefore: Int,
+        contextAfter: Int,
+        maxResults: Int
+    ) -> OpResult {
+        var options: NSRegularExpression.Options = []
+        if caseInsensitive { options.insert(.caseInsensitive) }
+        if multiline { options.insert(.dotMatchesLineSeparators) }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
             return OpResult(content: jsonError("invalid regex pattern: \(pattern)"))
         }
         let includePattern: NSRegularExpression? = {
             guard let include else { return nil }
-            // Turn a simple glob into a regex. Supports *, ?, and literal chars.
             return try? NSRegularExpression(pattern: globToRegex(include))
         }()
 
-        var matches: [[String: Any]] = []
-        var truncated = false
         let root = URL(fileURLWithPath: searchPath, isDirectory: true)
         let enumerator = FileManager.default.enumerator(
             at: root,
@@ -132,7 +303,6 @@ enum DiscoveryTools {
             options: [.skipsHiddenFiles]
         )
 
-        // Collect candidate files first so we can sort by mtime desc.
         struct Candidate { let url: URL; let mtime: Date }
         var candidates: [Candidate] = []
 
@@ -152,34 +322,112 @@ enum DiscoveryTools {
         }
         candidates.sort { $0.mtime > $1.mtime }
 
+        // files_with_matches / count: iterate files, short-circuit on first match per file.
+        if outputMode == .filesWithMatches || outputMode == .count {
+            var files: [String] = []
+            var counts: [[String: Any]] = []
+            var truncated = false
+            for candidate in candidates {
+                if (outputMode == .filesWithMatches ? files.count : counts.count) >= maxResults { truncated = true; break }
+                guard let data = try? Data(contentsOf: candidate.url, options: .mappedIfSafe) else { continue }
+                if data.prefix(4096).contains(0) { continue }
+                guard let text = String(data: data, encoding: .utf8) else { continue }
+                let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+                if multiline {
+                    let n = regex.numberOfMatches(in: text, range: nsRange)
+                    if n > 0 {
+                        if outputMode == .filesWithMatches { files.append(candidate.url.path) }
+                        else { counts.append(["file": candidate.url.path, "count": n]) }
+                    }
+                } else {
+                    var fileMatchCount = 0
+                    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                        let s = String(line)
+                        let r = NSRange(s.startIndex..<s.endIndex, in: s)
+                        fileMatchCount += regex.numberOfMatches(in: s, range: r)
+                        if outputMode == .filesWithMatches, fileMatchCount > 0 { break }
+                    }
+                    if fileMatchCount > 0 {
+                        if outputMode == .filesWithMatches { files.append(candidate.url.path) }
+                        else { counts.append(["file": candidate.url.path, "count": fileMatchCount]) }
+                    }
+                }
+            }
+            if outputMode == .filesWithMatches {
+                return OpResult(content: jsonString([
+                    "success": true,
+                    "backend": "native",
+                    "mode": "files_with_matches",
+                    "pattern": pattern,
+                    "path": searchPath,
+                    "files": files,
+                    "count": files.count,
+                    "truncated": truncated
+                ]))
+            }
+            return OpResult(content: jsonString([
+                "success": true,
+                "backend": "native",
+                "mode": "count",
+                "pattern": pattern,
+                "path": searchPath,
+                "files": counts,
+                "file_count": counts.count,
+                "truncated": truncated
+            ]))
+        }
+
+        // content mode
+        var matches: [[String: Any]] = []
+        var truncated = false
+        let wantContext = contextBefore > 0 || contextAfter > 0
+
         for candidate in candidates {
             if matches.count >= maxResults { truncated = true; break }
             guard let data = try? Data(contentsOf: candidate.url, options: .mappedIfSafe) else { continue }
-            // Skip binary-ish files.
             if data.prefix(4096).contains(0) { continue }
             guard let text = String(data: data, encoding: .utf8) else { continue }
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            var matchedLines: Set<Int> = []
             for (idx, line) in lines.enumerated() {
-                if matches.count >= maxResults { truncated = true; break }
-                let lineStr = String(line)
-                let nsRange = NSRange(lineStr.startIndex..<lineStr.endIndex, in: lineStr)
-                if regex.firstMatch(in: lineStr, range: nsRange) != nil {
-                    var t = lineStr
-                    if t.count > maxLineLength {
-                        t = String(t.prefix(maxLineLength)) + "… [truncated]"
-                    }
-                    matches.append([
-                        "file": candidate.url.path,
-                        "line": idx + 1,
-                        "text": t
-                    ])
+                let nsRange = NSRange(line.startIndex..<line.endIndex, in: line)
+                if regex.firstMatch(in: line, range: nsRange) != nil {
+                    matchedLines.insert(idx)
                 }
+            }
+            if matchedLines.isEmpty { continue }
+
+            // Compute the set of line indices to emit: matches plus surrounding context.
+            var emitSet: Set<Int> = matchedLines
+            if wantContext {
+                for m in matchedLines {
+                    let lo = max(0, m - contextBefore)
+                    let hi = min(lines.count - 1, m + contextAfter)
+                    for k in lo...hi { emitSet.insert(k) }
+                }
+            }
+            let emit = emitSet.sorted()
+
+            for i in emit {
+                if matches.count >= maxResults { truncated = true; break }
+                var t = lines[i]
+                if t.count > maxLineLength {
+                    t = String(t.prefix(maxLineLength)) + "… [truncated]"
+                }
+                var entry: [String: Any] = [
+                    "file": candidate.url.path,
+                    "line": i + 1,
+                    "text": t
+                ]
+                if wantContext { entry["kind"] = matchedLines.contains(i) ? "match" : "context" }
+                matches.append(entry)
             }
         }
 
         return OpResult(content: jsonString([
             "success": true,
             "backend": "native",
+            "mode": "content",
             "pattern": pattern,
             "path": searchPath,
             "matches": matches,

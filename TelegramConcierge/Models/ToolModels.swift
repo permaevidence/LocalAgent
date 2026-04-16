@@ -666,13 +666,20 @@ enum AvailableTools {
     static let grep = ToolDefinition(
         function: FunctionDefinition(
             name: "grep",
-            description: "Regex content search over files under a directory. Uses ripgrep when available, otherwise a native Swift scan. 100-match cap, 2000-char-per-line cap, results sorted by mtime descending. Common project ignores (.git, node_modules, DerivedData, etc.) are always applied.",
+            description: "Regex content search over files under a directory. Uses ripgrep when available, otherwise a native Swift scan. 100-entry cap, 2000-char-per-line cap, results sorted by mtime descending. Common project ignores (.git, node_modules, DerivedData, etc.) are always applied. Supports three output modes, case-insensitive/multiline regex, context lines around matches, and file-type filters.",
             parameters: FunctionParameters(
                 properties: [
                     "pattern": ParameterProperty(type: "string", description: "Regex pattern to search for (ripgrep/ECMAScript-compatible)."),
                     "path": ParameterProperty(type: "string", description: "Absolute directory path to search under."),
                     "include": ParameterProperty(type: "string", description: "Optional filename glob to filter, e.g. '*.swift' or '*.{ts,tsx}'."),
-                    "max_results": ParameterProperty(type: "integer", description: "Optional. Maximum matching lines to return (default 100, hard cap 100).")
+                    "type": ParameterProperty(type: "string", description: "Optional ripgrep file-type filter (e.g. 'swift', 'ts', 'py', 'rust'). More efficient than include for standard languages. Requires ripgrep. Run `rg --type-list` to see all types."),
+                    "output_mode": ParameterProperty(type: "string", description: "Output shape: 'content' (default, returns matching lines), 'files_with_matches' (returns just file paths — use when you only need to know which files contain the pattern), or 'count' (returns match counts per file). Prefer files_with_matches when scanning a large repo; it's much cheaper than reading every matching line."),
+                    "case_insensitive": ParameterProperty(type: "boolean", description: "Optional. If true, matches regardless of case (equivalent to ripgrep -i). Default false."),
+                    "multiline": ParameterProperty(type: "boolean", description: "Optional. If true, allows regex patterns to span multiple lines (`.` matches newlines). Useful for patterns like 'struct Foo \\{[\\s\\S]*?bar'. Default false."),
+                    "-A": ParameterProperty(type: "integer", description: "Optional. Lines of context to show AFTER each match (content mode only). Use when you need to see what follows a match."),
+                    "-B": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BEFORE each match (content mode only)."),
+                    "-C": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BOTH before and after each match (content mode only). Shorthand for setting -A and -B to the same value."),
+                    "max_results": ParameterProperty(type: "integer", description: "Optional. Maximum entries (lines/files) to return (default 100, hard cap 100).")
                 ],
                 required: ["pattern", "path"]
             )

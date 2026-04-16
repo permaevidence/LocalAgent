@@ -72,8 +72,29 @@ extension ToolExecutor {
             return "{\"error\": \"grep requires 'pattern' and 'path'\"}"
         }
         let include = args.string("include")
+        let type = args.string("type")
+        let outputModeRaw = args.string("output_mode") ?? "content"
+        guard let outputMode = DiscoveryTools.GrepOutputMode(rawValue: outputModeRaw) else {
+            return "{\"error\": \"grep output_mode must be one of: content, files_with_matches, count\"}"
+        }
+        let caseInsensitive = args.bool("case_insensitive") ?? args.bool("-i") ?? false
+        let multiline = args.bool("multiline") ?? false
+        let contextC = args.int("-C") ?? args.int("context")
+        let contextBefore = args.int("-B") ?? contextC ?? 0
+        let contextAfter = args.int("-A") ?? contextC ?? 0
         let maxResults = args.int("max_results") ?? DiscoveryTools.maxResults
-        let result = await DiscoveryTools.grep(pattern: pattern, searchPath: path, include: include, maxResults: maxResults)
+        let result = await DiscoveryTools.grep(
+            pattern: pattern,
+            searchPath: path,
+            include: include,
+            type: type,
+            outputMode: outputMode,
+            caseInsensitive: caseInsensitive,
+            multiline: multiline,
+            contextBefore: contextBefore,
+            contextAfter: contextAfter,
+            maxResults: maxResults
+        )
         return result.content
     }
 
