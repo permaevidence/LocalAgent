@@ -744,10 +744,25 @@ class ConversationManager: ObservableObject {
             
             var didMutateHistory = false
 
+            // Agent can stay silent on ambient triggers (email arrivals, subagent
+            // completions, reminders) by returning [SKIP] or empty text. We still
+            // record the turn in history for diagnostics but suppress the Telegram
+            // push so the user isn't pinged for every ad, newsletter, or
+            // inconsequential background event. User-initiated turns never silently
+            // skip — a missing reply there would be a bug.
+            let trimmedResponse = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isAmbientTrigger = userMessage.kind != .userText
+            let agentChoseSilence = isAmbientTrigger && (trimmedResponse.isEmpty || trimmedResponse == "[SKIP]")
+
             // Add assistant message with tool interactions, compact log, downloaded files, and accessed projects
-            let finalResponseRaw = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "I completed the requested actions."
-                : response.finalText
+            let finalResponseRaw: String
+            if agentChoseSilence {
+                finalResponseRaw = "[SKIP]"
+            } else if trimmedResponse.isEmpty {
+                finalResponseRaw = "I completed the requested actions."
+            } else {
+                finalResponseRaw = response.finalText
+            }
             let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
             let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
             let assistantMessage = Message(
@@ -767,8 +782,8 @@ class ConversationManager: ObservableObject {
             if didMutateHistory {
                 saveConversation()
             }
-            
-            if let chatId = pairedChatId {
+
+            if let chatId = pairedChatId, !agentChoseSilence {
                 try Task.checkCancellation()
                 guard activeRunId == runId else { return }
                 try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
@@ -2845,8 +2860,9 @@ class ConversationManager: ObservableObject {
 
         let emailContent = """
         [SYSTEM: NEW EMAILS ARRIVED]
-        The following new UNREAD emails have just arrived in your inbox. Please tell the user about them naturally.
-        If they seem unimportant (spam, promotions, newsletters), you can briefly mention them or skip detailing them, but you must still reply.
+        The following new UNREAD emails have just arrived in your inbox. Decide whether any of these are worth notifying the user about.
+        If these emails are clearly unimportant (spam, promotions, newsletters, automated notifications, receipts, no-reply marketing), reply with exactly `[SKIP]` (and nothing else) to stay silent — no Telegram notification will be sent.
+        If any of these emails IS worth the user's attention (personal correspondence, work, account security, time-sensitive matters, anything they'd want to know about promptly), reply normally with a short summary. When multiple emails arrive together and only some matter, mention the important ones and briefly note the rest (or omit them entirely).
         You have the `gws` CLI available via `bash` for any follow-up action (read full body with `gws gmail +read --id <id>`, reply with `gws gmail +reply`, etc.).
 
         New emails:
