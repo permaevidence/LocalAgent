@@ -17,6 +17,14 @@ class ConversationManager: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private var activeProcessingTask: Task<Void, Never>?
     private var activeRunId: UUID?
+
+    /// Per-turn tool-use log. Populated as the tool loop runs; cleared at turn
+    /// start. Surfaces via /status so the user can ask "what's going on?"
+    /// instead of being bombarded by a progress ping per tool call.
+    private var currentTurnToolLog: [(name: String, startedAt: Date)] = []
+    /// Whether the current log belongs to an actively-running turn or the
+    /// most recently completed one. /status uses this to label its output.
+    private var currentTurnLogIsActive: Bool = false
     private var pairedChatId: Int?
     
     // Pending media buffer - media is buffered until text triggers processing
@@ -724,8 +732,13 @@ class ConversationManager: ObservableObject {
             if activeRunId == runId {
                 activeRunId = nil
                 activeProcessingTask = nil
+                currentTurnLogIsActive = false
             }
         }
+
+        // Reset the per-turn tool log so /status shows only this turn.
+        currentTurnToolLog = []
+        currentTurnLogIsActive = true
 
         let turnStartedAt = Date()
         DebugTelemetry.log(
@@ -929,8 +942,70 @@ class ConversationManager: ObservableObject {
         case "/prune":
             await manualPruneToolInteractions()
             return true
+        case "/status":
+            await sendTurnStatus()
+            return true
         default:
             return false
+        }
+    }
+
+    /// Reply with a chronological snapshot of tool activity in the current
+    /// (or most recently completed) turn. Replaces the old always-on
+    /// progress-ping model — user pulls the info on demand rather than
+    /// being bombarded with one message per tool call.
+    private func sendTurnStatus() async {
+        guard let chatId = pairedChatId else { return }
+        let log = currentTurnToolLog
+        if log.isEmpty {
+            let msg = activeRunId != nil
+                ? "⏳ Working on it — no tool calls yet."
+                : "💤 Idle. No tool activity to report."
+            try? await telegramService.sendMessage(chatId: chatId, text: msg)
+            return
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+
+        let header = currentTurnLogIsActive
+            ? "⚙️ Current turn — \(log.count) tool call\(log.count == 1 ? "" : "s") so far:"
+            : "✅ Last turn — \(log.count) tool call\(log.count == 1 ? "" : "s"):"
+
+        var lines: [String] = [header]
+        for entry in log {
+            let emoji = Self.progressEmoji(forToolName: entry.name)
+            let time = formatter.string(from: entry.startedAt)
+            lines.append("  [\(time)] \(emoji) \(entry.name)")
+        }
+
+        try? await telegramService.sendMessage(chatId: chatId, text: lines.joined(separator: "\n"))
+    }
+
+    /// Emoji for a single tool name — used by /status to render each row.
+    /// Same palette as `getProgressMessage` but indexed by tool name instead
+    /// of batch characterization.
+    private static func progressEmoji(forToolName name: String) -> String {
+        if name.hasPrefix("mcp__playwright__") { return "🌐" }
+        if name.hasPrefix("mcp__nano-banana__") { return "🎨" }
+        if name.hasPrefix("mcp__") { return "🔌" }
+        switch name {
+        case "deep_research": return "🧠🔍"
+        case "web_search": return "🔍"
+        case "web_fetch", "web_fetch_image": return "🌐"
+        case "Agent": return "🤖"
+        case "list_subagent_sessions", "list_running_subagents", "cancel_subagent": return "🤖"
+        case "generate_image": return "🎨"
+        case "manage_reminders": return "⏰"
+        case "write_file", "edit_file", "apply_patch": return "✏️"
+        case "read_file", "grep", "glob", "list_dir", "list_recent_files": return "🔎"
+        case "lsp_hover", "lsp_definition", "lsp_references": return "🔬"
+        case "bash", "bash_output", "bash_watch", "bash_kill": return "💻"
+        case "send_document_to_chat", "download_from_url": return "📎"
+        case "shortcuts", "run_shortcut", "list_shortcuts": return "⌘"
+        case "todo_write": return "📋"
+        case "view_conversation_chunk": return "🗂"
+        default: return "🔧"
         }
     }
 
@@ -1163,19 +1238,6 @@ class ConversationManager: ObservableObject {
     
     private func generateResponseWithTools(currentUserMessageId: UUID, turnStartDate: Date) async throws -> ToolAwareResponse {
         try Task.checkCancellation()
-
-        // If this turn was triggered by an ambient event (email arrival,
-        // subagent completion, reminder, etc.) rather than user text, the
-        // agent is allowed to end with [SKIP] and no Telegram push goes
-        // out. Suppress mid-turn progress messages on ambient turns too —
-        // otherwise the user sees a "Processing..." ping even when the
-        // final outcome is silence.
-        let isAmbientTrigger: Bool = {
-            if let triggerMsg = messages.first(where: { $0.id == currentUserMessageId }) {
-                return triggerMsg.kind != .userText
-            }
-            return false
-        }()
 
         // Snapshot FilesLedger up-front so we can report the set of files that were
         // edited/generated during the turn on the resulting assistant Message. This
@@ -1428,12 +1490,16 @@ class ConversationManager: ObservableObject {
                     print("[ConversationManager] Round \(round): blocked \(blockedResults.count) tool call(s) due to turn policy or tool availability")
                 }
                 
-                // Send progress message to Telegram — but NOT on ambient turns,
-                // where the whole turn might end silently via [SKIP] and we don't
-                // want to ping the user mid-decision.
-                if let chatId = pairedChatId, !executableCalls.isEmpty, !isAmbientTrigger {
-                    let progressMessage = getProgressMessage(for: executableCalls)
-                    try? await telegramService.sendMessage(chatId: chatId, text: progressMessage)
+                // Record each tool use into the per-turn log so the user can
+                // retrieve the chronology on demand via /status. We intentionally
+                // do NOT push a Telegram progress message here — a single turn
+                // can fire dozens of tools and spamming the user is worse than
+                // letting them ask for status when they're curious.
+                if !executableCalls.isEmpty {
+                    let now = Date()
+                    for call in executableCalls {
+                        currentTurnToolLog.append((name: call.function.name, startedAt: now))
+                    }
                 }
                 statusMessage = "Executing tools (round \(round))..."
                 
