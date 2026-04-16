@@ -18,6 +18,16 @@ enum LandingZone {
         var directoryName: String { rawValue }
     }
 
+    /// Scratch area for short-lived artifacts (git clones of remote repos, mostly).
+    /// Auto-swept on startup and every `scratchSweepInterval` while the app is alive.
+    /// Entries older than `scratchTTL` are removed.
+    static let scratchReposRoot: URL = root
+        .appendingPathComponent("scratch", isDirectory: true)
+        .appendingPathComponent("repos", isDirectory: true)
+
+    static let scratchTTL: TimeInterval = 24 * 60 * 60           // 24h
+    static let scratchSweepInterval: TimeInterval = 6 * 60 * 60  // 6h
+
     static func directory(for kind: Kind) -> URL {
         root.appendingPathComponent(kind.directoryName, isDirectory: true)
     }
@@ -31,8 +41,66 @@ enum LandingZone {
             for kind in Kind.allCases {
                 try fm.createDirectory(at: directory(for: kind), withIntermediateDirectories: true)
             }
+            try fm.createDirectory(at: scratchReposRoot, withIntermediateDirectories: true)
         } catch {
             print("[LandingZone] bootstrap failed: \(error)")
+        }
+        sweepScratchNow()
+        startScratchSweepLoop()
+    }
+
+    /// Remove top-level entries inside `scratchReposRoot` whose mtime is older than `scratchTTL`.
+    /// Top-level only — we don't walk inside clones, we delete them wholesale.
+    static func sweepScratchNow() {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: scratchReposRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let cutoff = Date().addingTimeInterval(-scratchTTL)
+        var removed = 0
+        for url in entries {
+            let rv = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            let mtime = rv?.contentModificationDate ?? .distantPast
+            if mtime < cutoff {
+                do {
+                    try fm.removeItem(at: url)
+                    removed += 1
+                } catch {
+                    print("[LandingZone] sweep failed to remove \(url.lastPathComponent): \(error)")
+                }
+            }
+        }
+        if removed > 0 {
+            print("[LandingZone] scratch sweep: removed \(removed) stale clone(s) from \(scratchReposRoot.path)")
+        }
+    }
+
+    /// Detached loop that periodically sweeps the scratch dir.
+    /// Detached so shutdown doesn't have to wait for a sweep to finish.
+    /// Idempotent — guarded so we only ever launch one loop.
+    private static let sweepLoopGuard = SweepLoopGuard()
+    private static func startScratchSweepLoop() {
+        guard sweepLoopGuard.claim() else { return }
+        Task.detached {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(scratchSweepInterval * 1_000_000_000))
+                if Task.isCancelled { break }
+                sweepScratchNow()
+            }
+        }
+    }
+
+    private final class SweepLoopGuard: @unchecked Sendable {
+        private var started = false
+        private let lock = NSLock()
+        func claim() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if started { return false }
+            started = true
+            return true
         }
     }
 
