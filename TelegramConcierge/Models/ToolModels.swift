@@ -285,7 +285,7 @@ enum AvailableTools {
     static let webSearch = ToolDefinition(
         function: FunctionDefinition(
             name: "web_search",
-            description: "Perform a comprehensive web search with multi-step reasoning. Use when the user asks about current events, recent news, specific facts you're uncertain about, prices, stock quotes, weather, availability, or any topic where fresh real-time information would improve your answer. Do NOT use for general knowledge questions you can answer directly.",
+            description: "Quick web-grounded answer. Runs a short internal agent loop that searches and (if useful) scrapes a few pages, then returns a concise synthesized answer with inline source citations. Use for current events, prices, stock quotes, weather, single facts, or any question needing fresh info you don't already know. Lighter and faster than web_research_sweep — prefer it when one short answer will do, not a survey. Do NOT use for general knowledge you already know. If you need the raw content of a known URL, use web_fetch.",
             parameters: FunctionParameters(
                 properties: [
                     "query": ParameterProperty(
@@ -298,10 +298,10 @@ enum AvailableTools {
         )
     )
 
-    static let deepResearch = ToolDefinition(
+    static let webResearchSweep = ToolDefinition(
         function: FunctionDefinition(
-            name: "deep_research",
-            description: "Perform deep, comprehensive research with multi-step web search and source triangulation. Use when the user asks for a detailed report, a thorough analysis, a full comparison, or a long-form answer with extensive sourcing.",
+            name: "web_research_sweep",
+            description: "Broad multi-source research. Runs an internal agent loop that queries many sites, scrapes relevant pages, and returns a synthesized prose answer with inline source citations. The answer is condensed across sources — page contents are NOT returned verbatim. Use for topic overviews, market scans, long-form researched answers, or 'what does the web say about X' questions. Do NOT use to analyze or compare specific known URLs — use web_fetch on each URL for raw content.",
             parameters: FunctionParameters(
                 properties: [
                     "query": ParameterProperty(
@@ -454,7 +454,7 @@ enum AvailableTools {
     static let webFetch = ToolDefinition(
         function: FunctionDefinition(
             name: "web_fetch",
-            description: "Fetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or deep_research when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, GitHub READMEs, API references, or any URL from search results where you need targeted information.",
+            description: "Fetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or web_research_sweep when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, GitHub READMEs, API references, or any URL from search results where you need targeted information.",
             parameters: FunctionParameters(
                 properties: [
                     "url": ParameterProperty(
@@ -989,7 +989,7 @@ enum AvailableTools {
     /// are added; email/calendar/contacts tools have been fully removed from the
     /// agent surface in favor of the gws CLI.
     static func all(includeWebSearch: Bool) -> [ToolDefinition] {
-        let webTools = includeWebSearch ? [webSearch, deepResearch, webFetch, webFetchImage] : []
+        let webTools = includeWebSearch ? [webSearch, webResearchSweep, webFetch, webFetchImage] : []
         return webTools + coreToolsWithoutWebSearch
     }
     

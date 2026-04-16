@@ -472,7 +472,7 @@ actor OpenRouterService {
             - Prices, stock quotes, weather, or availability
             - Specific facts you're uncertain about
             - Any topic where fresh information would improve your answer
-            - Use web_search for quick/targeted lookup; use deep_research when the user asks for an in-depth, comprehensive, long-form researched answer
+            - Use web_search for quick/targeted lookup; use web_research_sweep when the user asks for an in-depth, broad, multi-source survey answer. To COMPARE specific documents, repos, or URLs: call web_fetch on each — never web_research_sweep (it returns summaries, not substance).
             - Deployment/database operations: use bash directly (e.g. `vercel deploy --prod`, `npx instant-cli push`). There are no bespoke deployment tools.
             - When working on code in a git repository, proactively run `git status --short` and `git log -5 --oneline` via bash before making changes — the repo's state is not in your context and recent commits explain why things look the way they do.
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).

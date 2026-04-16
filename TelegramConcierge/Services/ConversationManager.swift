@@ -990,7 +990,7 @@ class ConversationManager: ObservableObject {
         if name.hasPrefix("mcp__nano-banana__") { return "🎨" }
         if name.hasPrefix("mcp__") { return "🔌" }
         switch name {
-        case "deep_research": return "🧠🔍"
+        case "web_research_sweep": return "🧠🔍"
         case "web_search": return "🔍"
         case "web_fetch", "web_fetch_image": return "🌐"
         case "Agent": return "🤖"
@@ -2312,8 +2312,8 @@ class ConversationManager: ObservableObject {
         let toolNames = Set(calls.map { $0.function.name })
 
         // Research / search — highest priority since these are long-running.
-        if toolNames.contains("deep_research") {
-            return "🧠🔍 Running deep research..."
+        if toolNames.contains("web_research_sweep") {
+            return "🧠🔍 Sweeping the web..."
         }
         if toolNames.contains("web_search") {
             return "🔍 Searching the web..."

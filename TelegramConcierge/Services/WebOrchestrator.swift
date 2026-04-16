@@ -1519,7 +1519,7 @@ actor WebOrchestrator {
     private func modeLabel(_ mode: ResearchMode) -> String {
         switch mode {
         case .webSearch: return "web_search"
-        case .deepResearch: return "deep_research"
+        case .deepResearch: return "web_research_sweep"
         }
     }
     

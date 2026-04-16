@@ -179,7 +179,7 @@ actor ToolExecutor {
             return await executeRunShortcut(call)
         case "web_search":
             return try await executeWebSearch(call)
-        case "deep_research":
+        case "web_research_sweep":
             return try await executeDeepResearch(call)
         case "Agent":
             return await executeAgentToolResult(call)
@@ -312,7 +312,7 @@ actor ToolExecutor {
     private func executeDeepResearch(_ call: ToolCall) async throws -> ToolResultMessage {
         guard let argsData = call.function.arguments.data(using: .utf8),
               let args = try? JSONDecoder().decode(WebSearchArguments.self, from: argsData) else {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to parse deep_research arguments\"}")
+            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to parse web_research_sweep arguments\"}")
         }
 
         do {
