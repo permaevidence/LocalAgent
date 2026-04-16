@@ -87,10 +87,26 @@ enum UserAgentLoader {
             mcpPatterns = nil
         }
 
-        let modelHint = (fields["model"]?.stringValue ?? "inherit")
+        // Default to .cheapFast (OpenRouter Gemini Flash + high reasoning)
+        // for all subagents so they're isolated from the main agent's prompt
+        // cache lane and run on a model that handles intensive work. A user
+        // who explicitly writes `model: inherit` in frontmatter still gets
+        // the parent's model, but that's an opt-in.
+        let modelHint = (fields["model"]?.stringValue ?? "")
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
-        let preferredModel: SubagentModelChoice = (modelHint == "cheapfast" || modelHint == "cheap_fast") ? .cheapFast : .inherit
+        let preferredModel: SubagentModelChoice
+        switch modelHint {
+        case "inherit":
+            preferredModel = .inherit
+        case "cheapfast", "cheap_fast", "":
+            preferredModel = .cheapFast
+        default:
+            // Unknown hint → fall back to .cheapFast rather than .inherit so
+            // local-model main configurations don't accidentally route work
+            // that requires a capable model to a local LLM.
+            preferredModel = .cheapFast
+        }
 
         var maxTurns = 20
         if let raw = fields["max_turns"]?.stringValue?.trimmingCharacters(in: .whitespaces),

@@ -247,7 +247,7 @@ struct SubagentEditorDraft {
             systemPrompt: "",
             nativeTools: nil,
             mcpToolPatterns: nil,
-            model: "inherit",
+            model: "cheapFast",
             maxTurns: 20
         )
     }
@@ -277,7 +277,7 @@ enum SubagentTemplates {
                     "You are a browser automation specialist. Use the mcp__playwright__* tools to navigate, snapshot, click, type, and evaluate pages. Prefer `browser_snapshot` over `browser_take_screenshot` unless a visual is specifically requested — it's cheaper and more structured. When handing results back, include what you navigated to, what you interacted with, and any extracted text verbatim. If a site asks to log in or looks sensitive (banking, admin), stop and report back rather than acting.",
                 nativeTools: ["read_file", "grep", "bash", "web_fetch"],
                 mcpToolPatterns: ["mcp__playwright__*"],
-                model: "inherit",
+                model: "cheapFast",
                 maxTurns: 25
             )
         ),
@@ -305,7 +305,7 @@ enum SubagentTemplates {
                     "You are a software architect. Read relevant code, then return a sequenced plan: (1) goal, (2) files to touch with brief why, (3) order of operations, (4) risks + rollback, (5) verification steps. Do not modify files. Be concrete — no hand-waving like 'then handle errors'.",
                 nativeTools: ["read_file", "grep", "glob", "list_dir", "list_recent_files", "lsp_hover", "lsp_definition", "lsp_references", "web_fetch", "web_search"],
                 mcpToolPatterns: nil,
-                model: "inherit",
+                model: "cheapFast",
                 maxTurns: 20
             )
         ),
@@ -319,7 +319,7 @@ enum SubagentTemplates {
                     "You are a database analyst. Use the mcp__postgres__*, mcp__sqlite__*, or mcp__mysql__* tools (whichever are present) to list schemas, inspect tables, and run read queries. For destructive writes (INSERT/UPDATE/DELETE/DROP), stop and confirm intent before executing. Return results as concise summaries with row counts and key values — do not dump entire tables verbatim.",
                 nativeTools: ["read_file", "grep", "bash"],
                 mcpToolPatterns: ["mcp__postgres__*", "mcp__sqlite__*", "mcp__mysql__*"],
-                model: "inherit",
+                model: "cheapFast",
                 maxTurns: 20
             )
         ),
@@ -333,7 +333,7 @@ enum SubagentTemplates {
                     "You are a code reviewer. Read the specified diff or file(s), identify concrete issues (bugs, security vulnerabilities, unclear names, missing edge cases, poor error handling). For each finding: cite the file:line, describe the issue, and suggest a fix. Skip style nits unless they meaningfully hurt readability. End with a one-line summary verdict: 'LGTM', 'minor issues', or 'blocking issues'.",
                 nativeTools: ["read_file", "grep", "glob", "list_dir", "lsp_hover", "lsp_definition", "lsp_references", "bash"],
                 mcpToolPatterns: nil,
-                model: "inherit",
+                model: "cheapFast",
                 maxTurns: 15
             )
         )
