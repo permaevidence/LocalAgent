@@ -1164,6 +1164,19 @@ class ConversationManager: ObservableObject {
     private func generateResponseWithTools(currentUserMessageId: UUID, turnStartDate: Date) async throws -> ToolAwareResponse {
         try Task.checkCancellation()
 
+        // If this turn was triggered by an ambient event (email arrival,
+        // subagent completion, reminder, etc.) rather than user text, the
+        // agent is allowed to end with [SKIP] and no Telegram push goes
+        // out. Suppress mid-turn progress messages on ambient turns too —
+        // otherwise the user sees a "Processing..." ping even when the
+        // final outcome is silence.
+        let isAmbientTrigger: Bool = {
+            if let triggerMsg = messages.first(where: { $0.id == currentUserMessageId }) {
+                return triggerMsg.kind != .userText
+            }
+            return false
+        }()
+
         // Snapshot FilesLedger up-front so we can report the set of files that were
         // edited/generated during the turn on the resulting assistant Message. This
         // is surfaced in the UI (MessageBubbleView) and in archived summaries.
@@ -1415,8 +1428,10 @@ class ConversationManager: ObservableObject {
                     print("[ConversationManager] Round \(round): blocked \(blockedResults.count) tool call(s) due to turn policy or tool availability")
                 }
                 
-                // Send progress message to Telegram
-                if let chatId = pairedChatId, !executableCalls.isEmpty {
+                // Send progress message to Telegram — but NOT on ambient turns,
+                // where the whole turn might end silently via [SKIP] and we don't
+                // want to ping the user mid-decision.
+                if let chatId = pairedChatId, !executableCalls.isEmpty, !isAmbientTrigger {
                     let progressMessage = getProgressMessage(for: executableCalls)
                     try? await telegramService.sendMessage(chatId: chatId, text: progressMessage)
                 }
