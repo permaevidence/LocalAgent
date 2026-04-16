@@ -49,6 +49,7 @@
 		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
 		GEMINIIMG012345678901234A /* GeminiImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GEMINIIMG012345678901234B /* GeminiImageService.swift */; };
 		LANDZONE012345678901234A /* LandingZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANDZONE012345678901234B /* LandingZone.swift */; };
+		SCRATCHMON0123456789AB1A /* ScratchDiskMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */; };
 		LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPCLIENT0123456789AB1B /* LSPClient.swift */; };
 		LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */; };
 		LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */; };
@@ -122,6 +123,7 @@
 		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
 		GEMINIIMG012345678901234B /* GeminiImageService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiImageService.swift; sourceTree = "<group>"; };
 		LANDZONE012345678901234B /* LandingZone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandingZone.swift; sourceTree = "<group>"; };
+		SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScratchDiskMonitor.swift; sourceTree = "<group>"; };
 		LSPCLIENT0123456789AB1B /* LSPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
 		LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPDiagnosticsReporter.swift; sourceTree = "<group>"; };
 		LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONRPCFraming.swift; sourceTree = "<group>"; };
@@ -218,6 +220,7 @@
 				FILELDGR012345678901234B /* FilesLedger.swift */,
 				FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */,
 				LANDZONE012345678901234B /* LandingZone.swift */,
+				SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */,
 				FSTOOLS0012345678901234B /* FilesystemTools.swift */,
 				APPLYPATCH0123456789AB1B /* ApplyPatch.swift */,
 				DISCOVERY0123456789AB1B /* DiscoveryTools.swift */,
@@ -397,6 +400,7 @@
 				FILELDGR012345678901234A /* FilesLedger.swift in Sources */,
 				FLEDGDIFF012345678901234A /* FilesLedgerDiff.swift in Sources */,
 				LANDZONE012345678901234A /* LandingZone.swift in Sources */,
+				SCRATCHMON0123456789AB1A /* ScratchDiskMonitor.swift in Sources */,
 				FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */,
 				APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */,
 				DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */,

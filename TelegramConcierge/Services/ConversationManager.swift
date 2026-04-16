@@ -280,6 +280,9 @@ class ConversationManager: ObservableObject {
                     // Check for due reminders first
                     await checkDueReminders()
 
+                    // Nag the agent to clean the scratch dir if it's over threshold
+                    await checkScratchDiskPressure()
+
                     // Check for completed background bash processes
                     await checkBackgroundBashCompletions()
 
@@ -2651,6 +2654,66 @@ class ConversationManager: ObservableObject {
             }
         }
         
+        statusMessage = "Listening... (Last check: \(formattedTime()))"
+    }
+
+    // MARK: - Scratch disk pressure
+
+    /// If the scratch repos dir has crossed `ScratchDiskMonitor.thresholdBytes`, inject a
+    /// synthetic reminder-kind message listing the stalest clones so the agent can decide
+    /// which to delete. The monitor enforces a 6h cooldown — no nag loops if the agent
+    /// [SKIP]s because every clone is still active work.
+    private func checkScratchDiskPressure() async {
+        guard activeRunId == nil else { return }
+
+        let measurement = ScratchDiskMonitor.measure()
+        guard ScratchDiskMonitor.shouldPromptNow(measurement: measurement) else { return }
+
+        print("[ConversationManager] Scratch disk pressure: \(measurement.totalBytes) bytes across \(measurement.entries.count) entries — prompting agent")
+        statusMessage = "Processing scratch-disk cleanup..."
+
+        if let chatId = pairedChatId {
+            try? await telegramService.sendMessage(chatId: chatId, text: "🧹 Scratch dir over threshold — asking the agent to curate.")
+        }
+
+        let prompt = ScratchDiskMonitor.formatCleanupPrompt(from: measurement)
+        let userMessage = Message(role: .user, content: prompt, kind: .reminderFired)
+        messages.append(userMessage)
+        saveConversation()
+
+        do {
+            let turnStartDate = Date()
+            let response = try await generateResponseWithTools(currentUserMessageId: userMessage.id, turnStartDate: turnStartDate)
+
+            if let toolLog = response.compactToolLog, !toolLog.isEmpty {
+                messages.append(Message(role: .assistant, content: toolLog))
+                pruneOldToolLogMessages()
+            }
+
+            let finalResponseRaw = response.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "I reviewed the scratch dir."
+                : response.finalText
+            let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
+            let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
+            let assistantMessage = Message(
+                role: .assistant,
+                content: finalResponse,
+                downloadedDocumentFileNames: downloadedFilenames,
+                editedFilePaths: response.editedFilePaths,
+                generatedFilePaths: response.generatedFilePaths,
+                accessedProjectIds: response.accessedProjects ?? []
+            )
+            messages.append(assistantMessage)
+            saveConversation()
+
+            if let chatId = pairedChatId {
+                try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
+            }
+        } catch {
+            self.error = "Failed to process scratch cleanup: \(error.localizedDescription)"
+            print("[ConversationManager] Failed to process scratch cleanup: \(error)")
+        }
+
         statusMessage = "Listening... (Last check: \(formattedTime()))"
     }
 
