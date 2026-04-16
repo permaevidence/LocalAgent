@@ -49,6 +49,12 @@ struct AgentsSettingsView: View {
     @State private var pendingDeleteName: String? = nil
     @State private var sessionTokenBudget: String = ""
 
+    // Per-agent model override draft state — updated when the user types.
+    // Keyed by agent name so switching agents preserves unsaved drafts per-agent.
+    @State private var modelDrafts: [String: String] = [:]
+    @State private var reasoningDrafts: [String: String] = [:]
+    @State private var modelSaveNote: String?
+
     // MARK: - Body
 
     var body: some View {
@@ -78,6 +84,12 @@ struct AgentsSettingsView: View {
                 nativeToolsView
             } header: {
                 Label("Native tools (read-only)", systemImage: "hammer")
+            }
+
+            Section {
+                modelOverrideView
+            } header: {
+                Label("Model & reasoning", systemImage: "cpu")
             }
 
             Section {
@@ -285,6 +297,112 @@ struct AgentsSettingsView: View {
         }
     }
 
+    // MARK: - Model / reasoning override
+
+    @ViewBuilder
+    private var modelOverrideView: some View {
+        if selectedAgent == "main" {
+            Text("Main agent's model is configured in Settings → Connection. This section controls subagent overrides only.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } else {
+            let agent = selectedAgent
+            let typeDefault = defaultLabel(for: agent)
+
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Model (OpenRouter slug; 'inherit' = parent's model; empty = use default)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField(typeDefault.model, text: Binding(
+                        get: { modelDrafts[agent] ?? "" },
+                        set: { newValue in
+                            modelDrafts[agent] = newValue
+                            saveModelOverride(for: agent)
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.caption, design: .monospaced))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Reasoning effort")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Reasoning effort", selection: Binding(
+                        get: { reasoningDrafts[agent] ?? "" },
+                        set: { newValue in
+                            reasoningDrafts[agent] = newValue
+                            saveModelOverride(for: agent)
+                        }
+                    )) {
+                        Text("Default (\(typeDefault.reasoning))").tag("")
+                        Text("none").tag("none")
+                        Text("low").tag("low")
+                        Text("medium").tag("medium")
+                        Text("high").tag("high")
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+
+                if let note = modelSaveNote {
+                    Label(note, systemImage: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                }
+
+                Text("Default for \(agent): model '\(typeDefault.model)', reasoning '\(typeDefault.reasoning)'. Leave both fields empty to inherit these defaults.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Display the currently-effective default for an agent so the user sees
+    /// what they'd get with no override in place.
+    private func defaultLabel(for agent: String) -> (model: String, reasoning: String) {
+        guard let subagent = SubagentTypes.find(name: agent) else {
+            return ("inherit", "inherit")
+        }
+        switch subagent.preferredModel {
+        case .cheapFast:
+            return (SubagentModelProfile.cheapFastModel, SubagentModelProfile.cheapFastReasoningEffort)
+        case .inherit:
+            return ("inherit (parent's model)", "inherit (parent's reasoning)")
+        }
+    }
+
+    private func saveModelOverride(for agent: String) {
+        var current = AgentModelOverrides.currentOverrides()
+        let modelDraft = (modelDrafts[agent] ?? "").trimmingCharacters(in: .whitespaces)
+        let reasoningDraft = (reasoningDrafts[agent] ?? "").trimmingCharacters(in: .whitespaces)
+
+        if modelDraft.isEmpty && reasoningDraft.isEmpty {
+            current.removeValue(forKey: agent)
+        } else {
+            current[agent] = AgentModelOverrides.Override(
+                model: modelDraft.isEmpty ? nil : modelDraft,
+                reasoningEffort: reasoningDraft.isEmpty ? nil : reasoningDraft
+            )
+        }
+
+        do {
+            try AgentModelOverrides.save(current)
+            modelSaveNote = "Saved override for \(agent)"
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if modelSaveNote?.contains("Saved") == true {
+                    modelSaveNote = nil
+                }
+            }
+        } catch {
+            modelSaveNote = nil
+            errorNote = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
     @ViewBuilder
     private var nativeToolsView: some View {
         if let agent = agents.first(where: { $0.name == selectedAgent }) {
@@ -458,6 +576,16 @@ struct AgentsSettingsView: View {
         }
         workingSet = set
         isDirty = false
+
+        // Load the agent's model override (if any) into the edit drafts so the
+        // Model/Reasoning fields show what's currently saved.
+        if let override = AgentModelOverrides.override(forAgent: agent) {
+            modelDrafts[agent] = override.model ?? ""
+            reasoningDrafts[agent] = override.reasoningEffort ?? ""
+        } else {
+            modelDrafts[agent] = ""
+            reasoningDrafts[agent] = ""
+        }
     }
 
     private func caseInsensitiveKey(_ k: String, in d: [String: [String]]) -> String? {

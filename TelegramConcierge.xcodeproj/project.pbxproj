@@ -60,6 +60,7 @@
 		MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPCLIENT0123456789AB1B /* MCPClient.swift */; };
 		MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPREGISTRY0123456789A1B /* MCPRegistry.swift */; };
 		MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */; };
+		AGMODOVR0123456789ABCD1A /* AgentModelOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */; };
 		AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */; };
 		MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */; };
 		SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */; };
@@ -132,6 +133,7 @@
 		MCPCLIENT0123456789AB1B /* MCPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPClient.swift; sourceTree = "<group>"; };
 		MCPREGISTRY0123456789A1B /* MCPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPRegistry.swift; sourceTree = "<group>"; };
 		MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPAgentRouting.swift; sourceTree = "<group>"; };
+		AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelOverrides.swift; sourceTree = "<group>"; };
 		AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentsSettingsView.swift; sourceTree = "<group>"; };
 		MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPsSettingsView.swift; sourceTree = "<group>"; };
 		SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSerializer.swift; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 				MCPCLIENT0123456789AB1B /* MCPClient.swift */,
 				MCPREGISTRY0123456789A1B /* MCPRegistry.swift */,
 				MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */,
+				AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */,
 				SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */,
 				PROFBUNDL0123456789AB01B /* ProfileBundle.swift */,
 				TODOSTORE0123456789ABCD1B /* TodoStore.swift */,
@@ -417,6 +420,7 @@
 				MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */,
 				MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */,
 				MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */,
+				AGMODOVR0123456789ABCD1A /* AgentModelOverrides.swift in Sources */,
 				SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */,
 				PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */,
 				AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */,

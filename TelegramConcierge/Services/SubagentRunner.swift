@@ -110,10 +110,27 @@ actor SubagentRunner {
         }
         let syntheticUser = messagesForLLM.last ?? Message(role: .user, content: invocation.taskPrompt, timestamp: Date())
 
-        // 4. Pick the model.
-        //    - .cheapFast → gpt-oss-120b via Groq/Vertex (cost + cache isolation).
-        //    - .inherit  → parent's configured model.
-        //    - Agent-tool `model` param ("sonnet"/"opus"/"haiku") overrides .inherit when mappable.
+        // 4. Pick the model. Resolution order (highest precedence first):
+        //    a. Per-call Agent-tool `model` hint ("sonnet"/"opus"/"haiku"/"inherit").
+        //    b. User-configured per-agent override from
+        //       ~/LocalAgent/agent-models.json (Settings → Agents → Model / Reasoning).
+        //    c. SubagentType.preferredModel (.cheapFast → Flash+high, .inherit → nil).
+        //    d. Fall through to parent's configured model (handled by OpenRouterService).
+        let userOverride = AgentModelOverrides.override(forAgent: subagentType.name)
+        let userModelSlug: String? = {
+            guard let m = userOverride?.model?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !m.isEmpty,
+                  m.lowercased() != "inherit"
+            else { return nil }
+            return m
+        }()
+        let userReasoning: String? = {
+            guard let r = userOverride?.reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !r.isEmpty
+            else { return nil }
+            return r
+        }()
+
         let typeLevelOverride: (model: String, providers: [String]?, reasoning: String?)?
         switch subagentType.preferredModel {
         case .cheapFast:
@@ -138,9 +155,15 @@ actor SubagentRunner {
         let effectiveProviderOverride: [String]?
         let effectiveReasoningOverride: String?
         if let perCallSlug {
+            // Per-call hint wins. User settings and type defaults both overridden.
             effectiveModelOverride = perCallSlug
             effectiveProviderOverride = nil
-            effectiveReasoningOverride = nil
+            effectiveReasoningOverride = userReasoning
+        } else if userModelSlug != nil || userReasoning != nil {
+            // User override present. Fill each field from user → type → nil.
+            effectiveModelOverride = userModelSlug ?? typeLevelOverride?.model
+            effectiveProviderOverride = userModelSlug != nil ? nil : typeLevelOverride?.providers
+            effectiveReasoningOverride = userReasoning ?? typeLevelOverride?.reasoning
         } else if let typeLevelOverride {
             effectiveModelOverride = typeLevelOverride.model
             effectiveProviderOverride = typeLevelOverride.providers
