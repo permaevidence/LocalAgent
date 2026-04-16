@@ -314,12 +314,14 @@ struct AgentsSettingsView: View {
                             .foregroundColor(.secondary)
                     }
                 } else if serverTools.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("No MCP servers installed.")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("No MCP servers installed yet", systemImage: "info.circle")
                             .font(.callout)
-                        Text("Add one from the MCPs tab (Playwright, GitHub, Postgres, etc.) and it'll appear here.")
+                            .foregroundColor(.orange)
+                        Text("To add external tools (Playwright for browsing, GitHub, Postgres, etc.), go to the MCPs tab and install a server first. Once installed, it'll appear here and you can enable its tools for this agent.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.vertical, 4)
                 } else {
@@ -327,6 +329,14 @@ struct AgentsSettingsView: View {
                         ForEach(serverTools.keys.sorted(), id: \.self) { server in
                             mcpServerPanel(server: server)
                         }
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                            Text("Need more MCPs? Install them from the MCPs tab — they'll appear here afterward.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 4)
                     }
                 }
             }
