@@ -1,0 +1,99 @@
+---
+name: video-edit
+description: Edit video files — trim, concatenate, re-encode, change resolution, extract audio, add subtitles, convert formats — via ffmpeg. Use when the user asks to edit, cut, combine, compress, or convert a video.
+---
+
+# Video Edit Skill
+
+This skill wraps **ffmpeg** — the universal video processing tool. Assume it's installed (`brew install ffmpeg` on macOS); if not, tell the user and stop.
+
+## Core principle: prefer stream copying over re-encoding
+
+Re-encoding is slow and lossy. Always ask: do I need to re-encode, or can I just copy the streams?
+
+- **Trim / cut / concatenate same-format clips**: stream copy with `-c copy`. Instant, no quality loss.
+- **Change resolution, compress, change codec**: must re-encode. Slow (roughly realtime to 3x speed for modern codecs).
+- **Format container change only (`.mov` → `.mp4`)**: stream copy, usually works.
+
+## Common operations
+
+### Trim a segment (stream copy, fast)
+```bash
+ffmpeg -i input.mp4 -ss 00:01:30 -to 00:02:45 -c copy output.mp4
+```
+**Gotcha**: stream-copied trims snap to the nearest keyframe, so the cut may start a second or two early/late. For frame-accurate cuts, re-encode by removing `-c copy`.
+
+### Concatenate clips of the same format
+```bash
+# Create list.txt with: file 'clip1.mp4'\nfile 'clip2.mp4'
+ffmpeg -f concat -safe 0 -i list.txt -c copy output.mp4
+```
+If formats differ, re-encode the inputs first to match codec + resolution + framerate, then concat.
+
+### Compress / reduce file size
+```bash
+ffmpeg -i input.mp4 -vcodec libx264 -crf 23 -preset medium -acodec aac -b:a 128k output.mp4
+```
+CRF controls quality vs size. 18 = visually lossless, 23 = default, 28 = aggressive compression. Raise CRF by 2 to roughly halve the output.
+
+### Resize (e.g., 1080p → 720p)
+```bash
+ffmpeg -i input.mp4 -vf scale=-2:720 -c:a copy output.mp4
+```
+`-2` preserves aspect ratio and keeps even width (required by most codecs).
+
+### Extract audio
+```bash
+ffmpeg -i input.mp4 -vn -acodec copy output.aac
+# or to mp3:
+ffmpeg -i input.mp4 -vn -acodec libmp3lame -b:a 192k output.mp3
+```
+
+### Burn subtitles into the video (hard subs)
+```bash
+ffmpeg -i input.mp4 -vf "subtitles=subs.srt" -c:a copy output.mp4
+```
+For soft subs (toggleable), use `-c:s mov_text` and add `.srt` as an input.
+
+### Extract a single frame as image
+```bash
+ffmpeg -i input.mp4 -ss 00:00:30 -vframes 1 -q:v 2 thumbnail.jpg
+```
+
+## Verification loop
+
+Videos can't be played inside the agent's context. Verify programmatically:
+
+1. **`ffprobe` the output.** Check duration, resolution, codecs match expectation.
+   ```bash
+   ffprobe -v error -show_format -show_streams -of json output.mp4
+   ```
+2. **Extract a representative frame** (e.g., middle of video) as an image and `read_file` that — confirms the video isn't black or corrupted.
+3. **Check file size** sanity (`ls -la`). 10 MB for a 1-hour 1080p compressed video = probably broken.
+
+Cap at 3 iterations. If the user reports a visual problem that the agent can't detect through ffprobe + sampled frames, stop and ask the user to spot-check.
+
+## What to verify
+
+- Duration is what the user asked for (`ffprobe` → `format.duration`)
+- Resolution is correct (`streams[].width`/`height`)
+- Audio stream is present if expected (check `streams[].codec_type == "audio"`)
+- Output file is substantially smaller than input when compressing, not 1:1 (would mean re-encode didn't actually compress)
+
+## Common bugs
+
+- **"Odd width" encoding error**: h264 requires even pixel dimensions. Use `scale=-2:720` (even) not `scale=-1:720` (any).
+- **Audio out of sync after concat**: inputs had different framerates. Re-encode all to the same rate first: `-r 30`.
+- **`-ss` before `-i` vs after**: `-ss` BEFORE `-i` is fast but less accurate; AFTER `-i` is slow but frame-accurate. Use before for stream-copy trims, after when re-encoding anyway.
+- **Subtitles not showing**: `subtitles=` filter needs the file in a readable path. Absolute paths help. Special characters in filenames break it — escape or rename.
+- **Massive output file**: check you're not accidentally copying an uncompressed raw stream. Specify `-c:v libx264` explicitly.
+
+## What this skill doesn't do
+
+- Complex editing timelines with transitions, titles, color grading → use a real NLE (Final Cut, Premiere, DaVinci Resolve). Ffmpeg is for mechanical operations.
+- Green screen / chroma key → technically possible via `colorkey` filter, but fragile. Recommend a video editor.
+- Real-time streaming setup → outside scope; tell the user.
+
+## Stopping criterion
+
+`ffprobe` confirms the output matches spec (duration, resolution, codecs, streams), sampled frames look reasonable, file size is in the expected range. Ship it.
