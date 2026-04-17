@@ -487,9 +487,13 @@ actor OpenRouterService {
             """
 
             // Skills index — compact list of installed curated skills.
-            let skillsIndex = SkillsRegistry.systemPromptIndex()
-            if !skillsIndex.isEmpty {
-                prompt += "\n\n" + skillsIndex
+            // Only shown when the agent actually has the `skill` tool;
+            // otherwise it's advertising a capability the agent can't invoke.
+            if tools?.contains(where: { $0.function.name == "skill" }) == true {
+                let skillsIndex = SkillsRegistry.systemPromptIndex()
+                if !skillsIndex.isEmpty {
+                    prompt += "\n\n" + skillsIndex
+                }
             }
 
             prompt += """
@@ -546,11 +550,14 @@ actor OpenRouterService {
             // Document-generation meta-loop — applies to all agents, not just main.
             prompt += "\n\n**Document generation (PDF / DOCX / PPTX / any visual document)**: producing a document is a loop, not a one-shot. After writing it, call `read_file` on the output and inspect the rendered pages — do not ship it blind. Check for objective layout bugs (typography, margins, page breaks, orphan headings, images overflowing, tables cut off, empty pages). If you find issues, regenerate and re-inspect. Cap at 3 iteration rounds. Fix objective bugs only; subjective polish isn't worth iterating over. If a matching skill exists, load it via the `skill` tool first."
 
-            // Skills index — same compact list the main agent gets, so
-            // subagents can also invoke curated skills when applicable.
-            let skillsIndexSub = SkillsRegistry.systemPromptIndex()
-            if !skillsIndexSub.isEmpty {
-                prompt += "\n\n" + skillsIndexSub
+            // Skills index — only when the subagent has the `skill` tool.
+            // Restricted subagents (Explore/Plan/Browse/DB) don't, so they
+            // shouldn't see the index advertising a tool they can't invoke.
+            if tools?.contains(where: { $0.function.name == "skill" }) == true {
+                let skillsIndexSub = SkillsRegistry.systemPromptIndex()
+                if !skillsIndexSub.isEmpty {
+                    prompt += "\n\n" + skillsIndexSub
+                }
             }
 
             if let finalResponseInstruction, !finalResponseInstruction.isEmpty {
