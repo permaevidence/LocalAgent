@@ -64,28 +64,17 @@ enum SkillsRegistry {
         var bodyByteCount: Int { body.utf8.count }
     }
 
-    // MARK: - Cache
-
-    private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var cachedSkills: [Skill]?
-
     // MARK: - Public API
 
-    /// All skills currently on disk, sorted by name. Cached; call `reload()`
-    /// to force a re-scan.
+    /// All skills currently on disk, sorted by name.
+    ///
+    /// Scans disk on every call. For small skill counts (typical: <10 files,
+    /// each <10 KB) this is sub-millisecond, and avoids a whole class of
+    /// "stale cache" bugs where a skill added during a running session never
+    /// becomes visible to the agent until relaunch.
     static func allSkills() -> [Skill] {
-        cacheLock.lock()
-        if let cached = cachedSkills {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        let fresh = scanDisk()
-        cacheLock.lock()
-        cachedSkills = fresh
-        cacheLock.unlock()
-        return fresh
+        ensureDirectoryExists()
+        return scanDisk()
     }
 
     /// Look up a skill by its canonical name. Case-insensitive.
@@ -94,12 +83,9 @@ enum SkillsRegistry {
         return allSkills().first { $0.name.lowercased() == lower }
     }
 
-    /// Force a re-scan of the skills directory.
-    static func reload() {
-        cacheLock.lock()
-        cachedSkills = nil
-        cacheLock.unlock()
-    }
+    /// No-op retained for API compatibility with call sites that used to
+    /// invalidate a cache. The registry now scans on every call.
+    static func reload() {}
 
     /// Delete a skill from disk. Called by the Settings UI.
     @discardableResult
@@ -107,7 +93,6 @@ enum SkillsRegistry {
         guard let skill = skill(named: name) else { return false }
         do {
             try FileManager.default.removeItem(at: skill.fileURL)
-            reload()
             return true
         } catch {
             return false
