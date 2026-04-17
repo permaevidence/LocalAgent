@@ -5,7 +5,7 @@ description: Generate Microsoft Word (.docx) documents for reports, letters, con
 
 # DOCX Skill
 
-Use `.docx` when the user needs an **editable** document — something they or their recipients will open in Word or Google Docs and modify. Use the `pdf` skill instead for final, non-editable output.
+Use `.docx` when the user needs an **editable** document — they or their recipients will open it in Word or Google Docs and modify. Use the `pdf` skill instead for final, non-editable output.
 
 ## Renderer choice
 
@@ -14,7 +14,7 @@ Use `.docx` when the user needs an **editable** document — something they or t
 pandoc input.md --reference-doc=template.docx -o output.docx
 ```
 
-**Secondary: python-docx.** For precise structural control — tables with specific formatting, custom styles, form fields, headers/footers with page numbers, embedded images positioned exactly.
+**Secondary: python-docx.** Use when you need precise structural control — tables with specific formatting, custom styles, form fields, positioned images, headers/footers with page numbers.
 ```python
 from docx import Document
 doc = Document()  # or Document('template.docx') to inherit styles
@@ -23,46 +23,61 @@ doc.add_paragraph('Body...')
 doc.save('output.docx')
 ```
 
-Avoid LibreOffice or Word automation (AppleScript) — slower, fragile across machines.
+Avoid LibreOffice or AppleScript automation — slower, fragile across machines.
 
 ## Workflow
 
-1. **Draft in markdown first.** Simpler to iterate on structure than to fight python-docx from the start.
-2. **Convert with pandoc.** Works for 80% of cases.
-3. **Verify.** DOCX files are not directly viewable — `read_file` can't render them visually. Two options:
-   - Convert to PDF and inspect that: `libreoffice --headless --convert-to pdf output.docx`, then `read_file output.pdf` and inspect the rendered pages.
-   - Use `python-docx` to open the file and walk paragraphs/tables programmatically to confirm structure is correct even without seeing the layout.
-4. **Fix and re-run.** Cap at 3 iterations. Same rules as the PDF skill: fix objective bugs, don't chase subjective polish.
+1. **Draft in markdown first.** Easier to iterate on structure than to fight python-docx early.
+2. **Convert with pandoc.** Handles ~80% of cases.
+3. **Verify visually.** DOCX isn't directly viewable inline, so convert to PDF and inspect:
+   ```bash
+   libreoffice --headless --convert-to pdf output.docx
+   ```
+   Then `read_file output.pdf` — the rendered pages come back as inline multimodal content, you see the actual layout.
+4. **Sample ALL pages, not just the first.** Multi-page docs often have layout issues that only manifest on page 2+ (orphan headings, broken tables, footer overlap). Read each page and verify:
+   - Headings have visible hierarchy (H1 ≠ H2 ≠ body)
+   - Page numbers / headers / footers render correctly
+   - Tables fit the page width (no column cutoff)
+   - Images don't overflow
+   - No orphan headings at page bottoms
+   - Body text 10-12pt, consistent font across pages
+5. **Fix and re-render.** Cap at 3 iterations. Fix objective bugs only, don't chase subjective polish.
 
-## What to verify in the PDF render
+### Secondary sanity check: programmatic structure
 
-- Headings have visible hierarchy (H1 ≠ H2 ≠ body)
-- No broken page numbers in headers/footers
-- Tables fit the page width (no column cutoff)
-- Images don't overflow
-- No orphan headings
-- Body text 10-12pt, consistent font
+Before or alongside the visual inspection, a quick python-docx walk catches bugs the eye might miss in a long doc:
+```python
+from docx import Document
+doc = Document('output.docx')
+print(f"Paragraphs: {len(doc.paragraphs)}, Tables: {len(doc.tables)}")
+for t in doc.tables:
+    print(f"  Table: {len(t.rows)} rows × {len(t.columns)} cols")
+for h in [p for p in doc.paragraphs if p.style.name.startswith('Heading')]:
+    print(f"  {h.style.name}: {h.text}")
+```
+Good for confirming expected counts — e.g., "I wanted 3 H2 sections and see 3." Not a substitute for the visual check.
 
 ## Reference styling via template.docx
 
-Users often have a corporate style guide. Ask if they have a Word template. If yes:
-- Use `--reference-doc=template.docx` with pandoc, OR
-- `Document('template.docx')` with python-docx and add content into the pre-styled document
-- The agent should **not invent** corporate colors, fonts, or logos without a template or explicit user spec
+If the user's organization has a corporate style guide, ask for a template:
+- With pandoc: `--reference-doc=template.docx`
+- With python-docx: `Document('template.docx')` and add content into the pre-styled doc
+
+Do **not** invent brand colors, fonts, or logos without a template or explicit spec.
 
 ## Common bugs
 
-- **Pandoc ignoring inline HTML**: pandoc's markdown→docx doesn't carry over all inline HTML. If you need complex layout (floated images, multi-column), switch to python-docx.
-- **Fonts missing on the recipient's machine**: stick to system fonts (Calibri, Times New Roman, Arial) unless the user specifies. Exotic fonts render as fallbacks elsewhere.
-- **Broken line breaks in tables**: python-docx paragraphs inside a cell need explicit `cell.paragraphs[0].add_run('...')` — leading blank paragraphs accumulate if you `cell.text += '...'` in a loop.
-- **Page breaks in odd places**: insert explicit `doc.add_page_break()` rather than relying on implicit flow; pandoc uses `\newpage` in markdown for the same.
+- **Pandoc ignores inline HTML**: pandoc's markdown→docx doesn't carry all inline HTML. For complex layout (floated images, multi-column), switch to python-docx.
+- **Fonts missing on recipient's machine**: stick to system fonts (Calibri, Times New Roman, Arial) unless the user specifies.
+- **Broken line breaks in tables**: python-docx paragraphs inside a cell need `cell.paragraphs[0].add_run('...')`, not `cell.text += '...'` in a loop.
+- **Page breaks in odd places**: insert explicit `doc.add_page_break()` rather than relying on implicit flow; pandoc uses `\newpage` in markdown.
 
 ## When to push back
 
-- User asks for "editable PDF" → that's a DOCX (or a PDF with form fields). Clarify.
-- User wants heavy typography/layout control → suggest PDF instead, DOCX is a weak layout engine.
-- User wants a spreadsheet-like table with formulas → XLSX, not DOCX.
+- "Editable PDF" → that's DOCX (or a PDF with form fields). Clarify.
+- Heavy typography/layout control → suggest PDF; DOCX is a weak layout engine.
+- Spreadsheet-like table with formulas → XLSX, not DOCX.
 
 ## Stopping criterion
 
-The document opens cleanly in Word, headings are visibly different sizes, nothing is cut off or missing. Ship it.
+Each rendered page (all of them, not just page 1) looks clean, headings have visible hierarchy, nothing cut off or missing. Ship it.
