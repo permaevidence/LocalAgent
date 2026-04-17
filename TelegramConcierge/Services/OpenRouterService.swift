@@ -481,9 +481,16 @@ actor OpenRouterService {
             - **Self-orchestration via reminders**: Use manage_reminders with action='set' not just for user requests, but proactively when YOU decide a future action would be valuable. Examples: scheduling a follow-up check, breaking complex tasks into timed steps, verifying results later, or any "I should do X later" thought. Supported recurrence values are daily, weekly, monthly, every_X_minutes, and every_X_hours. Use action='list' to inspect pending reminders and action='delete' to cancel one, many (reminder_ids), all (delete_all=true), or all recurring (delete_recurring=true).
             - **Google Workspace via `gws` CLI**: use `bash` to invoke `gws` for all Gmail, Calendar, Contacts, Drive, Docs, Sheets, Tasks, and Keep operations. Examples: `gws gmail +triage --query 'is:unread'`, `gws gmail +read --id <id>`, `gws gmail +reply --id <id> --body '...'`, `gws gmail +send --to ... --subject ... --body ...`, `gws calendar +agenda --today`, `gws calendar +insert --summary '...' --start '...' --end '...'`, `gws people contacts list`, `gws drive files list`. Run `gws <service> --help` or `gws <service> +<helper> --help` to discover options. Your ambient inbox snapshot (unread-only) and 30-day agenda are already in this prompt — only reach for the CLI when you need to act or fetch something beyond that snapshot.
             - **Subagent delegation via the `Agent` tool**: for broad codebase exploration, focused investigations, or architectural planning, spawn a subagent with the `Agent` tool rather than doing the work inline. Subagents have their own context window — they don't see your conversation and their tool calls don't bloat yours. Every Agent call returns a `session_id` — save it when you expect to continue the same task later. Pass the `session_id` on subsequent Agent calls to resume that subagent's conversation with its full prior context intact. This is essential for multi-step work like browser automation (the subagent remembers what pages it visited, what it clicked, what state it's in). Use `list_subagent_sessions` to see all available sessions when you need to find a prior session_id. Subagents CANNOT spawn other subagents.
+            - **Document generation (PDF / DOCX / PPTX / any visual document)**: producing a document is a loop, not a one-shot. After writing it, call `read_file` on the output and inspect the rendered pages — do not ship it blind. Check for objective layout bugs: inconsistent typography (body text outside 9-14pt, headings same size as body, mismatched fonts), broken margins or page breaks, orphan headings, images overflowing the page, tables cut off, empty pages. If you find issues, regenerate and re-inspect. Cap at 3 iteration rounds — after that, report back and ask rather than iterating further. Subjective polish (design taste, color choices) is not worth iterating over; only fix objective layout bugs. If a matching skill exists (see the Skills section below), load it first via the `skill` tool before starting.
 
             For simple questions you can answer directly, respond without using tools.
             """
+
+            // Skills index — compact list of installed curated skills.
+            let skillsIndex = SkillsRegistry.systemPromptIndex()
+            if !skillsIndex.isEmpty {
+                prompt += "\n\n" + skillsIndex
+            }
 
             prompt += """
 
@@ -535,6 +542,17 @@ actor OpenRouterService {
             }
             
             prompt += "\n\n🕐 **Today is \(currentDate). Check conversation timestamps for the current time.**"
+
+            // Document-generation meta-loop — applies to all agents, not just main.
+            prompt += "\n\n**Document generation (PDF / DOCX / PPTX / any visual document)**: producing a document is a loop, not a one-shot. After writing it, call `read_file` on the output and inspect the rendered pages — do not ship it blind. Check for objective layout bugs (typography, margins, page breaks, orphan headings, images overflowing, tables cut off, empty pages). If you find issues, regenerate and re-inspect. Cap at 3 iteration rounds. Fix objective bugs only; subjective polish isn't worth iterating over. If a matching skill exists, load it via the `skill` tool first."
+
+            // Skills index — same compact list the main agent gets, so
+            // subagents can also invoke curated skills when applicable.
+            let skillsIndexSub = SkillsRegistry.systemPromptIndex()
+            if !skillsIndexSub.isEmpty {
+                prompt += "\n\n" + skillsIndexSub
+            }
+
             if let finalResponseInstruction, !finalResponseInstruction.isEmpty {
                 prompt += "\n\n\(finalResponseInstruction)"
             }

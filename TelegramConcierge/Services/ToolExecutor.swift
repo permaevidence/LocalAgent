@@ -234,6 +234,9 @@ actor ToolExecutor {
         case "view_conversation_chunk":
             content = await executeViewConversationChunk(call)
 
+        case "skill":
+            content = executeLoadSkill(call)
+
         // generate_image is handled in the special multimodal injection switch above
 
         case "web_fetch":
@@ -684,7 +687,33 @@ actor ToolExecutor {
             return "{\"error\": \"Failed to load chunk: \(error.localizedDescription)\"}"
         }
     }
-    
+
+    // MARK: - Skills
+
+    /// Load a curated skill from `~/LocalAgent/skills/` and return its body.
+    /// Read-only by design: the agent cannot create or modify skills. If the
+    /// skill is missing, return the current index so the agent can recover
+    /// and pick a valid name.
+    private nonisolated func executeLoadSkill(_ call: ToolCall) -> String {
+        struct Args: Decodable { let skill_name: String? }
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(Args.self, from: data),
+              let name = args.skill_name?.trimmingCharacters(in: .whitespaces),
+              !name.isEmpty else {
+            return "{\"error\": \"skill_name is required\"}"
+        }
+
+        guard let skill = SkillsRegistry.skill(named: name) else {
+            let available = SkillsRegistry.allSkills().map { $0.name }
+            let availableList = available.isEmpty
+                ? "(no skills installed)"
+                : available.joined(separator: ", ")
+            return "{\"error\": \"Skill '\(name)' not found. Available: \(availableList)\"}"
+        }
+
+        let header = "Skill '\(skill.name)' loaded. Follow the procedure below — combine with your own judgment, don't recite verbatim.\n\n"
+        return header + skill.body
+    }
 }
 
 // MARK: - Tool Argument Types

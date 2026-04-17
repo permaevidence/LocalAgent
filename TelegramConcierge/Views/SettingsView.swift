@@ -196,6 +196,9 @@ struct SettingsView: View {
                 MCPsSettingsView()
                     .tabItem { Label("MCPs", systemImage: "server.rack") }
 
+                SkillsSettingsView()
+                    .tabItem { Label("Skills", systemImage: "wand.and.stars") }
+
                 dataTab
                     .tabItem { Label("Data", systemImage: "externaldrive.fill") }
             }

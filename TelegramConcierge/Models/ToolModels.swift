@@ -975,6 +975,21 @@ enum AvailableTools {
         )
     )
 
+    // MARK: - Skills
+
+    static let skill = ToolDefinition(
+        function: FunctionDefinition(
+            name: "skill",
+            description: "Load a curated procedural skill from ~/LocalAgent/skills/ into your context. Skills are hand-authored guides for specialized tasks (e.g., generating a polished PDF). The compact skill index at the top of the system prompt lists every installed skill and its trigger description — when a user's request matches one, call this tool with the skill's name BEFORE starting the task, then follow the procedure the skill returns. Skills are reference material: combine them with your own judgment, don't recite them verbatim. Calling this tool is cheap (it's a local file read) and the loaded body stays available for the rest of the session. You CANNOT create new skills via this tool — the user curates them manually.",
+            parameters: FunctionParameters(
+                properties: [
+                    "skill_name": ParameterProperty(type: "string", description: "The canonical short name of the skill, matching its entry in the skills index (e.g., 'pdf'). Case-insensitive.")
+                ],
+                required: ["skill_name"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// New filesystem tool surface (replaces the sandboxed document tools).
@@ -989,7 +1004,7 @@ enum AvailableTools {
     /// snapshot + 30-day agenda are still injected into the system prompt via
     /// GoogleWorkspaceService.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent]
+        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent, skill]
     }
 
     /// All available tools. `includeWebSearch` toggles whether the four web tools
