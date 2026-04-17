@@ -196,6 +196,27 @@ Then structure the page as three children (e.g., top block, hero image, bottom t
 
 Decide page count from content volume, not the other way around. If a section is only 60 words, it doesn't need its own page.
 
+## Layout variety across pages
+
+Density is necessary but not sufficient. A deck where every content page uses the same layout — e.g., "intro blurb + 2×2 card grid" on page after page — reads as monotonous even if each page is well-filled. Readers feel it as repetition, not rhythm.
+
+**Rule: prefer alternating layouts across consecutive pages.** If page 2 is a card grid, page 3 should be something else. Repeat a layout only when the content genuinely demands the same structure (e.g., a two-page feature matrix where each row is a category).
+
+### Layout vocabulary to cycle through
+
+- **Prose page** — one or two columns of running text, no cards, no boxes. Good for philosophy sections, introductions, narrative arguments. A single long column is fine; two columns work if the prose is long enough to balance both sides.
+- **Card grid** — 2×2 or 3×1 short-form blurbs with visual separation (borders, background tints, accent bars). Good for feature lists, value propositions, comparative items.
+- **Image-anchored page** — full-width or large hero image/diagram with a caption and a short paragraph of context. Good when a concept is better shown than told.
+- **Quote / pullquote page** — large typographic treatment of a statement (24-40pt), minimal surrounding text. Good for emphasis, section transitions, or a memorable user/customer voice.
+- **Data page** — a table, chart, or diagram carries the page; annotation supports it. Good for technical depth, comparisons, metrics.
+- **Mixed page** — asymmetric: text-left + image-right (or reverse), two-thirds prose + one-third sidebar. Good for content that doesn't fit a single layout cleanly.
+
+### How to apply this when generating
+
+Before rendering, plan the layout sequence for the deck. Example for a 5-page deck: cover → prose (philosophy) → card grid (architecture features) → image-anchored (system diagram) → mixed (capabilities + screenshot) → quote page or prose summary. Each page is different from its neighbor.
+
+When visually inspecting the rendered output, if two adjacent pages use the same layout, ask: does the content genuinely demand the same structure here? If not, redesign one of them — usually by pulling content out into a quote block, adding a diagram, or converting one page to running prose.
+
 ## Common bugs and fixes
 
 | Symptom | Likely cause | Fix |
@@ -209,6 +230,7 @@ Decide page count from content volume, not the other way around. If a section is
 | Every paragraph indents | Leftover `text-indent` from a parent stylesheet | Explicitly set `p { text-indent: 0; }` |
 | Cover page content bunched at top | Missing flexbox + `min-height` on the page container | See "Page density and vertical distribution" — use flex + `justify-content: space-between` (or `center`) |
 | Content page half-empty | Under-written section; not enough prose/images for A4 | See "Page density" — merge with another short page, expand prose, or enlarge figures |
+| Every content page looks the same | Over-applied a single layout pattern (e.g., 2×2 cards on every page) | See "Layout variety" — alternate prose / cards / image-anchored / quote / data pages |
 
 ## Images
 
