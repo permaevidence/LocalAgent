@@ -49,6 +49,45 @@ ffmpeg -i input.mp4 -vn -acodec copy output.aac
 ffmpeg -i input.mp4 -vn -acodec libmp3lame -b:a 192k output.mp3
 ```
 
+### Replace the audio track entirely (mute original, use a new track)
+```bash
+ffmpeg -i video.mp4 -i new_audio.mp3 -c:v copy -map 0:v:0 -map 1:a:0 -shortest output.mp4
+```
+`-shortest` stops output when either stream ends. Use `-c:a aac -b:a 192k` instead of copying if the replacement audio is in a container-incompatible codec.
+
+### Add music to a silent video
+Same command as above — works whether the original had no audio track or you're muting it.
+
+### Mix original audio + background music (both audible)
+```bash
+ffmpeg -i video.mp4 -i music.mp3 \
+  -filter_complex "[0:a]volume=1.0[v]; [1:a]volume=0.25[m]; [v][m]amix=inputs=2:duration=first[a]" \
+  -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k output.mp4
+```
+`volume=0.25` drops the music to 25% so narration / dialog stays dominant. Tune 0.15–0.35 to taste. `duration=first` makes the mix as long as the original video (music is trimmed or silence-padded).
+
+### Add music with fade in / fade out
+```bash
+ffmpeg -i video.mp4 -i music.mp3 \
+  -filter_complex "[1:a]afade=t=in:st=0:d=2,afade=t=out:st=58:d=2,volume=0.3[m]; [0:a][m]amix=inputs=2:duration=first[a]" \
+  -map 0:v -map "[a]" -c:v copy -c:a aac output.mp4
+```
+`afade=t=in:st=0:d=2` = fade in over 2s from the start. `st=58:d=2` = fade out for 2s starting at 58s (tune to `video_duration - 2`). Get the video duration first via `ffprobe`.
+
+### Loop music to match a longer video
+```bash
+ffmpeg -stream_loop -1 -i music.mp3 -i video.mp4 \
+  -filter_complex "[0:a]volume=0.3[m]; [1:a][m]amix=inputs=2:duration=first[a]" \
+  -map 1:v -map "[a]" -c:v copy -c:a aac -shortest output.mp4
+```
+`-stream_loop -1` loops the music infinitely; `-shortest` stops at the video's end. Order of inputs flipped: music is `0`, video is `1` — required for `-stream_loop` to apply.
+
+### Trim music to a specific length before mixing
+```bash
+ffmpeg -i music.mp3 -t 60 -c copy music_60s.mp3
+```
+Then mix as usual. Useful when you want precise control over a song's start/end.
+
 ### Burn subtitles into the video (hard subs)
 ```bash
 ffmpeg -i input.mp4 -vf "subtitles=subs.srt" -c:a copy output.mp4
@@ -84,6 +123,9 @@ Cap at 3 iterations. If the user reports a visual problem that the agent can't d
 
 - **"Odd width" encoding error**: h264 requires even pixel dimensions. Use `scale=-2:720` (even) not `scale=-1:720` (any).
 - **Audio out of sync after concat**: inputs had different framerates. Re-encode all to the same rate first: `-r 30`.
+- **Music too loud, drowns dialog**: when mixing, the original audio should stay at `volume=1.0` and music should be `0.15–0.35`. Above 0.5, music dominates.
+- **Mix output shorter than video**: music ran out. Add `duration=first` to `amix` or loop the music with `-stream_loop -1`.
+- **No audio in output after `-map`**: you mapped video-only (`-map 0:v`) and forgot to map the audio stream. Always pair `-map video_spec` with `-map audio_spec` (or `-map "[a]"` for a filter graph output).
 - **`-ss` before `-i` vs after**: `-ss` BEFORE `-i` is fast but less accurate; AFTER `-i` is slow but frame-accurate. Use before for stream-copy trims, after when re-encoding anyway.
 - **Subtitles not showing**: `subtitles=` filter needs the file in a readable path. Absolute paths help. Special characters in filenames break it — escape or rename.
 - **Massive output file**: check you're not accidentally copying an uncompressed raw stream. Specify `-c:v libx264` explicitly.
