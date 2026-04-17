@@ -171,6 +171,31 @@ Copy this as your starting point, then customize. It gets you 80% of the way the
 - **Page numbers in the footer**, right-aligned, 9pt, gray. Always useful, never distracting.
 - **Never justify text unless the language supports it well.** Italian, Spanish, French, German — justify is fine. English with short lines (narrow columns) produces ugly rivers; left-align instead.
 
+## Page density and vertical distribution
+
+When you inspect the rendered pages, look for one of two distinct problems:
+
+**Intentional sparse pages** (covers, section dividers, chapter openers, quote pages): these correctly have low ink density. The mistake to avoid is letting content bunch at the top of the page with a huge gap at the bottom. Make the page container distribute its children vertically:
+
+```css
+.page-cover, .page-divider {
+  min-height: 24cm;             /* forces the container to fill the A4 content area */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* push title/hero/footer apart */
+}
+```
+
+Then structure the page as three children (e.g., top block, hero image, bottom tagline) and let `space-between` distribute them. `center` works if you want everything pulled to the middle with equal whitespace above and below.
+
+**Content pages** (body copy, data tables, feature lists, architecture overviews): aim for at least 60% ink density. If a content page ends up under 50% filled after rendering, that's usually a smell — the page is under-written, not minimalist. Three ways to fix it:
+
+1. **Merge short pages.** If you have two half-full pages, make them one full page.
+2. **Expand the prose.** "FractalMind tiered archival system that maintains context across long-running investigations" is a headline, not a paragraph. Add the "how" and "why" — 40 more words per section usually solves it.
+3. **Enlarge hero images or diagrams.** If the content is genuinely thin by design, make the visuals carry more of the page. A full-width figure is better than padding with whitespace.
+
+Decide page count from content volume, not the other way around. If a section is only 60 words, it doesn't need its own page.
+
 ## Common bugs and fixes
 
 | Symptom | Likely cause | Fix |
@@ -182,7 +207,8 @@ Copy this as your starting point, then customize. It gets you 80% of the way the
 | Pagination count shows "1 of 0" | Your renderer doesn't support CSS `counter(pages)` | Switch to weasyprint (supports it) or drop the "/ N" part |
 | Fonts inconsistent across systems | Font name not available on rendering machine | Always list fallbacks: `'Charter', 'Georgia', serif` |
 | Every paragraph indents | Leftover `text-indent` from a parent stylesheet | Explicitly set `p { text-indent: 0; }` |
-| Cover page content at top instead of centered | Missing flexbox; `min-height` not sufficient for A4 | Use `min-height: 24cm;` + `display: flex; flex-direction: column; justify-content: center;` |
+| Cover page content bunched at top | Missing flexbox + `min-height` on the page container | See "Page density and vertical distribution" — use flex + `justify-content: space-between` (or `center`) |
+| Content page half-empty | Under-written section; not enough prose/images for A4 | See "Page density" — merge with another short page, expand prose, or enlarge figures |
 
 ## Images
 
