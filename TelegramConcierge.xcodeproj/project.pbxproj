@@ -22,6 +22,7 @@
 		A1000001282D4F0100000001 /* TelegramConciergeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002282D4F0100000001 /* TelegramConciergeApp.swift */; };
 		A1000003282D4F0100000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004282D4F0100000001 /* ContentView.swift */; };
 		A1000005282D4F0100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000006282D4F0100000001 /* Assets.xcassets */; };
+		BUNDSKILLS0123456789AB01A /* BundledSkills in Resources */ = {isa = PBXBuildFile; fileRef = BUNDSKILLS0123456789AB01B /* BundledSkills */; };
 		A1000007282D4F0100000001 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000008282D4F0100000001 /* Message.swift */; };
 		A1000009282D4F0100000001 /* TelegramModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000A282D4F0100000001 /* TelegramModels.swift */; };
 		A100000B282D4F0100000001 /* TelegramBotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000C282D4F0100000001 /* TelegramBotService.swift */; };
@@ -96,6 +97,7 @@
 		A1000002282D4F0100000001 /* TelegramConciergeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramConciergeApp.swift; sourceTree = "<group>"; };
 		A1000004282D4F0100000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1000006282D4F0100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BUNDSKILLS0123456789AB01B /* BundledSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledSkills; sourceTree = "<group>"; };
 		A1000008282D4F0100000001 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		A100000A282D4F0100000001 /* TelegramModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramModels.swift; sourceTree = "<group>"; };
 		A100000C282D4F0100000001 /* TelegramBotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramBotService.swift; sourceTree = "<group>"; };
@@ -182,6 +184,7 @@
 				A1000023282D4F0100000001 /* Views */,
 				A1000024282D4F0100000001 /* Utilities */,
 				A1000006282D4F0100000001 /* Assets.xcassets */,
+				BUNDSKILLS0123456789AB01B /* BundledSkills */,
 				A1000017282D4F0100000001 /* TelegramConcierge.entitlements */,
 			);
 			path = TelegramConcierge;
@@ -363,6 +366,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000005282D4F0100000001 /* Assets.xcassets in Resources */,
+				BUNDSKILLS0123456789AB01A /* BundledSkills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

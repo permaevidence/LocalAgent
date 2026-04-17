@@ -91,10 +91,11 @@ struct SkillsSettingsView: View {
                 Label("How skills work", systemImage: "lightbulb")
                     .font(.callout.weight(.semibold))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("• Skills live as markdown files at `~/LocalAgent/skills/*.md` with YAML frontmatter (`name`, `description`) and a body with the procedure.")
+                    Text("• Two kinds: **Built-in** (ships with the app, travels with the binary — no setup needed) and **User** (markdown files you drop in `~/LocalAgent/skills/`).")
+                    Text("• Both use YAML frontmatter (`name`, `description`) plus a markdown body with the procedure.")
                     Text("• The agent sees a compact index (name + description) in its system prompt. When a task matches, it calls the `skill` tool to pull the full body into context.")
                     Text("• You curate them manually — the agent cannot create or modify skills. Keep them short (1-3 KB ideal) and high-quality: every loaded skill stays in the conversation for the rest of the session.")
-                    Text("• Add a skill: drop a new `.md` file in the skills folder. Edit a skill: open its file in your editor. Remove a skill: use the delete button below or delete the file.")
+                    Text("• A user skill with the same name as a built-in overrides it. Add / edit / remove user skills by managing files in the skills folder or via the Delete button.")
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -148,13 +149,13 @@ struct SkillsSettingsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Image(systemName: "wand.and.stars")
+                    Image(systemName: skill.origin == .bundled ? "cube.fill" : "wand.and.stars")
                         .foregroundColor(isSelected ? .white : .accentColor)
                     Text(skill.name)
                         .font(.body.weight(.semibold))
                         .foregroundColor(isSelected ? .white : .primary)
                 }
-                Text("\(skill.bodyByteCount) B")
+                Text("\(skill.origin == .bundled ? "built-in" : "user") · \(skill.bodyByteCount) B")
                     .font(.caption2)
                     .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
             }
@@ -198,17 +199,24 @@ struct SkillsSettingsView: View {
                             Button {
                                 NSWorkspace.shared.open(selected.fileURL)
                             } label: {
-                                Label("Open", systemImage: "pencil")
+                                Label(selected.origin == .bundled ? "View" : "Open", systemImage: selected.origin == .bundled ? "eye" : "pencil")
                             }
                             .buttonStyle(.bordered)
-                            Button(role: .destructive) {
-                                pendingDeleteName = selected.name
-                                showingDeleteConfirmation = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                            if selected.origin == .user {
+                                Button(role: .destructive) {
+                                    pendingDeleteName = selected.name
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .buttonStyle(.bordered)
                             }
-                            .buttonStyle(.bordered)
                         }
+                    }
+                    if selected.origin == .bundled {
+                        Label("Built-in skill — shipped with the app. To customize it, drop a same-named file in ~/LocalAgent/skills/ and it will override this one.", systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     Text(selected.description)
                         .font(.callout)

@@ -38,6 +38,18 @@ enum SkillsRegistry {
 
     // MARK: - Types
 
+    /// Where a skill was loaded from. Affects Settings-UI capabilities:
+    /// bundled skills are read-only (no delete button), user skills can be
+    /// edited and deleted like any file.
+    enum Origin: Equatable {
+        /// Ships inside the app bundle at `Contents/Resources/BundledSkills/`.
+        /// Travels with the binary — always available, no setup required.
+        case bundled
+        /// Lives in `~/LocalAgent/skills/*.md`. User-authored. Overrides a
+        /// bundled skill with the same name.
+        case user
+    }
+
     /// A parsed skill with its metadata and body content.
     struct Skill: Equatable, Identifiable {
         var id: String { name }
@@ -58,6 +70,9 @@ enum SkillsRegistry {
         /// Absolute path on disk — useful for the Settings UI (reveal, edit,
         /// delete).
         let fileURL: URL
+
+        /// Source of the skill. Bundled skills can't be deleted from the UI.
+        let origin: Origin
 
         /// Size of the body in bytes — surfaced in the UI so the user sees
         /// which skills are bloated and should be trimmed.
@@ -87,10 +102,13 @@ enum SkillsRegistry {
     /// invalidate a cache. The registry now scans on every call.
     static func reload() {}
 
-    /// Delete a skill from disk. Called by the Settings UI.
+    /// Delete a user-authored skill from disk. Bundled skills can't be
+    /// deleted — they're part of the app bundle.
     @discardableResult
     static func delete(_ name: String) -> Bool {
-        guard let skill = skill(named: name) else { return false }
+        guard let skill = skill(named: name), skill.origin == .user else {
+            return false
+        }
         do {
             try FileManager.default.removeItem(at: skill.fileURL)
             return true
@@ -120,10 +138,35 @@ enum SkillsRegistry {
 
     // MARK: - Disk scanning
 
+    /// Union of bundled + user skills. Two-tier precedence: if a user skill
+    /// shares a name with a bundled skill, the user skill wins (allows
+    /// overriding a shipped skill without touching the app bundle).
     private static func scanDisk() -> [Skill] {
-        let dir = skillsDirectoryURL()
-        guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
+        var byName: [String: Skill] = [:]
 
+        // Bundled first so user entries can overwrite.
+        for skill in scanBundled() {
+            byName[skill.name.lowercased()] = skill
+        }
+        for skill in scanUser() {
+            byName[skill.name.lowercased()] = skill
+        }
+
+        return byName.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+
+    private static func scanBundled() -> [Skill] {
+        guard let resourceURL = Bundle.main.resourceURL else { return [] }
+        let dir = resourceURL.appendingPathComponent("BundledSkills", isDirectory: true)
+        return scanDirectory(dir, origin: .bundled)
+    }
+
+    private static func scanUser() -> [Skill] {
+        scanDirectory(skillsDirectoryURL(), origin: .user)
+    }
+
+    private static func scanDirectory(_ dir: URL, origin: Origin) -> [Skill] {
+        guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: dir,
@@ -134,10 +177,10 @@ enum SkillsRegistry {
         var out: [Skill] = []
         for url in entries where url.pathExtension.lowercased() == "md" {
             guard let raw = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            guard let parsed = parse(raw, fileURL: url) else { continue }
+            guard let parsed = parse(raw, fileURL: url, origin: origin) else { continue }
             out.append(parsed)
         }
-        return out.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        return out
     }
 
     /// Parse a skill markdown file with YAML frontmatter.
@@ -145,7 +188,7 @@ enum SkillsRegistry {
     /// Only two frontmatter fields are recognized — `name` and `description`.
     /// Everything else is ignored (kept in the body as-is) so users can add
     /// custom fields without breaking the parser.
-    private static func parse(_ raw: String, fileURL: URL) -> Skill? {
+    private static func parse(_ raw: String, fileURL: URL, origin: Origin) -> Skill? {
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard lines.count >= 3, lines[0].trimmingCharacters(in: .whitespaces) == "---" else {
             return nil
@@ -187,7 +230,7 @@ enum SkillsRegistry {
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return Skill(name: name, description: description, body: body, fileURL: fileURL)
+        return Skill(name: name, description: description, body: body, fileURL: fileURL, origin: origin)
     }
 
     /// Canonical skills directory: `~/LocalAgent/skills/`.
