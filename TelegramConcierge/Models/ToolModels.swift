@@ -454,7 +454,7 @@ enum AvailableTools {
     static let webFetch = ToolDefinition(
         function: FunctionDefinition(
             name: "web_fetch",
-            description: "Fetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or web_research_sweep when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, GitHub READMEs, API references, or any URL from search results where you need targeted information.",
+            description: "IMPORTANT: web_fetch WILL FAIL for authenticated or private URLs. Before using this tool, check if the URL points to an authenticated service (e.g. Google Docs, Confluence, Jira, Notion). If so, look for a specialized MCP tool that provides authenticated access.\n\nFetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or web_research_sweep when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, API references, or any URL from search results where you need targeted information.\n\nUsage notes:\n- For GitHub URLs (PRs, issues, pull request diffs, repo contents), prefer using the gh CLI via bash instead — e.g. `gh pr view`, `gh issue view`, `gh api repos/<owner>/<repo>/...`. It handles auth automatically and is faster.\n- For a single known file in a public repo, `web_fetch` on the raw.githubusercontent.com URL is the lightest option (no clone, no API).\n- If the URL redirects to a different host, the tool will inform you and provide the redirect URL in the response. Make a new web_fetch request with the redirect URL to fetch the content.\n- The tool includes a short-lived cache so repeated calls on the same URL within a single session are cheap — you can re-fetch without worrying about re-ranking cost.",
             parameters: FunctionParameters(
                 properties: [
                     "url": ParameterProperty(
@@ -899,7 +899,34 @@ enum AvailableTools {
         Available subagents:
         \(listing)
 
-        Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.
+        ## When not to use
+
+        If the target is already known, use the direct tool: read_file for a known path, grep for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available subagent type.
+
+        ## Usage notes
+
+        - Always include a short description summarizing what the subagent will do.
+        - When you launch multiple subagents for independent work, send them in a single message with multiple tool uses so they run concurrently.
+        - When the subagent is done, it will return a single message back to you. The result returned is not visible to the user; relay the relevant findings yourself.
+        - Trust but verify: a subagent's summary describes what it intended to do, not necessarily what it did. When a subagent writes or edits code, check the actual changes before reporting the work as done.
+        - You can optionally run subagents in the background using run_in_background. When one completes, you'll be notified via a synthetic [SUBAGENT COMPLETE] message — do NOT sleep, poll, or proactively check on its progress.
+        - **Foreground vs background**: Use foreground (default) when you need the subagent's results before you can proceed. Use background when you have genuinely independent work to do in parallel.
+        - To continue a previously spawned subagent, pass its session_id — that resumes it with full context. A new Agent call starts a fresh subagent with no memory of prior runs.
+        - Clearly tell the subagent whether you expect it to write code or just do research (search, file reads, web fetches), since it is not aware of the user's intent.
+        - Subagents CANNOT spawn other subagents. Provide a self-contained prompt — the subagent sees none of your conversation history.
+
+        ## Writing the prompt
+
+        Brief the subagent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters.
+        - Explain what you're trying to accomplish and why.
+        - Describe what you've already learned or ruled out.
+        - Give enough context about the surrounding problem that the subagent can make judgment calls rather than just following a narrow instruction.
+        - If you need a short response, say so ("report in under 200 words").
+        - Lookups: hand over the exact command. Investigations: hand over the question — prescribed steps become dead weight when the premise is wrong.
+
+        Terse command-style prompts produce shallow, generic work.
+
+        **Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the subagent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.
         """
         return ToolDefinition(
             function: FunctionDefinition(
