@@ -188,34 +188,73 @@ When you inspect the rendered pages, look for one of two distinct problems:
 
 Then structure the page as three children (e.g., top block, hero image, bottom tagline) and let `space-between` distribute them. `center` works if you want everything pulled to the middle with equal whitespace above and below.
 
-**Content pages** (body copy, data tables, feature lists, architecture overviews): aim for at least 60% ink density. If a content page ends up under 50% filled after rendering, that's usually a smell — the page is under-written, not minimalist. Three ways to fix it:
+**Content pages** (body copy, feature lists, architecture overviews): aim for at least 60% ink density AND at least 150-200 words of running text per page. The word count is a hard floor, not a target — below 150 words the page reads as a headline, not a section. If a content page ends up under 50% filled after rendering, that's a smell — the page is under-written, not minimalist. Four ways to fix it:
 
 1. **Merge short pages.** If you have two half-full pages, make them one full page.
 2. **Expand the prose.** "FractalMind tiered archival system that maintains context across long-running investigations" is a headline, not a paragraph. Add the "how" and "why" — 40 more words per section usually solves it.
-3. **Enlarge hero images or diagrams.** If the content is genuinely thin by design, make the visuals carry more of the page. A full-width figure is better than padding with whitespace.
+3. **Add an intro bridge.** Under every H2, write a 2-3 sentence paragraph that sets context for the subsections below. Prevents pages from reading as disconnected bullet grids.
+4. **Enlarge hero images or diagrams.** If the content is genuinely thin by design, make the visuals carry more of the page. A full-width figure is better than padding with whitespace.
 
 Decide page count from content volume, not the other way around. If a section is only 60 words, it doesn't need its own page.
 
 ## Layout variety across pages
 
-Density is necessary but not sufficient. A deck where every content page uses the same layout — e.g., "intro blurb + 2×2 card grid" on page after page — reads as monotonous even if each page is well-filled. Readers feel it as repetition, not rhythm.
+Density is necessary but not sufficient. A deck where every content page uses the same layout — same grid, same card pattern, same rhythm — reads as monotonous even when each page is well-filled. Readers feel repetition, not rhythm.
 
-**Rule: prefer alternating layouts across consecutive pages.** If page 2 is a card grid, page 3 should be something else. Repeat a layout only when the content genuinely demands the same structure (e.g., a two-page feature matrix where each row is a category).
+**Rule: never use the same layout pattern on two consecutive pages.** Repeat a pattern only when the content genuinely demands the same structure (e.g., a multi-page feature matrix where each row is a category). And **do NOT default to a square grid of cards** — it's the worst offender for repetition and looks lazy when it's the only pattern in the deck.
 
-### Layout vocabulary to cycle through
+### Semantic layout mapping
 
-- **Prose page** — one or two columns of running text, no cards, no boxes. Good for philosophy sections, introductions, narrative arguments. A single long column is fine; two columns work if the prose is long enough to balance both sides.
-- **Card grid** — 2×2 or 3×1 short-form blurbs with visual separation (borders, background tints, accent bars). Good for feature lists, value propositions, comparative items.
-- **Image-anchored page** — full-width or large hero image/diagram with a caption and a short paragraph of context. Good when a concept is better shown than told.
-- **Quote / pullquote page** — large typographic treatment of a statement (24-40pt), minimal surrounding text. Good for emphasis, section transitions, or a memorable user/customer voice.
-- **Data page** — a table, chart, or diagram carries the page; annotation supports it. Good for technical depth, comparisons, metrics.
-- **Mixed page** — asymmetric: text-left + image-right (or reverse), two-thirds prose + one-third sidebar. Good for content that doesn't fit a single layout cleanly.
+Match the pattern to the content type:
+
+| Pattern | Best for | Key features |
+| --- | --- | --- |
+| **Manifesto** | Philosophy, vision, introductions, narrative arguments | Full-width single column or 2-column running prose. Include a large italicized pull-quote (24-32pt) with a left accent bar for emphasis. Wide margins. |
+| **Stack** | Architecture layers, process steps, timelines, roadmaps | Vertical list of horizontal bars. Each bar = bold uppercase tag on the left (9-10pt, letter-spaced), description block on the right. Clear hierarchy, scans top-to-bottom. |
+| **Split** | Feature showcases, comparisons, visual explanations | 40/60 or 50/50 horizontal split. Visual element (diagram, screenshot, illustration) on one side, detailed prose or feature list on the other. |
+| **Pillars** | Value propositions, principles, key capabilities | Grid of cards — prefer **3-column** or **asymmetric** arrangements. Each card has a colored top-border accent. Avoid square grids; they create the "every page looks the same" failure mode. |
+| **Hero** | A single concept better shown than told | Full-width hero image or diagram dominating the page, with caption and a short paragraph of context below. |
+| **Quote** | Section transitions, memorable statements, emphasis | Large typographic treatment of a statement (28-40pt), minimal surrounding text. Works as a break between denser sections. |
+| **Data** | Technical depth, metrics, comparisons | A table, chart, or annotated diagram carries the page. Supporting prose frames it. |
 
 ### How to apply this when generating
 
-Before rendering, plan the layout sequence for the deck. Example for a 5-page deck: cover → prose (philosophy) → card grid (architecture features) → image-anchored (system diagram) → mixed (capabilities + screenshot) → quote page or prose summary. Each page is different from its neighbor.
+**Plan the layout sequence BEFORE rendering.** Example for a 5-page deck: cover → Manifesto (philosophy) → Stack (architecture layers) → Split (capability + diagram) → Hero (system visualization) → Quote or Manifesto (closing). Each page different from its neighbor.
 
-When visually inspecting the rendered output, if two adjacent pages use the same layout, ask: does the content genuinely demand the same structure here? If not, redesign one of them — usually by pulling content out into a quote block, adding a diagram, or converting one page to running prose.
+**After rendering, scan the deck end-to-end.** If two adjacent pages share a pattern, ask: does the content truly demand the same structure? If not, redesign one — pull content into a quote block, add a diagram to convert it to Split, or rewrite as running prose.
+
+### CSS implementations for the patterns
+
+Drop these into the baseline CSS. They give the agent working code instead of reinventing each pattern:
+
+```css
+/* Manifesto — 2-column justified prose with pull-quote */
+.manifesto-cols { column-count: 2; column-gap: 1.5cm; text-align: justify; }
+.pull-quote { font-size: 20pt; font-style: italic; color: #0b57d0; border-left: 4pt solid #0b57d0; padding: 0.8cm 1cm; margin: 1.5cm 0; background: #f0f7ff; }
+
+/* Stack — tag + description rows */
+.stack-layer { display: grid; grid-template-columns: 180px 1fr; gap: 1cm; background: #fdfdfd; padding: 0.8cm; border: 1pt solid #eee; margin-bottom: 0.5cm; border-radius: 4pt; page-break-inside: avoid; }
+.layer-label { font-family: 'Inter', sans-serif; font-weight: 800; color: #0b57d0; text-transform: uppercase; font-size: 9pt; letter-spacing: 0.1em; }
+
+/* Split — visual + text side-by-side */
+.split-view { display: flex; gap: 1.5cm; flex-grow: 1; }
+.visual-pane { flex: 1; background: #f9f9fb; border-radius: 8pt; padding: 1cm; display: flex; align-items: center; justify-content: center; page-break-inside: avoid; }
+.text-pane { flex: 1.4; }
+
+/* Pillars — 3-column card grid with colored top border */
+.pillar-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8cm; }
+.pillar-card { padding: 0.8cm; border-top: 4pt solid #0b57d0; background: #fff; box-shadow: 0 4pt 12pt rgba(0,0,0,0.03); page-break-inside: avoid; }
+
+/* Hero — full-width image page */
+.hero-figure { width: 100%; margin: 0 0 1cm 0; page-break-inside: avoid; }
+.hero-figure img { width: 100%; height: auto; border-radius: 6pt; }
+.hero-caption { font-size: 10pt; color: #666; font-style: italic; }
+
+/* Quote — large typographic statement */
+.quote-page { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; min-height: 24cm; }
+.quote-page blockquote { font-size: 32pt; line-height: 1.25; font-style: italic; color: #0b57d0; border: none; margin: 0; padding: 0; max-width: 14cm; }
+.quote-page cite { font-size: 11pt; color: #666; font-style: normal; margin-top: 1cm; }
+```
 
 ## Common bugs and fixes
 
@@ -230,7 +269,7 @@ When visually inspecting the rendered output, if two adjacent pages use the same
 | Every paragraph indents | Leftover `text-indent` from a parent stylesheet | Explicitly set `p { text-indent: 0; }` |
 | Cover page content bunched at top | Missing flexbox + `min-height` on the page container | See "Page density and vertical distribution" — use flex + `justify-content: space-between` (or `center`) |
 | Content page half-empty | Under-written section; not enough prose/images for A4 | See "Page density" — merge with another short page, expand prose, or enlarge figures |
-| Every content page looks the same | Over-applied a single layout pattern (e.g., 2×2 cards on every page) | See "Layout variety" — alternate prose / cards / image-anchored / quote / data pages |
+| Every content page looks the same | Over-applied a single layout pattern (commonly: a card grid on every page) | See "Layout variety" — alternate Manifesto / Stack / Split / Pillars / Hero / Quote / Data patterns |
 
 ## Images
 
