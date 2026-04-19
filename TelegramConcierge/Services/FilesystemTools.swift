@@ -11,9 +11,9 @@ import PDFKit
 actor FilesystemTools {
     static let shared = FilesystemTools()
 
-    // Caps — mirror OpenCode's defaults.
+    // Caps — mirror Claude Code's Read tool.
     static let maxLines = 2000
-    static let maxBytes = 50 * 1024          // 50 KB cap for text output
+    static let maxBytes = 256 * 1024         // 256 KB cap for text output (matches Claude Code)
     static let maxLineLength = 2000          // truncate lines longer than this
 
     struct ReadResult {
@@ -83,6 +83,22 @@ actor FilesystemTools {
         // Text path. Reject other binaries.
         if Self.looksBinary(mime: mime, path: path) {
             return ReadResult(content: jsonError("cannot read binary file \(path) (mime=\(mime)). Use bash tools if you need to inspect it."), attachments: [])
+        }
+
+        // E88-style hard ceiling: whole-file reads are capped at 256 KB (matches Claude Code's
+        // Read tool). If the file exceeds that AND the caller didn't request a slice, refuse
+        // with the same wording Claude Code emits — the agent must paginate via offset/limit
+        // or search for specific content instead.
+        if offset == nil && limit == nil,
+           let attrs = try? fm.attributesOfItem(atPath: path),
+           let fileSize = attrs[.size] as? Int,
+           fileSize > Self.maxBytes {
+            let sizeKB = Double(fileSize) / 1024.0
+            let msg = String(
+                format: "File content (%.1fKB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+                sizeKB
+            )
+            return ReadResult(content: jsonError(msg), attachments: [])
         }
 
         do {
