@@ -1,12 +1,22 @@
 import Foundation
 
-/// Persistent (in-memory, per-app-run) registry of subagent sessions.
+/// Persistent registry of subagent sessions, backed by disk.
 ///
 /// Each session captures the full conversation state of a subagent so the
 /// main agent can resume it at any time by passing `session_id` to the
-/// Agent tool. Sessions are append-only — they never expire or close. The
-/// underlying subprocess resources (e.g. Playwright browser) stay alive
-/// for the lifetime of the app.
+/// Agent tool.
+///
+/// Conversation state (messages, tool interactions, totals) is serialized
+/// to `~/LocalAgent/subagent_sessions/<id>.json` on every mutation and
+/// reloaded at app start. Subprocess-backed resources (e.g. Playwright
+/// browser) still have to relaunch after an app restart — only the message
+/// history is restored, not live OS state.
+///
+/// LRU retention: up to `maxSessions` (default 300) are kept on disk. When
+/// the cap is exceeded, sessions with the oldest `lastUsed` timestamp are
+/// evicted first. A frequently-resumed session keeps its `lastUsed` current
+/// and is never evicted before newer-but-idle sessions — age is measured by
+/// "last touch," not by creation date.
 ///
 /// Session IDs are 5-char base36 strings (~60M possible values) — short
 /// enough for an LLM to track in conversation context.
@@ -14,7 +24,7 @@ actor SubagentSessionRegistry {
 
     static let shared = SubagentSessionRegistry()
 
-    struct Session {
+    struct Session: Codable {
         let id: String
         let subagentType: String
         let description: String
@@ -32,7 +42,9 @@ actor SubagentSessionRegistry {
 
     private var sessions: [String: Session] = [:]
 
-    private init() {}
+    private init() {
+        loadAllFromDisk()
+    }
 
     // MARK: - Create / Resume
 
@@ -54,6 +66,8 @@ actor SubagentSessionRegistry {
             lastAssistantText: nil
         )
         sessions[id] = session
+        persist(session)
+        pruneLRU()
         return (id, session)
     }
 
@@ -86,6 +100,7 @@ actor SubagentSessionRegistry {
         trimIfNeeded(&session, budget: budget)
 
         sessions[sessionId] = session
+        persist(session)
         return session
     }
 
@@ -164,6 +179,7 @@ actor SubagentSessionRegistry {
         }
 
         sessions[sessionId] = session
+        persist(session)
     }
 
     // MARK: - Query
@@ -186,7 +202,99 @@ actor SubagentSessionRegistry {
     // MARK: - Cleanup (app shutdown only)
 
     func removeAll() {
+        for id in sessions.keys {
+            deletePersisted(id)
+        }
         sessions.removeAll()
+    }
+
+    // MARK: - LRU retention
+
+    /// Maximum number of sessions retained. When exceeded, least-recently-used
+    /// sessions are evicted on disk and in memory. Measured by `lastUsed`, so
+    /// frequently-resumed sessions survive even if they were created long ago.
+    static let maxSessions = 300
+
+    /// Evict sessions with the oldest `lastUsed` timestamps until the count
+    /// is at or below `maxSessions`. Called after create() and after the
+    /// initial disk hydration.
+    private func pruneLRU() {
+        guard sessions.count > Self.maxSessions else { return }
+        let sortedByLastUsed = sessions.values.sorted { $0.lastUsed < $1.lastUsed }
+        let excess = sessions.count - Self.maxSessions
+        var evicted = 0
+        for session in sortedByLastUsed.prefix(excess) {
+            sessions.removeValue(forKey: session.id)
+            deletePersisted(session.id)
+            evicted += 1
+        }
+        if evicted > 0 {
+            print("[SubagentSessionRegistry] Evicted \(evicted) LRU session(s); retained \(sessions.count).")
+        }
+    }
+
+    // MARK: - Disk persistence
+
+    private static let persistenceDirName = "subagent_sessions"
+    private static let persistenceExtension = "json"
+
+    /// Canonical on-disk location: `~/LocalAgent/subagent_sessions/`.
+    /// Creates the directory if it does not yet exist.
+    private static func persistenceDirectory() -> URL {
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("LocalAgent", isDirectory: true)
+            .appendingPathComponent(Self.persistenceDirName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private static func persistenceURL(for id: String) -> URL {
+        persistenceDirectory().appendingPathComponent("\(id).\(Self.persistenceExtension)")
+    }
+
+    /// Atomic write. Any I/O error is logged but never raised — the in-memory
+    /// session remains authoritative, and the next mutation will re-attempt.
+    private func persist(_ session: Session) {
+        let url = Self.persistenceURL(for: session.id)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try encoder.encode(session)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("[SubagentSessionRegistry] Failed to persist session \(session.id): \(error)")
+        }
+    }
+
+    private func deletePersisted(_ id: String) {
+        try? FileManager.default.removeItem(at: Self.persistenceURL(for: id))
+    }
+
+    /// Called once from the actor's init. Reads every `<id>.json` file in the
+    /// persistence directory and hydrates the in-memory map. Corrupt entries
+    /// are logged and skipped — they do not block other sessions from loading.
+    private func loadAllFromDisk() {
+        let dir = Self.persistenceDirectory()
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var loaded = 0
+        for url in contents where url.pathExtension == Self.persistenceExtension {
+            do {
+                let data = try Data(contentsOf: url)
+                let session = try decoder.decode(Session.self, from: data)
+                sessions[session.id] = session
+                loaded += 1
+            } catch {
+                print("[SubagentSessionRegistry] Skipped corrupt session file \(url.lastPathComponent): \(error)")
+            }
+        }
+        if loaded > 0 {
+            print("[SubagentSessionRegistry] Restored \(loaded) session(s) from disk.")
+        }
+        pruneLRU()
     }
 
     // MARK: - ID generation
