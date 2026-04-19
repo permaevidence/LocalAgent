@@ -2,34 +2,37 @@ import Foundation
 
 /// Skills registry — discovers and loads curated procedural "skills" from disk.
 ///
-/// A skill is a single markdown file at `~/LocalAgent/skills/<name>.md` with
-/// YAML frontmatter (name + description) and a markdown body that teaches
-/// Claude how to perform a specialized task (e.g., generating a PDF, writing
-/// a DOCX, editing a video).
+/// A skill is a **directory** containing a `SKILL.md` with YAML frontmatter
+/// (`name`, `description`) plus any number of sibling assets (scripts,
+/// templates, images, data files). This is the agentskills.io format used by
+/// Claude Code, Cursor, Codex, Hermes Agent, and the rest of the standard-
+/// compliant ecosystem, so skills author here are portable to those harnesses
+/// and vice versa.
+///
+/// Canonical layout:
+/// ```
+/// ~/LocalAgent/skills/pdf/
+///   SKILL.md          ← frontmatter + body
+///   render.py         ← asset, invoked by the body via the bash tool
+///   template.html     ← another asset
+/// ```
+///
+/// A backward-compatibility shim also accepts the legacy single-file format
+/// (`~/LocalAgent/skills/pdf.md`) so user skills written before the migration
+/// keep working. Flat files have no assets.
 ///
 /// Skills are NOT loaded into the system prompt — only an index (name +
 /// description, one line each) is exposed at the tail of the system prefix.
-/// When the agent decides a skill applies, it calls the `skill` tool with
-/// the skill's name; the registry loads the body and returns it as a
-/// tool_result. This keeps the frozen system prefix tiny while still giving
-/// the agent access to detailed procedural memory on demand.
+/// When the agent decides a skill applies, it calls the `skill` tool with the
+/// skill's name; the registry returns the body plus a listing of the skill's
+/// assets (absolute paths). The body stays in context for the remainder of
+/// the session.
 ///
 /// Why tool_result instead of injection into the system prompt:
-///   - System-prompt mutation mid-session invalidates the Anthropic prompt
-///     cache. Tool results are append-only and preserve the cache breakpoint.
+///   - System-prompt mutation mid-session invalidates the prompt cache. Tool
+///     results are append-only and preserve the cache breakpoint.
 ///   - Skills persist in the message chain once loaded, so the procedure
-///     stays available across multi-turn tasks (e.g., the render-verify-fix
-///     loop of document generation).
-///
-/// File format:
-/// ```
-/// ---
-/// name: pdf
-/// description: Create polished PDF documents via HTML+CSS + weasyprint or chromium headless.
-/// ---
-///
-/// # Body with workflow steps, templates, and examples.
-/// ```
+///     stays available across multi-turn tasks.
 ///
 /// Per Matteo's hard constraint: the AGENT cannot create new skills on its
 /// own — skills are hand-authored by the user and dropped into the directory.
@@ -43,33 +46,38 @@ enum SkillsRegistry {
     /// edited and deleted like any file.
     enum Origin: Equatable {
         /// Ships inside the app bundle at `Contents/Resources/BundledSkills/`.
-        /// Travels with the binary — always available, no setup required.
         case bundled
-        /// Lives in `~/LocalAgent/skills/*.md`. User-authored. Overrides a
+        /// Lives in `~/LocalAgent/skills/`. User-authored. Overrides a
         /// bundled skill with the same name.
         case user
     }
 
-    /// A parsed skill with its metadata and body content.
+    /// A parsed skill with its metadata, body, and any sibling assets.
     struct Skill: Equatable, Identifiable {
         var id: String { name }
 
-        /// Canonical short name — matches the filename stem and is how the
+        /// Canonical short name — matches the directory name and is how the
         /// agent invokes the skill via the `skill` tool.
         let name: String
 
         /// One-line description. Surfaced in the system-prompt index so the
-        /// agent can decide whether to invoke this skill. Keep it focused on
-        /// WHEN to use the skill, not what it does internally.
+        /// agent can decide whether to invoke this skill.
         let description: String
 
         /// Markdown body of the skill (everything after the frontmatter).
-        /// Returned as the `skill` tool's result when invoked.
         let body: String
 
-        /// Absolute path on disk — useful for the Settings UI (reveal, edit,
-        /// delete).
+        /// Path to the SKILL.md file itself. Useful for the Settings UI.
         let fileURL: URL
+
+        /// Directory containing the skill (or `nil` for legacy flat-file
+        /// skills that have no directory and no assets).
+        let directoryURL: URL?
+
+        /// Sibling files alongside SKILL.md — scripts, templates, data. The
+        /// agent can invoke these via the bash tool. Empty for flat-file
+        /// skills.
+        let assets: [URL]
 
         /// Source of the skill. Bundled skills can't be deleted from the UI.
         let origin: Origin
@@ -82,11 +90,6 @@ enum SkillsRegistry {
     // MARK: - Public API
 
     /// All skills currently on disk, sorted by name.
-    ///
-    /// Scans disk on every call. For small skill counts (typical: <10 files,
-    /// each <10 KB) this is sub-millisecond, and avoids a whole class of
-    /// "stale cache" bugs where a skill added during a running session never
-    /// becomes visible to the agent until relaunch.
     static func allSkills() -> [Skill] {
         ensureDirectoryExists()
         return scanDisk()
@@ -99,30 +102,27 @@ enum SkillsRegistry {
     }
 
     /// No-op retained for API compatibility with call sites that used to
-    /// invalidate a cache. The registry now scans on every call.
+    /// invalidate a cache.
     static func reload() {}
 
-    /// Delete a user-authored skill from disk. Bundled skills can't be
-    /// deleted — they're part of the app bundle.
+    /// Delete a user-authored skill. For directory-format skills the whole
+    /// directory (including assets) is removed. Flat-file skills just remove
+    /// the .md. Bundled skills cannot be deleted.
     @discardableResult
     static func delete(_ name: String) -> Bool {
         guard let skill = skill(named: name), skill.origin == .user else {
             return false
         }
+        let target = skill.directoryURL ?? skill.fileURL
         do {
-            try FileManager.default.removeItem(at: skill.fileURL)
+            try FileManager.default.removeItem(at: target)
             return true
         } catch {
             return false
         }
     }
 
-    /// Compact index surfaced in the system prompt. One line per skill:
-    /// `- <name>: <description>`. Bodies are NOT included — the agent must
-    /// call the `skill` tool to pull the body into its context.
-    ///
-    /// Returns an empty string when no skills are installed, so the caller
-    /// can skip the whole section without a conditional.
+    /// Compact index surfaced in the system prompt. One line per skill.
     static func systemPromptIndex() -> String {
         let skills = allSkills()
         guard !skills.isEmpty else { return "" }
@@ -138,20 +138,12 @@ enum SkillsRegistry {
 
     // MARK: - Disk scanning
 
-    /// Union of bundled + user skills. Two-tier precedence: if a user skill
-    /// shares a name with a bundled skill, the user skill wins (allows
-    /// overriding a shipped skill without touching the app bundle).
+    /// Union of bundled + user skills. User entries override bundled entries
+    /// with the same name.
     private static func scanDisk() -> [Skill] {
         var byName: [String: Skill] = [:]
-
-        // Bundled first so user entries can overwrite.
-        for skill in scanBundled() {
-            byName[skill.name.lowercased()] = skill
-        }
-        for skill in scanUser() {
-            byName[skill.name.lowercased()] = skill
-        }
-
+        for skill in scanBundled() { byName[skill.name.lowercased()] = skill }
+        for skill in scanUser()    { byName[skill.name.lowercased()] = skill }
         return byName.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
 
@@ -165,30 +157,89 @@ enum SkillsRegistry {
         scanDirectory(skillsDirectoryURL(), origin: .user)
     }
 
-    private static func scanDirectory(_ dir: URL, origin: Origin) -> [Skill] {
-        guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
+    /// Scan a root directory for skills. Two layouts are recognized:
+    /// 1. `<root>/<name>/SKILL.md` — canonical agentskills.io directory form
+    /// 2. `<root>/<name>.md`       — legacy flat-file form (backward compat)
+    ///
+    /// If both layouts define the same skill name, the directory form wins.
+    private static func scanDirectory(_ root: URL, origin: Origin) -> [Skill] {
         let fm = FileManager.default
+        guard fm.fileExists(atPath: root.path) else { return [] }
         guard let entries = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: nil,
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        var out: [Skill] = []
+        var byName: [String: Skill] = [:]
+
+        // Pass 1: legacy flat-file skills.
         for url in entries where url.pathExtension.lowercased() == "md" {
             guard let raw = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            guard let parsed = parse(raw, fileURL: url, origin: origin) else { continue }
-            out.append(parsed)
+            guard let parsed = parse(
+                raw,
+                fileURL: url,
+                directoryURL: nil,
+                assets: [],
+                origin: origin
+            ) else { continue }
+            byName[parsed.name.lowercased()] = parsed
         }
-        return out
+
+        // Pass 2: directory-form skills (override flat files with same name).
+        for url in entries {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            let skillMd = url.appendingPathComponent("SKILL.md")
+            guard fm.fileExists(atPath: skillMd.path) else { continue }
+            guard let raw = try? String(contentsOf: skillMd, encoding: .utf8) else { continue }
+
+            let assets = discoverAssets(in: url, excluding: skillMd)
+            guard let parsed = parse(
+                raw,
+                fileURL: skillMd,
+                directoryURL: url,
+                assets: assets,
+                origin: origin
+            ) else { continue }
+            byName[parsed.name.lowercased()] = parsed
+        }
+
+        return Array(byName.values)
     }
 
-    /// Parse a skill markdown file with YAML frontmatter.
-    ///
-    /// Only two frontmatter fields are recognized — `name` and `description`.
-    /// Everything else is ignored (kept in the body as-is) so users can add
-    /// custom fields without breaking the parser.
-    private static func parse(_ raw: String, fileURL: URL, origin: Origin) -> Skill? {
+    /// Collect files (not subdirectories) inside a skill directory, excluding
+    /// SKILL.md itself. Paths are returned absolute for direct use from the
+    /// bash tool. Hidden files are skipped.
+    private static func discoverAssets(in dir: URL, excluding skillMd: URL) -> [URL] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var out: [URL] = []
+        for case let fileURL as URL in enumerator {
+            if fileURL.lastPathComponent == "SKILL.md", fileURL.deletingLastPathComponent().path == dir.path {
+                continue
+            }
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values?.isRegularFile == true else { continue }
+            out.append(fileURL)
+        }
+        return out.sorted { $0.path < $1.path }
+    }
+
+    /// Parse a SKILL.md (or legacy flat .md) with YAML frontmatter. Only
+    /// `name` and `description` are interpreted; unknown keys are ignored.
+    private static func parse(
+        _ raw: String,
+        fileURL: URL,
+        directoryURL: URL?,
+        assets: [URL],
+        origin: Origin
+    ) -> Skill? {
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard lines.count >= 3, lines[0].trimmingCharacters(in: .whitespaces) == "---" else {
             return nil
@@ -219,9 +270,10 @@ enum SkillsRegistry {
             }
         }
 
-        // Fall back to filename stem if the frontmatter omits `name`.
+        // Fall back to directory name (or filename stem) if frontmatter omits `name`.
         if name.isEmpty {
-            name = fileURL.deletingPathExtension().lastPathComponent
+            name = directoryURL?.lastPathComponent
+                ?? fileURL.deletingPathExtension().lastPathComponent
         }
         guard !name.isEmpty, !description.isEmpty else { return nil }
 
@@ -230,7 +282,15 @@ enum SkillsRegistry {
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return Skill(name: name, description: description, body: body, fileURL: fileURL, origin: origin)
+        return Skill(
+            name: name,
+            description: description,
+            body: body,
+            fileURL: fileURL,
+            directoryURL: directoryURL,
+            assets: assets,
+            origin: origin
+        )
     }
 
     /// Canonical skills directory: `~/LocalAgent/skills/`.
@@ -239,9 +299,7 @@ enum SkillsRegistry {
             .appendingPathComponent("LocalAgent/skills", isDirectory: true)
     }
 
-    /// Ensure the skills directory exists. Called lazily from places that
-    /// want to show the path to the user (e.g., the Settings UI "Reveal in
-    /// Finder" action).
+    /// Ensure the skills directory exists.
     @discardableResult
     static func ensureDirectoryExists() -> Bool {
         let dir = skillsDirectoryURL()

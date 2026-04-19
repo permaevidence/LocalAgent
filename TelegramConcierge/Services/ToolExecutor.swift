@@ -712,7 +712,15 @@ actor ToolExecutor {
         }
 
         let header = "Skill '\(skill.name)' loaded. Follow the procedure below — combine with your own judgment, don't recite verbatim.\n\n"
-        return header + skill.body
+        var result = header + skill.body
+        if !skill.assets.isEmpty {
+            var lines: [String] = ["", "", "---", "", "**Assets bundled with this skill** (invoke via the bash tool using the absolute paths below):"]
+            for asset in skill.assets {
+                lines.append("- `\(asset.path)`")
+            }
+            result += lines.joined(separator: "\n")
+        }
+        return result
     }
 }
 
