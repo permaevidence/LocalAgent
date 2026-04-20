@@ -711,8 +711,28 @@ actor ToolExecutor {
             return "{\"error\": \"Skill '\(name)' not found. Available: \(availableList)\"}"
         }
 
-        let header = "Skill '\(skill.name)' loaded. Follow the procedure below — combine with your own judgment, don't recite verbatim.\n\n"
-        var result = header + skill.body
+        // Match Claude Code's skill-loading contract so agentskills.io skills
+        // imported from the wider ecosystem work unchanged:
+        //   1. Substitute ${CLAUDE_SKILL_DIR} with the real absolute path.
+        //   2. Prepend "Base directory for this skill: <path>" so bare
+        //      filename references in the body (e.g. "see REFERENCE.md")
+        //      have a resolution anchor.
+        // Verified against cli.js 2.1.112 — exact same two operations.
+        var body = skill.body
+        if let dir = skill.directoryURL {
+            body = body.replacingOccurrences(
+                of: "${CLAUDE_SKILL_DIR}",
+                with: dir.path
+            )
+        }
+
+        var result: String
+        if let dir = skill.directoryURL {
+            result = "Base directory for this skill: \(dir.path)\n\n" + body
+        } else {
+            result = "Skill '\(skill.name)' loaded. Follow the procedure below — combine with your own judgment, don't recite verbatim.\n\n" + body
+        }
+
         if !skill.assets.isEmpty {
             var lines: [String] = ["", "", "---", "", "**Assets bundled with this skill** (invoke via the bash tool using the absolute paths below):"]
             for asset in skill.assets {
