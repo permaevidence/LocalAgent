@@ -1030,8 +1030,17 @@ enum AvailableTools {
     /// dedicated tools — the agent invokes them via `bash gws …`. Ambient inbox
     /// snapshot + 30-day agenda are still injected into the system prompt via
     /// GoogleWorkspaceService.
+    ///
+    /// When `localagent.subagentsEnabled` is false in UserDefaults, the Agent
+    /// tool and its three management tools (list_running_subagents,
+    /// list_subagent_sessions, cancel_subagent) are omitted — gives a fully
+    /// local setup a way to disable cloud-delegating tools in one switch.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
-        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts, agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent, skill]
+        let subagentsEnabled = UserDefaults.standard.object(forKey: "localagent.subagentsEnabled") as? Bool ?? true
+        let subagentTools: [ToolDefinition] = subagentsEnabled
+            ? [agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent]
+            : []
+        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts] + subagentTools + [skill]
     }
 
     /// All available tools. `includeWebSearch` toggles whether the four web tools

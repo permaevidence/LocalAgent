@@ -486,6 +486,20 @@ actor OpenRouterService {
             For simple questions you can answer directly, respond without using tools.
             """
 
+            // When subagents are disabled (fully-local mode), strip the
+            // dedicated Agent-tool bullet so the model isn't told to call a
+            // tool it doesn't have. The brief Explore-subagent mention inside
+            // the code-exploration bullet is left alone — cost of a single
+            // "unknown tool" error is trivial.
+            let subagentsEnabled = UserDefaults.standard.object(forKey: "localagent.subagentsEnabled") as? Bool ?? true
+            if !subagentsEnabled {
+                prompt = prompt.replacingOccurrences(
+                    of: #"\s*- \*\*Subagent delegation via the `Agent` tool\*\*:[^\n]*\n"#,
+                    with: "\n",
+                    options: .regularExpression
+                )
+            }
+
             // Skills index — compact list of installed curated skills.
             // Only shown when the agent actually has the `skill` tool;
             // otherwise it's advertising a capability the agent can't invoke.

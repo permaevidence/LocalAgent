@@ -60,12 +60,19 @@ struct AgentsSettingsView: View {
     @State private var turnDrafts: [String: String] = [:]
     @State private var turnSaveNote: String?
 
+    // Global master switch: when off, the Agent tool and its three management
+    // tools are not exposed to any agent at runtime, and the corresponding
+    // system-prompt bullet is stripped. Existing subagent configurations
+    // below remain editable so users can tune settings while disabled.
+    @AppStorage("localagent.subagentsEnabled") private var subagentsEnabled: Bool = true
+
     // MARK: - Body
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 heroHeader
+                subagentsMasterSwitchCard
                 agentTilesSection
                 selectedAgentCard
                 capabilitiesCard
@@ -155,6 +162,38 @@ struct AgentsSettingsView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
         }
+    }
+
+    // MARK: - Subagents master switch
+
+    private var subagentsMasterSwitchCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $subagentsEnabled) {
+                HStack(spacing: 8) {
+                    Image(systemName: subagentsEnabled ? "person.2.wave.2.fill" : "person.2.slash")
+                        .foregroundColor(subagentsEnabled ? .accentColor : .secondary)
+                    Text("Enable subagents")
+                        .font(.body.weight(.medium))
+                }
+            }
+            .toggleStyle(.switch)
+
+            Text(subagentsEnabled
+                ? "The main agent can delegate work to subagents via the Agent tool. Subagents run in isolated contexts with their own token budgets."
+                : "Subagents are disabled. The main agent will handle all work inline, with no Agent tool exposed. Useful for fully-local setups to avoid cloud API calls from delegated agents. Configurations below remain editable and will reactivate when you flip the switch back on.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(subagentsEnabled ? Color.accentColor.opacity(0.06) : Color.secondary.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(subagentsEnabled ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.2), lineWidth: 1)
+        )
     }
 
     // MARK: - Agent tile picker
