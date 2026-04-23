@@ -166,6 +166,49 @@ actor OpenRouterService {
         }
         return fallbackDescriptionForUnsupportedFile(filename: filename, mimeType: mimeType)
     }
+
+    private func historyMetadataNote(for message: Message) async -> String? {
+        var lines: [String] = []
+
+        if !message.downloadedDocumentFileNames.isEmpty {
+            var parts: [String] = []
+            for entry in message.downloadedDocumentFileNames {
+                let lookupKey = (entry as NSString).lastPathComponent
+                if let desc = await FileDescriptionService.shared.get(filename: lookupKey) {
+                    parts.append("\(entry) — \"\(desc)\"")
+                } else {
+                    parts.append(entry)
+                }
+            }
+            lines.append("Files available from this turn: \(parts.joined(separator: "; "))")
+        }
+
+        if !message.editedFilePaths.isEmpty {
+            lines.append("Edited files in this turn: \(message.editedFilePaths.joined(separator: ", "))")
+        }
+
+        if !message.generatedFilePaths.isEmpty {
+            lines.append("Generated files in this turn: \(message.generatedFilePaths.joined(separator: ", "))")
+        }
+
+        if !message.accessedProjectIds.isEmpty {
+            lines.append("Accessed projects in this turn: \(message.accessedProjectIds.joined(separator: ", "))")
+        }
+
+        if !message.subagentSessionEvents.isEmpty {
+            let events = message.subagentSessionEvents.map { event in
+                "\(event.kind.rawValue) \(event.subagentType) (\(event.sessionId)): \(event.description)"
+            }
+            lines.append("Subagent session events: \(events.joined(separator: "; "))")
+        }
+
+        guard !lines.isEmpty else { return nil }
+
+        return """
+        [Turn metadata]
+        \(lines.joined(separator: "\n"))
+        """
+    }
     
     /// Estimate token cost for a document file
     /// Since documents are only sent inline for the CURRENT message (one agentic loop),
@@ -829,30 +872,11 @@ actor OpenRouterService {
                 textContent = rolePrefix + textContent
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .text(textContent)))
             } else {
-                // Standard text message (may include downloaded file hints for assistant messages)
+                // Standard text message. Internal per-turn metadata is injected
+                // separately as a system note so the model does not mistake it
+                // for prior assistant wording.
                 var textContent = message.content
-                
-                // Add hints for downloaded files (email attachments, etc.) on assistant messages.
-                // Entries may be bare filenames (legacy) or absolute paths (new surface).
-                if !message.downloadedDocumentFileNames.isEmpty {
-                    var parts: [String] = []
-                    for entry in message.downloadedDocumentFileNames {
-                        let lookupKey = (entry as NSString).lastPathComponent
-                        if let desc = await FileDescriptionService.shared.get(filename: lookupKey) {
-                            parts.append("\(entry) — \"\(desc)\"")
-                        } else {
-                            parts.append(entry)
-                        }
-                    }
-                    textContent = textContent + "\n[Downloaded files: \(parts.joined(separator: "; ")) — use read_file with the absolute path, or list_recent_files to find where they live]"
-                }
-                
-                // Add permanent but silent log for accessed projects
-                if !message.accessedProjectIds.isEmpty {
-                    let projectsList = message.accessedProjectIds.joined(separator: ", ")
-                    textContent = textContent + "\n[Accessed projects in this turn: \(projectsList)]"
-                }
-                
+
                 // Add date header (if new day) and time prefix to text content
                 // Only prefix user messages with the time. Prefixing assistant
                 // messages causes the model to imitate the pattern and emit
@@ -861,6 +885,10 @@ actor OpenRouterService {
                 let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
                 textContent = rolePrefix + textContent
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .text(textContent)))
+            }
+
+            if let metadataNote = await historyMetadataNote(for: message) {
+                apiMessages.append(OpenRouterAPIMessage(role: "system", content: .text(metadataNote)))
             }
         }
 
