@@ -118,12 +118,7 @@ extension ToolExecutor {
         guard let path = args.string("path") else {
             return "{\"error\": \"list_dir requires 'path'\"}"
         }
-        var extraIgnores: [String]? = nil
-        if let ignoreStr = args.string("ignore"),
-           let data = ignoreStr.data(using: .utf8),
-           let arr = try? JSONDecoder().decode([String].self, from: data) {
-            extraIgnores = arr
-        }
+        let extraIgnores = args.stringArray("ignore")
         let result = await DiscoveryTools.listDir(path: path, ignore: extraIgnores)
         return result.content
     }
@@ -334,6 +329,26 @@ extension ToolExecutor {
                 default: return nil
                 }
             }
+            return nil
+        }
+
+        func stringArray(_ key: String) -> [String]? {
+            if let values = raw[key] as? [String] {
+                let normalized = values
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                return normalized.isEmpty ? nil : normalized
+            }
+
+            if let ignoreStr = string(key),
+               let data = ignoreStr.data(using: .utf8),
+               let values = try? JSONDecoder().decode([String].self, from: data) {
+                let normalized = values
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                return normalized.isEmpty ? nil : normalized
+            }
+
             return nil
         }
     }

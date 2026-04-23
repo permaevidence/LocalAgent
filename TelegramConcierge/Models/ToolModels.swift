@@ -92,19 +92,34 @@ struct ParameterProperty: Codable {
     /// Required when `type == "array"` — describes the element schema.
     /// Gemini and other providers reject array parameters without items.
     let items: ArrayItemsSchema?
+    /// Populated when `type == "object"` to describe nested fields.
+    let properties: [String: ParameterProperty]?
+    /// Populated when `type == "object"` to mark required nested fields.
+    let required: [String]?
 
     enum CodingKeys: String, CodingKey {
         case type
         case description
         case enumValues = "enum"
         case items
+        case properties
+        case required
     }
 
-    init(type: String, description: String, enumValues: [String]? = nil, items: ArrayItemsSchema? = nil) {
+    init(
+        type: String,
+        description: String,
+        enumValues: [String]? = nil,
+        items: ArrayItemsSchema? = nil,
+        properties: [String: ParameterProperty]? = nil,
+        required: [String]? = nil
+    ) {
         self.type = type
         self.description = description
         self.enumValues = enumValues
         self.items = items
+        self.properties = properties
+        self.required = required
     }
 
     // Manual encode so nil fields are omitted rather than serialised as
@@ -115,21 +130,24 @@ struct ParameterProperty: Codable {
         try c.encode(description, forKey: .description)
         try c.encodeIfPresent(enumValues, forKey: .enumValues)
         try c.encodeIfPresent(items, forKey: .items)
+        try c.encodeIfPresent(properties, forKey: .properties)
+        try c.encodeIfPresent(required, forKey: .required)
     }
 }
 
 /// Schema describing the element of an `array`-typed parameter. Supports
 /// primitive items (e.g. `{ type: "string" }`) and object items with their
 /// own properties / required list.
-struct ArrayItemsSchema: Codable {
+final class ArrayItemsSchema: Codable {
     let type: String                                    // "string" | "number" | "integer" | "boolean" | "object"
     let description: String?
     let enumValues: [String]?
+    let items: ArrayItemsSchema?                        // populated when type == "array"
     let properties: [String: ParameterProperty]?        // populated when type == "object"
     let required: [String]?                             // populated when type == "object"
 
     enum CodingKeys: String, CodingKey {
-        case type, description, properties, required
+        case type, description, items, properties, required
         case enumValues = "enum"
     }
 
@@ -137,12 +155,14 @@ struct ArrayItemsSchema: Codable {
         type: String,
         description: String? = nil,
         enumValues: [String]? = nil,
+        items: ArrayItemsSchema? = nil,
         properties: [String: ParameterProperty]? = nil,
         required: [String]? = nil
     ) {
         self.type = type
         self.description = description
         self.enumValues = enumValues
+        self.items = items
         self.properties = properties
         self.required = required
     }
@@ -152,6 +172,7 @@ struct ArrayItemsSchema: Codable {
         try c.encode(type, forKey: .type)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(enumValues, forKey: .enumValues)
+        try c.encodeIfPresent(items, forKey: .items)
         try c.encodeIfPresent(properties, forKey: .properties)
         try c.encodeIfPresent(required, forKey: .required)
     }
@@ -342,8 +363,9 @@ enum AvailableTools {
                         description: "For action='delete'. Single reminder UUID to delete."
                     ),
                     "reminder_ids": ParameterProperty(
-                        type: "string",
-                        description: "For action='delete'. Multiple reminder IDs as JSON array string or CSV (e.g. [\"id1\",\"id2\"] or \"id1,id2\")."
+                        type: "array",
+                        description: "For action='delete'. Multiple reminder IDs to delete.",
+                        items: ArrayItemsSchema(type: "string")
                     ),
                     "delete_all": ParameterProperty(
                         type: "boolean",
@@ -408,8 +430,9 @@ enum AvailableTools {
             parameters: FunctionParameters(
                 properties: [
                     "document_filenames": ParameterProperty(
-                        type: "string",
-                        description: "JSON array of document filenames to read (from list_documents). Supports 1 to 10 files per call. Example: [\"a.pdf\", \"b.jpg\"]."
+                        type: "array",
+                        description: "Array of document filenames to read (from list_documents). Supports 1 to 10 files per call.",
+                        items: ArrayItemsSchema(type: "string")
                     ),
                     "document_filename": ParameterProperty(
                         type: "string",
@@ -534,16 +557,95 @@ enum AvailableTools {
                         enumValues: ["standard", "fullscreen_image"]
                     ),
                     "image_filenames": ParameterProperty(
-                        type: "string",
-                        description: "Required for fullscreen_image layout. Array of image filenames (e.g. [\"photo1.jpg\", \"photo2.jpg\"]) or single filename. Each image becomes a full page in the PDF. Use list_documents to find available images."
+                        type: "array",
+                        description: "Required for fullscreen_image layout. Array of image filenames. Each image becomes a full page in the PDF. Use list_documents to find available images.",
+                        items: ArrayItemsSchema(type: "string")
                     ),
                     "sections": ParameterProperty(
-                        type: "string",
-                        description: "JSON array of section objects for PDF/Word. Each section can have: 'heading' (string), 'body' (string), 'bullet_points' (array of strings), 'table' (object with 'headers' array and 'rows' 2D array), 'image' (object with 'filename' from documents/images directory, optional 'caption', optional 'width' as percentage 10-100 of page width default 50, optional 'alignment' left/center/right default center). Example: [{\"heading\":\"Introduction\",\"body\":\"Text here\"}]"
+                        type: "array",
+                        description: "Array of section objects for PDF/Word content.",
+                        items: ArrayItemsSchema(
+                            type: "object",
+                            properties: [
+                                "heading": ParameterProperty(
+                                    type: "string",
+                                    description: "Optional section heading."
+                                ),
+                                "body": ParameterProperty(
+                                    type: "string",
+                                    description: "Optional section body text."
+                                ),
+                                "bullet_points": ParameterProperty(
+                                    type: "array",
+                                    description: "Optional bullet points for the section.",
+                                    items: ArrayItemsSchema(type: "string")
+                                ),
+                                "table": ParameterProperty(
+                                    type: "object",
+                                    description: "Optional inline table for the section.",
+                                    properties: [
+                                        "headers": ParameterProperty(
+                                            type: "array",
+                                            description: "Optional column headers.",
+                                            items: ArrayItemsSchema(type: "string")
+                                        ),
+                                        "rows": ParameterProperty(
+                                            type: "array",
+                                            description: "Required 2D array of cell values.",
+                                            items: ArrayItemsSchema(
+                                                type: "array",
+                                                items: ArrayItemsSchema(type: "string")
+                                            )
+                                        )
+                                    ],
+                                    required: ["rows"]
+                                ),
+                                "image": ParameterProperty(
+                                    type: "object",
+                                    description: "Optional embedded image reference.",
+                                    properties: [
+                                        "filename": ParameterProperty(
+                                            type: "string",
+                                            description: "Filename from the documents/images directory."
+                                        ),
+                                        "caption": ParameterProperty(
+                                            type: "string",
+                                            description: "Optional caption below the image."
+                                        ),
+                                        "width": ParameterProperty(
+                                            type: "number",
+                                            description: "Optional width as a percentage of page width (10-100)."
+                                        ),
+                                        "alignment": ParameterProperty(
+                                            type: "string",
+                                            description: "Optional image alignment.",
+                                            enumValues: ["left", "center", "right"]
+                                        )
+                                    ],
+                                    required: ["filename"]
+                                )
+                            ]
+                        )
                     ),
                     "table_data": ParameterProperty(
-                        type: "string",
-                        description: "For Excel or simple table documents: JSON object with 'headers' (array of column names) and 'rows' (2D array of cell values). Example: {\"headers\":[\"Name\",\"Age\"],\"rows\":[[\"John\",\"30\"],[\"Jane\",\"25\"]]}"
+                        type: "object",
+                        description: "For Excel or simple table documents.",
+                        properties: [
+                            "headers": ParameterProperty(
+                                type: "array",
+                                description: "Optional column headers.",
+                                items: ArrayItemsSchema(type: "string")
+                            ),
+                            "rows": ParameterProperty(
+                                type: "array",
+                                description: "Required 2D array of cell values.",
+                                items: ArrayItemsSchema(
+                                    type: "array",
+                                    items: ArrayItemsSchema(type: "string")
+                                )
+                            )
+                        ],
+                        required: ["rows"]
                     )
                 ],
                 required: ["document_type"]
@@ -708,7 +810,11 @@ enum AvailableTools {
             parameters: FunctionParameters(
                 properties: [
                     "path": ParameterProperty(type: "string", description: "Absolute directory path."),
-                    "ignore": ParameterProperty(type: "string", description: "Optional JSON array of additional names to skip, e.g. '[\"tmp\",\"logs\"]'.")
+                    "ignore": ParameterProperty(
+                        type: "array",
+                        description: "Optional array of additional names to skip.",
+                        items: ArrayItemsSchema(type: "string")
+                    )
                 ],
                 required: ["path"]
             )
