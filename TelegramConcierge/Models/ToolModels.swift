@@ -406,7 +406,7 @@ enum AvailableTools {
     static let generateImage = ToolDefinition(
         function: FunctionDefinition(
             name: "generate_image",
-            description: "Generate an image from a text description using AI, or transform/edit an existing image. Use when the user asks you to create, generate, draw, make, edit, or transform an image/picture/illustration. The generated image will be sent to the user in the chat. When editing a user's image, reference the most recently received image file.",
+            description: "Generate an image from a text description using AI, or transform/edit an existing image. Use when the user asks you to create, generate, draw, make, edit, or transform an image/picture/illustration. The generated image will be sent to the user in the chat. For image edits, provide source_image with the stored image filename from recent image/file metadata; this tool does not infer the most recent image automatically.",
             parameters: FunctionParameters(
                 properties: [
                     "prompt": ParameterProperty(
@@ -415,7 +415,7 @@ enum AvailableTools {
                     ),
                     "source_image": ParameterProperty(
                         type: "string",
-                        description: "Optional. The filename of an image previously sent in the conversation to use as source for transformation/editing. Use the exact filename (e.g., 'abc123.jpg') from a previously received image. Leave empty to generate a new image from scratch."
+                        description: "Optional. Stored image filename in the LocalAgent images store, e.g. 'abc123.jpg'. Required when editing a specific prior image. Use the exact basename from recent image/file metadata; do not pass an absolute path. Leave empty to generate a new image from scratch."
                     ),
                     "size": ParameterProperty(
                         type: "string",
@@ -455,12 +455,12 @@ enum AvailableTools {
     static let sendDocumentToChat = ToolDefinition(
         function: FunctionDefinition(
             name: "send_document_to_chat",
-            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image. Works with: PDFs, images, documents downloaded from URLs, email attachments, or any file in the documents folder.",
+            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image. Works with files stored in LocalAgent's documents folder, including PDFs, images, URL downloads, generated files, and email attachments. This sends the file to the user as an external side effect.",
             parameters: FunctionParameters(
                 properties: [
                     "document_filename": ParameterProperty(
                         type: "string",
-                        description: "The filename of the document to send (e.g. 'report.pdf'). This is the stored filename in the documents folder."
+                        description: "Stored filename/basename in the LocalAgent documents folder (e.g. 'report.pdf'), not an absolute path. If list_recent_files gives a full path inside the documents folder, pass only the basename."
                     ),
                     "caption": ParameterProperty(
                         type: "string",
@@ -536,7 +536,7 @@ enum AvailableTools {
     static let editFile = ToolDefinition(
         function: FunctionDefinition(
             name: "edit_file",
-            description: "Performs exact string replacements in files.\n\nUsage:\n- You must use the read_file tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from read_file output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. Everything after that is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.\n- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.\n- The result includes a 'diff' field (unified-diff preview, capped 50 lines / 4 KB) and a 'diagnostics' array — inspect both. Re-read and fix on severity='error'.",
+            description: "Performs exact string replacements in files.\n\nUsage:\n- You must use the read_file tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from read_file output, preserve the exact indentation (tabs/spaces) after the display-only line prefix. The line prefix looks like '42→' or ' 42→'. Everything after the arrow is actual file content to match. Never include any part of the line number prefix in old_string or new_string.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.\n- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.\n- The result includes a 'diff' field (unified-diff preview, capped 50 lines / 4 KB) and a 'diagnostics' array — inspect both. Re-read and fix on severity='error'.",
             parameters: FunctionParameters(
                 properties: [
                     "path": ParameterProperty(type: "string", description: "Absolute path to the file."),
@@ -565,19 +565,22 @@ enum AvailableTools {
     static let grep = ToolDefinition(
         function: FunctionDefinition(
             name: "grep",
-            description: "A powerful search tool built on ripgrep.\n\nUsage:\n- ALWAYS use grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The grep tool has been optimized for correct permissions, ignore lists, and output shaping — the Bash equivalents bypass all of that.\n- Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\").\n- Filter files with the include glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\").\n- Output modes: \"content\" shows matching lines (supports -A/-B/-C context), \"files_with_matches\" shows only file paths (use when you only need to know which files contain the pattern — much cheaper), \"count\" shows match counts per file.\n- Pattern syntax: uses ripgrep (not POSIX grep) — literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code).\n- Multiline matching: by default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`.\n- Use the Agent tool for open-ended searches requiring multiple rounds of grep/glob.\n- 100-entry cap, 2000-char-per-line cap, results sorted by mtime descending. Common project ignores (.git, node_modules, DerivedData, etc.) are always applied.",
+            description: "A powerful search tool built on ripgrep.\n\nUsage:\n- ALWAYS use grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The grep tool has been optimized for correct permissions, ignore lists, and output shaping — the Bash equivalents bypass all of that.\n- Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\").\n- Filter files with the include glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., \"js\", \"py\", \"rust\").\n- Output modes: \"content\" shows matching lines (supports context_before/context_after/context), \"files_with_matches\" shows only file paths (use when you only need to know which files contain the pattern — much cheaper), \"count\" shows match counts per file.\n- Pattern syntax: uses ripgrep (not POSIX grep) — literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code).\n- Multiline matching: by default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`.\n- Use the Agent tool for open-ended searches requiring multiple rounds of grep/glob.\n- 100-entry cap, 2000-char-per-line cap, results sorted by mtime descending. Common project ignores (.git, node_modules, DerivedData, etc.) are always applied.",
             parameters: FunctionParameters(
                 properties: [
                     "pattern": ParameterProperty(type: "string", description: "Regex pattern to search for (ripgrep/ECMAScript-compatible)."),
                     "path": ParameterProperty(type: "string", description: "Absolute directory path to search under."),
                     "include": ParameterProperty(type: "string", description: "Optional filename glob to filter, e.g. '*.swift' or '*.{ts,tsx}'."),
                     "type": ParameterProperty(type: "string", description: "Optional ripgrep file-type filter (e.g. 'swift', 'ts', 'py', 'rust'). More efficient than include for standard languages. Requires ripgrep. Run `rg --type-list` to see all types."),
-                    "output_mode": ParameterProperty(type: "string", description: "Output shape: 'content' (default, returns matching lines), 'files_with_matches' (returns just file paths — use when you only need to know which files contain the pattern), or 'count' (returns match counts per file). Prefer files_with_matches when scanning a large repo; it's much cheaper than reading every matching line."),
+                    "output_mode": ParameterProperty(type: "string", description: "Output shape: 'content' (default, returns matching lines), 'files_with_matches' (returns just file paths — use when you only need to know which files contain the pattern), or 'count' (returns match counts per file). Prefer files_with_matches when scanning a large repo; it's much cheaper than reading every matching line.", enumValues: ["content", "files_with_matches", "count"]),
                     "case_insensitive": ParameterProperty(type: "boolean", description: "Optional. If true, matches regardless of case (equivalent to ripgrep -i). Default false."),
                     "multiline": ParameterProperty(type: "boolean", description: "Optional. If true, allows regex patterns to span multiple lines (`.` matches newlines). Useful for patterns like 'struct Foo \\{[\\s\\S]*?bar'. Default false."),
-                    "-A": ParameterProperty(type: "integer", description: "Optional. Lines of context to show AFTER each match (content mode only). Use when you need to see what follows a match."),
-                    "-B": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BEFORE each match (content mode only)."),
-                    "-C": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BOTH before and after each match (content mode only). Shorthand for setting -A and -B to the same value."),
+                    "context_after": ParameterProperty(type: "integer", description: "Optional. Lines of context to show AFTER each match (content mode only). Prefer this over the legacy -A alias."),
+                    "context_before": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BEFORE each match (content mode only). Prefer this over the legacy -B alias."),
+                    "context": ParameterProperty(type: "integer", description: "Optional. Lines of context to show BOTH before and after each match (content mode only). Prefer this over the legacy -C alias."),
+                    "-A": ParameterProperty(type: "integer", description: "Legacy alias for context_after. Optional lines of context to show AFTER each match (content mode only)."),
+                    "-B": ParameterProperty(type: "integer", description: "Legacy alias for context_before. Optional lines of context to show BEFORE each match (content mode only)."),
+                    "-C": ParameterProperty(type: "integer", description: "Legacy alias for context. Optional lines of context to show BOTH before and after each match (content mode only)."),
                     "max_results": ParameterProperty(type: "integer", description: "Optional. Maximum entries (lines/files) to return (default 100, hard cap 100).")
                 ],
                 required: ["pattern", "path"]
@@ -636,7 +639,7 @@ enum AvailableTools {
     static let bash = ToolDefinition(
         function: FunctionDefinition(
             name: "bash",
-            description: "Executes a given shell command via /bin/zsh -lc and returns its output.\n\nThe working directory persists between commands is not supported — use the workdir parameter each call if you need a specific directory. Supports ~ and $VAR expansion.\n\nIMPORTANT: Avoid using this tool to run `find`, `grep`, `rg`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:\n\n - File search: use glob (NOT find or ls)\n - Content search: use grep (NOT grep or rg)\n - Read files: use read_file (NOT cat/head/tail)\n - Edit files: use edit_file (NOT sed/awk)\n - Write files: use write_file (NOT echo >/cat <<EOF)\n - Communication: output text directly (NOT echo/printf)\n\nWhile the bash tool can do similar things, it's better to use the built-in tools as they provide a better experience and make it easier to review tool calls and give permission.\n\nForeground (default): waits for the command to finish, returns stdout/stderr/exit_code. Default 120s timeout, 600s hard max, 30 KB output cap per stream.\n\nBackground (run_in_background=true): returns immediately with a handle like 'bash_1' and the process keeps running. You will be notified automatically when it exits. Use bash_manage(mode='output') to peek at live output, bash_manage(mode='kill') to stop it, or bash_manage(mode='watch') to subscribe to regex matches. Use background mode for dev servers, long builds, and any command that may exceed the foreground timeout.",
+            description: "Executes a given shell command via /bin/zsh -lc and returns its output.\n\nThe working directory does not persist between calls — use the workdir parameter on each call if you need a specific directory. Supports ~ and $VAR expansion.\n\nIMPORTANT: Avoid using this tool to run `find`, `grep`, `rg`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:\n\n - File search: use glob (NOT find or ls)\n - Content search: use grep (NOT grep or rg)\n - Read files: use read_file (NOT cat/head/tail)\n - Edit files: use edit_file (NOT sed/awk)\n - Write files: use write_file (NOT echo >/cat <<EOF)\n - Communication: output text directly (NOT echo/printf)\n\nWhile the bash tool can do similar things, it's better to use the built-in tools as they provide a better experience and make it easier to review tool calls and give permission.\n\nForeground (default): waits for the command to finish, returns stdout/stderr/exit_code. Default 120s timeout, 600s hard max, 30 KB output cap per stream.\n\nBackground (run_in_background=true): returns immediately with a handle like 'bash_1' and the process keeps running. You will be notified automatically when it exits. Use bash_manage(mode='output') to peek at live output, bash_manage(mode='kill') to stop it, or bash_manage(mode='watch') to subscribe to regex matches. Use background mode for dev servers, long builds, and any command that may exceed the foreground timeout.",
             parameters: FunctionParameters(
                 properties: [
                     "command": ParameterProperty(type: "string", description: "The shell command to run."),
@@ -710,7 +713,7 @@ enum AvailableTools {
                                     enumValues: ["pending", "in_progress", "completed"]
                                 )
                             ],
-                            required: ["content", "status"]
+                            required: ["content", "activeForm", "status"]
                         )
                     )
                 ],
@@ -812,8 +815,8 @@ enum AvailableTools {
                             description: "Optional. Pass a session_id from a prior Agent call to resume that subagent's conversation with its full prior context intact. Omit to start a fresh session. Every Agent call returns a session_id in its result — save it if you might want to continue later. Use subagent_manage(mode='list_sessions') to see all available sessions."
                         ),
                         "run_in_background": ParameterProperty(
-                            type: "string",
-                            description: "Pass 'true' to run the subagent in the background and receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Useful for long-running Explore or Plan tasks so the parent can continue in parallel. Default 'false' (synchronous)."
+                            type: "boolean",
+                            description: "Optional. When true, run the subagent in the background and receive a synthetic [SUBAGENT COMPLETE] user message when it finishes. Useful for long-running Explore or Plan tasks so the parent can continue in parallel. Default false (synchronous)."
                         ),
                         "model": ParameterProperty(
                             type: "string",
@@ -840,7 +843,7 @@ enum AvailableTools {
                     ),
                     "handle": ParameterProperty(
                         type: "string",
-                        description: "For mode='cancel' only. The handle returned by Agent(run_in_background='true'), e.g. 'subagent_1'."
+                        description: "For mode='cancel' only. The handle returned by Agent(run_in_background=true), e.g. 'subagent_1'."
                     ),
                     "limit": ParameterProperty(
                         type: "integer",

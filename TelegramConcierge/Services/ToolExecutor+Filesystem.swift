@@ -79,9 +79,9 @@ extension ToolExecutor {
         }
         let caseInsensitive = args.bool("case_insensitive") ?? args.bool("-i") ?? false
         let multiline = args.bool("multiline") ?? false
-        let contextC = args.int("-C") ?? args.int("context")
-        let contextBefore = args.int("-B") ?? contextC ?? 0
-        let contextAfter = args.int("-A") ?? contextC ?? 0
+        let contextC = args.int("context") ?? args.int("-C")
+        let contextBefore = args.int("context_before") ?? args.int("-B") ?? contextC ?? 0
+        let contextAfter = args.int("context_after") ?? args.int("-A") ?? contextC ?? 0
         let maxResults = args.int("max_results") ?? DiscoveryTools.maxResults
         let result = await DiscoveryTools.grep(
             pattern: pattern,

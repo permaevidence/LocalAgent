@@ -2309,14 +2309,49 @@ struct GmailAttachmentArguments: Codable {
 
 // MARK: - Agent (subagent) Tool
 
-struct SubagentInvocationArguments: Codable {
+struct SubagentInvocationArguments: Decodable {
     let subagent_type: String
     let description: String
     let prompt: String
     let session_id: String?
     let close_session: String?
-    let run_in_background: String?
+    let run_in_background: Bool?
     let model: String?
+
+    enum CodingKeys: String, CodingKey {
+        case subagent_type
+        case description
+        case prompt
+        case session_id
+        case close_session
+        case run_in_background
+        case model
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        subagent_type = try container.decode(String.self, forKey: .subagent_type)
+        description = try container.decode(String.self, forKey: .description)
+        prompt = try container.decode(String.self, forKey: .prompt)
+        session_id = try container.decodeIfPresent(String.self, forKey: .session_id)
+        close_session = try container.decodeIfPresent(String.self, forKey: .close_session)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+
+        if let boolValue = try? container.decodeIfPresent(Bool.self, forKey: .run_in_background) {
+            run_in_background = boolValue
+        } else if let rawValue = try? container.decodeIfPresent(String.self, forKey: .run_in_background) {
+            switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "yes", "1":
+                run_in_background = true
+            case "false", "no", "0":
+                run_in_background = false
+            default:
+                run_in_background = nil
+            }
+        } else {
+            run_in_background = nil
+        }
+    }
 }
 
 extension ToolExecutor {
@@ -2338,7 +2373,7 @@ extension ToolExecutor {
         let imagesDir = subagentImagesDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/images", isDirectory: true)
         let documentsDir = subagentDocumentsDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("LocalAgent/documents", isDirectory: true)
         let parentTools = AvailableTools.all(includeWebSearch: true)
-        let runInBg = Self.parseBoolFlag(args.run_in_background)
+        let runInBg = args.run_in_background ?? false
         let invocation = SubagentRunner.Invocation(
             subagentType: args.subagent_type,
             description: args.description,
@@ -2402,7 +2437,7 @@ extension ToolExecutor {
         // Same tool surface the parent sees this session — the subagent's type filter will narrow it.
         let parentTools = AvailableTools.all(includeWebSearch: true)
 
-        let runInBg = Self.parseBoolFlag(args.run_in_background)
+        let runInBg = args.run_in_background ?? false
         let invocation = SubagentRunner.Invocation(
             subagentType: args.subagent_type,
             description: args.description,
@@ -2445,14 +2480,6 @@ extension ToolExecutor {
             parentTools: parentTools
         )
         return result.asJSON()
-    }
-
-    private static func parseBoolFlag(_ raw: String?) -> Bool {
-        guard let raw else { return false }
-        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "true", "yes", "1": return true
-        default: return false
-        }
     }
 
     func executeSubagentManage(_ call: ToolCall) async -> String {

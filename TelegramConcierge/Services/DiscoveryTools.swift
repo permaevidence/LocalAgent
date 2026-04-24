@@ -438,7 +438,8 @@ enum DiscoveryTools {
 
     // MARK: - glob
 
-    /// Find files by name pattern (simple glob: *, ?, **/ for recursive).
+    /// Find files by glob pattern. Basename-only patterns match immediate children;
+    /// path-qualified or ** patterns match relative paths under the search root.
     static func glob(pattern: String, searchPath: String? = nil, maxResults: Int = DiscoveryTools.maxResults) async -> OpResult {
         let root: String
         if let searchPath {
@@ -454,16 +455,18 @@ enum DiscoveryTools {
             return OpResult(content: jsonError("search path does not exist or is not a directory: \(root)"))
         }
 
-        let recursive = pattern.contains("**")
-        let fileGlob = pattern.replacingOccurrences(of: "**/", with: "")
+        let matchPattern = pattern.hasPrefix("./") ? String(pattern.dropFirst(2)) : pattern
+        let pathQualified = matchPattern.contains("/")
+        let recursive = matchPattern.contains("**") || pathQualified
         let regex: NSRegularExpression
         do {
-            regex = try NSRegularExpression(pattern: globToRegex(fileGlob))
+            regex = try NSRegularExpression(pattern: globToRegex(matchPattern))
         } catch {
             return OpResult(content: jsonError("invalid glob pattern: \(pattern)"))
         }
 
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
+        let rootPrefix = root.hasSuffix("/") ? root : root + "/"
         let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
@@ -486,8 +489,15 @@ enum DiscoveryTools {
             }
             let resource = try? item.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
             guard resource?.isRegularFile == true else { continue }
-            let nameRange = NSRange(name.startIndex..<name.endIndex, in: name)
-            if regex.firstMatch(in: name, range: nameRange) != nil {
+            let relativePath: String
+            if item.path.hasPrefix(rootPrefix) {
+                relativePath = String(item.path.dropFirst(rootPrefix.count))
+            } else {
+                relativePath = name
+            }
+            let candidate = pathQualified ? relativePath : name
+            let range = NSRange(candidate.startIndex..<candidate.endIndex, in: candidate)
+            if regex.firstMatch(in: candidate, range: range) != nil {
                 hits.append(Hit(path: item.path, mtime: resource?.contentModificationDate ?? .distantPast))
             }
         }
@@ -645,12 +655,26 @@ enum DiscoveryTools {
         )
     }
 
-    /// Convert a shell-style glob (supporting *, ?, and character classes) into a regex anchored to the full name.
+    /// Convert a shell-style glob (supporting *, ?, **/, and character classes) into a regex anchored to the full candidate.
     private static func globToRegex(_ glob: String) -> String {
         var out = "^"
-        for ch in glob {
+        let chars = Array(glob)
+        var i = 0
+        while i < chars.count {
+            let ch = chars[i]
             switch ch {
-            case "*": out += "[^/]*"
+            case "*":
+                if i + 1 < chars.count, chars[i + 1] == "*" {
+                    if i + 2 < chars.count, chars[i + 2] == "/" {
+                        out += "(?:.*/)?"
+                        i += 3
+                    } else {
+                        out += ".*"
+                        i += 2
+                    }
+                    continue
+                }
+                out += "[^/]*"
             case "?": out += "[^/]"
             case ".", "(", ")", "{", "}", "^", "$", "+", "|", "\\":
                 out += "\\\(ch)"
@@ -661,6 +685,7 @@ enum DiscoveryTools {
             default:
                 out += String(ch)
             }
+            i += 1
         }
         out += "$"
         return out
