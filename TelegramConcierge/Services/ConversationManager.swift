@@ -1004,7 +1004,7 @@ class ConversationManager: ObservableObject {
         case "manage_reminders": return "⏰"
         case "write_file", "edit_file", "apply_patch": return "✏️"
         case "read_file", "grep", "glob", "list_dir", "list_recent_files": return "🔎"
-        case "lsp_hover", "lsp_definition", "lsp_references": return "🔬"
+        case "lsp": return "🔬"
         case "bash", "bash_manage": return "💻"
         case "send_document_to_chat": return "📎"
         case "shortcuts", "run_shortcut", "list_shortcuts": return "⌘"
@@ -2364,9 +2364,7 @@ class ConversationManager: ObservableObject {
         }
 
         // LSP semantic queries.
-        if toolNames.contains("lsp_hover")
-            || toolNames.contains("lsp_definition")
-            || toolNames.contains("lsp_references") {
+        if toolNames.contains("lsp") {
             return "🔬 Analyzing code..."
         }
 

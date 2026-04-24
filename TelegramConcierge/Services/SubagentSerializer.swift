@@ -289,7 +289,7 @@ enum SubagentTemplates {
                 description: "Reads broadly and returns findings with verbatim quotes and citations.",
                 systemPrompt:
                     "You are a read-only research analyst. Gather information from the codebase and the web, then return a structured report with quotes, file paths, and URLs. Do not modify files. Prioritize accuracy over speed — verify claims with two sources when possible. Output as bullet points under short headers, ending with a 'Confidence' line (high/medium/low) per claim.",
-                nativeTools: ["read_file", "grep", "glob", "list_dir", "lsp_hover", "lsp_definition", "lsp_references", "web_search", "web_fetch"],
+                nativeTools: ["read_file", "grep", "glob", "list_dir", "lsp", "web_search", "web_fetch"],
                 mcpToolPatterns: nil,
                 model: "cheapFast",
                 maxTurns: 20
@@ -303,7 +303,7 @@ enum SubagentTemplates {
                 description: "Designs a step-by-step plan with critical files, sequencing, and risks.",
                 systemPrompt:
                     "You are a software architect. Read relevant code, then return a sequenced plan: (1) goal, (2) files to touch with brief why, (3) order of operations, (4) risks + rollback, (5) verification steps. Do not modify files. Be concrete — no hand-waving like 'then handle errors'.",
-                nativeTools: ["read_file", "grep", "glob", "list_dir", "list_recent_files", "lsp_hover", "lsp_definition", "lsp_references", "web_fetch", "web_search"],
+                nativeTools: ["read_file", "grep", "glob", "list_dir", "list_recent_files", "lsp", "web_fetch", "web_search"],
                 mcpToolPatterns: nil,
                 model: "cheapFast",
                 maxTurns: 20
@@ -331,7 +331,7 @@ enum SubagentTemplates {
                 description: "Reviews a diff or file for bugs, security issues, and clarity concerns.",
                 systemPrompt:
                     "You are a code reviewer. Read the specified diff or file(s), identify concrete issues (bugs, security vulnerabilities, unclear names, missing edge cases, poor error handling). For each finding: cite the file:line, describe the issue, and suggest a fix. Skip style nits unless they meaningfully hurt readability. End with a one-line summary verdict: 'LGTM', 'minor issues', or 'blocking issues'.",
-                nativeTools: ["read_file", "grep", "glob", "list_dir", "lsp_hover", "lsp_definition", "lsp_references", "bash"],
+                nativeTools: ["read_file", "grep", "glob", "list_dir", "lsp", "bash"],
                 mcpToolPatterns: nil,
                 model: "cheapFast",
                 maxTurns: 15

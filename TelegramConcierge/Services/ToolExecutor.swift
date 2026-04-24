@@ -217,12 +217,8 @@ actor ToolExecutor {
             content = await executeCancelSubagent(call)
         case "list_subagent_sessions":
             content = await executeListSubagentSessions(call)
-        case "lsp_hover":
-            content = await executeLSPHover(call)
-        case "lsp_definition":
-            content = await executeLSPDefinition(call)
-        case "lsp_references":
-            content = await executeLSPReferences(call)
+        case "lsp":
+            content = await executeLSP(call)
 
         case "manage_reminders":
             content = try await executeManageReminders(call)

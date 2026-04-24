@@ -254,37 +254,30 @@ extension ToolExecutor {
         return "{\"error\": \"failed to encode todo result\"}"
     }
 
-    // MARK: - lsp_hover / lsp_definition / lsp_references
+    // MARK: - lsp (unified hover/definition/references)
 
-    func executeLSPHover(_ call: ToolCall) async -> String {
+    func executeLSP(_ call: ToolCall) async -> String {
         let args = parseArgs(call.function.arguments)
+        guard let mode = args.string("mode") else {
+            return "{\"error\": \"lsp requires 'mode' (hover, definition, or references)\"}"
+        }
         guard let path = args.string("path"),
               let line = args.int("line"),
               let column = args.int("column") else {
-            return "{\"error\": \"lsp_hover requires 'path', 'line', 'column' (all 1-indexed like read_file output)\"}"
+            return "{\"error\": \"lsp requires 'path', 'line', 'column' (all 1-indexed like read_file output)\"}"
         }
-        return await LSPRegistry.shared.hover(path: path, line: line, column: column)
-    }
 
-    func executeLSPDefinition(_ call: ToolCall) async -> String {
-        let args = parseArgs(call.function.arguments)
-        guard let path = args.string("path"),
-              let line = args.int("line"),
-              let column = args.int("column") else {
-            return "{\"error\": \"lsp_definition requires 'path', 'line', 'column'\"}"
+        switch mode {
+        case "hover":
+            return await LSPRegistry.shared.hover(path: path, line: line, column: column)
+        case "definition":
+            return await LSPRegistry.shared.definition(path: path, line: line, column: column)
+        case "references":
+            let includeDeclaration = args.bool("include_declaration") ?? true
+            return await LSPRegistry.shared.references(path: path, line: line, column: column, includeDeclaration: includeDeclaration)
+        default:
+            return "{\"error\": \"Unknown mode '\(mode)'. Use 'hover', 'definition', or 'references'.\"}"
         }
-        return await LSPRegistry.shared.definition(path: path, line: line, column: column)
-    }
-
-    func executeLSPReferences(_ call: ToolCall) async -> String {
-        let args = parseArgs(call.function.arguments)
-        guard let path = args.string("path"),
-              let line = args.int("line"),
-              let column = args.int("column") else {
-            return "{\"error\": \"lsp_references requires 'path', 'line', 'column'\"}"
-        }
-        let includeDeclaration = args.bool("include_declaration") ?? true
-        return await LSPRegistry.shared.references(path: path, line: line, column: column, includeDeclaration: includeDeclaration)
     }
 
     private func escapeJSON(_ s: String) -> String {

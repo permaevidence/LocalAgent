@@ -739,48 +739,23 @@ enum AvailableTools {
         )
     )
 
-    static let lspHover = ToolDefinition(
+    static let lsp = ToolDefinition(
         function: FunctionDefinition(
-            name: "lsp_hover",
-            description: "Ask the language server what a symbol is: type signature, docstring, brief description. Position is 1-indexed to match read_file's line numbers. Use when you need to understand code without reading the whole definition.",
+            name: "lsp",
+            description: "Query the language server for symbol information. Three modes: (1) 'hover' — type signature, docstring, brief description of the symbol at the given position. (2) 'definition' — go-to-definition, returns locations {path, line, column, end_line, end_column}. Much more accurate than grep because the language server understands scope and imports. (3) 'references' — find every use of a symbol across the workspace. Prefer over grep for code-symbol search. All positions are 1-indexed to match read_file output.",
             parameters: FunctionParameters(
                 properties: [
+                    "mode": ParameterProperty(
+                        type: "string",
+                        description: "LSP operation to perform.",
+                        enumValues: ["hover", "definition", "references"]
+                    ),
                     "path": ParameterProperty(type: "string", description: "Absolute path to the file."),
-                    "line": ParameterProperty(type: "integer", description: "1-indexed line number (same numbering as read_file output)."),
-                    "column": ParameterProperty(type: "integer", description: "1-indexed column within the line — point at the symbol name.")
-                ],
-                required: ["path", "line", "column"]
-            )
-        )
-    )
-
-    static let lspDefinition = ToolDefinition(
-        function: FunctionDefinition(
-            name: "lsp_definition",
-            description: "Find where a symbol is defined (go-to-definition). Returns a list of locations {path, line, column, end_line, end_column} with 1-indexed positions. Much more accurate than grep because the language server understands scope and imports.",
-            parameters: FunctionParameters(
-                properties: [
-                    "path": ParameterProperty(type: "string", description: "Absolute path to the file containing the symbol reference."),
-                    "line": ParameterProperty(type: "integer", description: "1-indexed line number where the symbol appears."),
-                    "column": ParameterProperty(type: "integer", description: "1-indexed column of the symbol.")
-                ],
-                required: ["path", "line", "column"]
-            )
-        )
-    )
-
-    static let lspReferences = ToolDefinition(
-        function: FunctionDefinition(
-            name: "lsp_references",
-            description: "Find every use of a symbol across the workspace. Returns locations {path, line, column, end_line, end_column} with 1-indexed positions. Prefer over grep for code-symbol search — the language server knows scope and excludes comments/strings/unrelated names.",
-            parameters: FunctionParameters(
-                properties: [
-                    "path": ParameterProperty(type: "string", description: "Absolute path to a file where the symbol appears."),
                     "line": ParameterProperty(type: "integer", description: "1-indexed line number of the symbol."),
                     "column": ParameterProperty(type: "integer", description: "1-indexed column of the symbol."),
-                    "include_declaration": ParameterProperty(type: "boolean", description: "Include the declaration site in results. Default true.")
+                    "include_declaration": ParameterProperty(type: "boolean", description: "For mode='references' only. Include the declaration site in results. Default true.")
                 ],
-                required: ["path", "line", "column"]
+                required: ["mode", "path", "line", "column"]
             )
         )
     )
@@ -926,7 +901,7 @@ enum AvailableTools {
 
     /// New filesystem tool surface (replaces the sandboxed document tools).
     static var filesystemTools: [ToolDefinition] {
-        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashManage, todoWrite, lspHover, lspDefinition, lspReferences]
+        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashManage, todoWrite, lsp]
     }
 
     /// Non-email tools that do not depend on web search credentials.

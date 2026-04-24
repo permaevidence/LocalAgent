@@ -76,7 +76,7 @@ enum SubagentTypes {
             "You are a read-only file search and exploration specialist. Prioritize speed — use parallel tool calls aggressively. Do NOT modify any files. Do NOT run write-bash commands (no `rm`, `mv`, `mkdir`, `cat >`, `echo >`, etc.). Return findings with file paths and line numbers. Report verbatim code snippets when they matter.",
         allowedToolNames: [
             "read_file", "grep", "glob", "list_dir", "list_recent_files",
-            "lsp_hover", "lsp_definition", "lsp_references",
+            "lsp",
             "web_fetch", "web_search", "bash"
         ],
         defaultMaxTurns: 80,
@@ -90,7 +90,7 @@ enum SubagentTypes {
             "You are a software architect designing an implementation plan. Explore using read-only tools, then return a step-by-step plan with: critical files to touch, sequencing, risks, and architectural trade-offs. Do NOT execute or modify files.",
         allowedToolNames: [
             "read_file", "grep", "glob", "list_dir", "list_recent_files",
-            "lsp_hover", "lsp_definition", "lsp_references",
+            "lsp",
             "web_fetch", "web_search", "bash"
         ],
         defaultMaxTurns: 80,
