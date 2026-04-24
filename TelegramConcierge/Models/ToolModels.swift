@@ -809,7 +809,7 @@ enum AvailableTools {
                         ),
                         "session_id": ParameterProperty(
                             type: "string",
-                            description: "Optional. Pass a session_id from a prior Agent call to resume that subagent's conversation with its full prior context intact. Omit to start a fresh session. Every Agent call returns a session_id in its result — save it if you might want to continue later. Use list_subagent_sessions to see all available sessions."
+                            description: "Optional. Pass a session_id from a prior Agent call to resume that subagent's conversation with its full prior context intact. Omit to start a fresh session. Every Agent call returns a session_id in its result — save it if you might want to continue later. Use subagent_manage(mode='list_sessions') to see all available sessions."
                         ),
                         "run_in_background": ParameterProperty(
                             type: "string",
@@ -827,37 +827,31 @@ enum AvailableTools {
         )
     }
 
-    static let listRunningSubagents = ToolDefinition(
+    static let subagentManage = ToolDefinition(
         function: FunctionDefinition(
-            name: "list_running_subagents",
-            description: "List every subagent currently running in the background (spawned via Agent with run_in_background='true'). Returns a JSON array of {handle, subagent_type, description, started_at, running_seconds}. Use to check what's in flight before cancelling or to confirm a background spawn is still working.",
-            parameters: FunctionParameters(properties: [:], required: [])
-        )
-    )
-
-    static let listSubagentSessions = ToolDefinition(
-        function: FunctionDefinition(
-            name: "list_subagent_sessions",
-            description: "List all subagent sessions from this app run, sorted by most-recently-used first. Each session is resumable by passing its session_id to the Agent tool. Use this to find session IDs for resuming a prior subagent conversation.",
+            name: "subagent_manage",
+            description: "Manage background subagents. Three modes: (1) 'list_running' — list every subagent currently running in the background. Returns {handle, subagent_type, description, started_at, running_seconds} for each. (2) 'list_sessions' — list all subagent sessions from this app run, sorted by most-recently-used. Each session is resumable by passing its session_id to the Agent tool. (3) 'cancel' — cancel a running background subagent by handle. Cancellation is best-effort at the next turn boundary.",
             parameters: FunctionParameters(
                 properties: [
-                    "limit": ParameterProperty(type: "integer", description: "Max sessions to return. Default 20."),
-                    "offset": ParameterProperty(type: "integer", description: "Number of sessions to skip (for pagination). Default 0.")
+                    "mode": ParameterProperty(
+                        type: "string",
+                        description: "Action to perform.",
+                        enumValues: ["list_running", "list_sessions", "cancel"]
+                    ),
+                    "handle": ParameterProperty(
+                        type: "string",
+                        description: "For mode='cancel' only. The handle returned by Agent(run_in_background='true'), e.g. 'subagent_1'."
+                    ),
+                    "limit": ParameterProperty(
+                        type: "integer",
+                        description: "For mode='list_sessions' only. Max sessions to return. Default 20."
+                    ),
+                    "offset": ParameterProperty(
+                        type: "integer",
+                        description: "For mode='list_sessions' only. Number of sessions to skip for pagination. Default 0."
+                    )
                 ],
-                required: []
-            )
-        )
-    )
-
-    static let cancelSubagent = ToolDefinition(
-        function: FunctionDefinition(
-            name: "cancel_subagent",
-            description: "Cancel a running background subagent by handle. Cancellation is best-effort and takes effect at the subagent's next turn boundary — an in-flight tool call finishes first, then the subagent exits and surfaces a truncated [SUBAGENT COMPLETE] message to you. Returns {cancelled: bool, handle, reason?}.",
-            parameters: FunctionParameters(
-                properties: [
-                    "handle": ParameterProperty(type: "string", description: "The handle returned by Agent(run_in_background='true'), e.g. 'subagent_1'.")
-                ],
-                required: ["handle"]
+                required: ["mode"]
             )
         )
     )
@@ -892,13 +886,12 @@ enum AvailableTools {
     /// GoogleWorkspaceService.
     ///
     /// When `localagent.subagentsEnabled` is false in UserDefaults, the Agent
-    /// tool and its three management tools (list_running_subagents,
-    /// list_subagent_sessions, cancel_subagent) are omitted — gives a fully
-    /// local setup a way to disable cloud-delegating tools in one switch.
+    /// tool and its management tool (subagent_manage) are omitted — gives a
+    /// fully local setup a way to disable cloud-delegating tools in one switch.
     static var coreToolsWithoutWebSearch: [ToolDefinition] {
         let subagentsEnabled = UserDefaults.standard.object(forKey: "localagent.subagentsEnabled") as? Bool ?? true
         let subagentTools: [ToolDefinition] = subagentsEnabled
-            ? [agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent]
+            ? [agentTool, subagentManage]
             : []
         return filesystemTools + [manageReminders, viewConversationChunk, generateImage, sendDocumentToChat, shortcuts] + subagentTools + [skill]
     }

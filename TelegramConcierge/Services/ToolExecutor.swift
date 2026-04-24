@@ -209,12 +209,8 @@ actor ToolExecutor {
             content = await executeBashManage(call)
         case "todo_write":
             content = await executeTodoWrite(call)
-        case "list_running_subagents":
-            content = await executeListRunningSubagents(call)
-        case "cancel_subagent":
-            content = await executeCancelSubagent(call)
-        case "list_subagent_sessions":
-            content = await executeListSubagentSessions(call)
+        case "subagent_manage":
+            content = await executeSubagentManage(call)
         case "lsp":
             content = await executeLSP(call)
 
@@ -2459,95 +2455,82 @@ extension ToolExecutor {
         }
     }
 
-    func executeListRunningSubagents(_ call: ToolCall) async -> String {
-        let handles = await SubagentBackgroundRegistry.shared.runningHandles()
-        let now = Date()
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let rows: [[String: Any]] = handles.map { h in
-            [
-                "handle": h.id,
-                "subagent_type": h.subagentType,
-                "description": h.description,
-                "started_at": iso.string(from: h.startedAt),
-                "running_seconds": Int(now.timeIntervalSince(h.startedAt))
-            ]
-        }
-        let payload: [String: Any] = [
-            "count": rows.count,
-            "running": rows
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
-           let str = String(data: data, encoding: .utf8) {
-            return str
-        }
-        return "{\"error\": \"failed to encode list_running_subagents result\"}"
-    }
-
-    func executeCancelSubagent(_ call: ToolCall) async -> String {
-        struct Args: Decodable { let handle: String? }
-        guard let data = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(Args.self, from: data),
-              let handle = args.handle, !handle.isEmpty else {
-            return "{\"cancelled\": false, \"reason\": \"missing 'handle' argument\"}"
-        }
-        let ok = await SubagentBackgroundRegistry.shared.cancel(id: handle)
-        let payload: [String: Any]
-        if ok {
-            payload = [
-                "cancelled": true,
-                "handle": handle,
-                "note": "Cancellation requested. Takes effect at the subagent's next turn boundary — you will still receive a [SUBAGENT COMPLETE] message."
-            ]
-        } else {
-            payload = [
-                "cancelled": false,
-                "handle": handle,
-                "reason": "not found"
-            ]
-        }
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
-           let str = String(data: data, encoding: .utf8) {
-            return str
-        }
-        return "{\"error\": \"failed to encode cancel_subagent result\"}"
-    }
-
-    func executeListSubagentSessions(_ call: ToolCall) async -> String {
-        struct Args: Decodable { let limit: Int?; let offset: Int? }
+    func executeSubagentManage(_ call: ToolCall) async -> String {
+        struct Args: Decodable { let mode: String?; let handle: String?; let limit: Int?; let offset: Int? }
         let args: Args
         if let data = call.function.arguments.data(using: .utf8),
            let decoded = try? JSONDecoder().decode(Args.self, from: data) {
             args = decoded
         } else {
-            args = Args(limit: nil, offset: nil)
+            args = Args(mode: nil, handle: nil, limit: nil, offset: nil)
         }
-        let limit = args.limit ?? 20
-        let offset = args.offset ?? 0
-        let (sessions, total) = await SubagentSessionRegistry.shared.list(limit: limit, offset: offset)
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let rows: [[String: Any]] = sessions.map { s in
-            [
-                "session_id": s.id,
-                "subagent_type": s.subagentType,
-                "description": s.description,
-                "created": iso.string(from: s.created),
-                "last_used": iso.string(from: s.lastUsed),
-                "total_turns": s.totalTurns,
-                "message_count": s.messages.count,
-                "spend_usd": s.totalSpendUSD
-            ]
+        guard let mode = args.mode else {
+            return "{\"error\": \"subagent_manage requires 'mode' (list_running, list_sessions, or cancel)\"}"
         }
-        let payload: [String: Any] = [
-            "sessions": rows,
-            "total": total,
-            "has_more": offset + limit < total
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
-           let str = String(data: data, encoding: .utf8) {
-            return str
+
+        switch mode {
+        case "list_running":
+            let handles = await SubagentBackgroundRegistry.shared.runningHandles()
+            let now = Date()
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            let rows: [[String: Any]] = handles.map { h in
+                [
+                    "handle": h.id,
+                    "subagent_type": h.subagentType,
+                    "description": h.description,
+                    "started_at": iso.string(from: h.startedAt),
+                    "running_seconds": Int(now.timeIntervalSince(h.startedAt))
+                ]
+            }
+            let payload: [String: Any] = ["count": rows.count, "running": rows]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{\"error\": \"failed to encode subagent_manage list_running result\"}"
+
+        case "cancel":
+            guard let handle = args.handle, !handle.isEmpty else {
+                return "{\"cancelled\": false, \"reason\": \"mode='cancel' requires 'handle'\"}"
+            }
+            let ok = await SubagentBackgroundRegistry.shared.cancel(id: handle)
+            let payload: [String: Any] = ok
+                ? ["cancelled": true, "handle": handle, "note": "Cancellation requested. Takes effect at the subagent's next turn boundary."]
+                : ["cancelled": false, "handle": handle, "reason": "not found"]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{\"error\": \"failed to encode subagent_manage cancel result\"}"
+
+        case "list_sessions":
+            let limit = args.limit ?? 20
+            let offset = args.offset ?? 0
+            let (sessions, total) = await SubagentSessionRegistry.shared.list(limit: limit, offset: offset)
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            let rows: [[String: Any]] = sessions.map { s in
+                [
+                    "session_id": s.id,
+                    "subagent_type": s.subagentType,
+                    "description": s.description,
+                    "created": iso.string(from: s.created),
+                    "last_used": iso.string(from: s.lastUsed),
+                    "total_turns": s.totalTurns,
+                    "message_count": s.messages.count,
+                    "spend_usd": s.totalSpendUSD
+                ]
+            }
+            let payload: [String: Any] = ["sessions": rows, "total": total, "has_more": offset + limit < total]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{\"error\": \"failed to encode subagent_manage list_sessions result\"}"
+
+        default:
+            return "{\"error\": \"Unknown mode '\(mode)'. Use 'list_running', 'list_sessions', or 'cancel'.\"}"
         }
-        return "{\"error\": \"failed to encode list_subagent_sessions result\"}"
     }
 }

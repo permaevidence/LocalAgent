@@ -999,7 +999,7 @@ class ConversationManager: ObservableObject {
         case "web_search": return "🔍"
         case "web_fetch": return "🌐"
         case "Agent": return "🤖"
-        case "list_subagent_sessions", "list_running_subagents", "cancel_subagent": return "🤖"
+        case "subagent_manage": return "🤖"
         case "generate_image": return "🎨"
         case "manage_reminders": return "⏰"
         case "write_file", "edit_file", "apply_patch": return "✏️"
@@ -2331,9 +2331,7 @@ class ConversationManager: ObservableObject {
         if toolNames.contains("Agent") {
             return "🤖 Running subagent..."
         }
-        if toolNames.contains("list_subagent_sessions")
-            || toolNames.contains("list_running_subagents")
-            || toolNames.contains("cancel_subagent") {
+        if toolNames.contains("subagent_manage") {
             return "🤖 Managing subagents..."
         }
 
