@@ -1007,7 +1007,7 @@ actor WebOrchestrator {
         )
     }
     
-    /// Download a single image from URL - used by web_fetch_image tool
+    /// Download a single image from URL
     enum ImageDownloadFailure: Error {
         case invalidURL
         case httpError(Int)

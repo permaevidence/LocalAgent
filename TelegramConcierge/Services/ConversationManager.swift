@@ -997,7 +997,7 @@ class ConversationManager: ObservableObject {
         switch name {
         case "web_research_sweep": return "🧠🔍"
         case "web_search": return "🔍"
-        case "web_fetch", "web_fetch_image": return "🌐"
+        case "web_fetch": return "🌐"
         case "Agent": return "🤖"
         case "list_subagent_sessions", "list_running_subagents", "cancel_subagent": return "🤖"
         case "generate_image": return "🎨"
@@ -2323,7 +2323,7 @@ class ConversationManager: ObservableObject {
         if toolNames.contains("web_search") {
             return "🔍 Searching the web..."
         }
-        if toolNames.contains("web_fetch") || toolNames.contains("web_fetch_image") {
+        if toolNames.contains("web_fetch") {
             return "🌐 Fetching web content..."
         }
 

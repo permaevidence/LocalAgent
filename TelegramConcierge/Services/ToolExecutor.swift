@@ -173,8 +173,6 @@ actor ToolExecutor {
             return await executeShortcuts(call)
         case "generate_image":
             return await executeGenerateImage(call)
-        case "web_fetch_image":
-            return await executeWebFetchImage(call)
         case "run_shortcut":
             return await executeRunShortcut(call)
         case "web_search":
@@ -2049,68 +2047,13 @@ extension ToolExecutor {
         do {
             let result = try await webOrchestrator.readUrlContent(url: args.url, prompt: promptTrim)
             // Returns a prompt-compressed excerpt plus image metadata (captions, URLs)
-            // LLM can use web_fetch_image tool to download specific images it wants to see
+            // LLM can use bash curl + read_file to download and view specific images
             return result.asJSON()
         } catch {
             return "{\"error\": \"Failed to fetch URL: \(error.localizedDescription)\"}"
         }
     }
 
-    /// Download a specific image from a URL for multimodal injection
-    /// LLM uses this after viewing page metadata to selectively download interesting images
-    func executeWebFetchImage(_ call: ToolCall) async -> ToolResultMessage {
-        guard let argsData = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(WebFetchImageArguments.self, from: argsData) else {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Failed to parse web_fetch_image arguments\"}")
-        }
-
-        // Validate URL format
-        guard args.imageUrl.hasPrefix("http://") || args.imageUrl.hasPrefix("https://") else {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid URL format. URL must start with http:// or https://\"}")
-        }
-        
-        // Download the image, surfacing a precise error so the agent doesn't silently hang.
-        let downloadedImage: DownloadedImage
-        do {
-            downloadedImage = try await webOrchestrator.downloadImageOrThrow(url: args.imageUrl, caption: args.caption ?? "")
-        } catch WebOrchestrator.ImageDownloadFailure.unsupportedFormat(let mime) {
-            let msg = "Vision models cannot read \(mime) images (e.g. SVG badges, PDFs). Supported formats: jpeg, png, gif, webp. Use web_fetch with a specific prompt to describe the content, or bash curl to save the file locally."
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
-        } catch WebOrchestrator.ImageDownloadFailure.notAnImage(let mime) {
-            let msg = "URL did not return an image (Content-Type: \(mime)). Use web_fetch for page content or bash curl to download the file."
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
-        } catch WebOrchestrator.ImageDownloadFailure.httpError(let code) {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Image fetch failed with HTTP \(code). The URL may be expired (common for GitHub camo proxies) or require auth.\"}")
-        } catch WebOrchestrator.ImageDownloadFailure.tooLarge(let bytes) {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Image too large: \(bytes) bytes. Max supported size is 10 MB.\"}")
-        } catch WebOrchestrator.ImageDownloadFailure.invalidURL {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Invalid URL.\"}")
-        } catch WebOrchestrator.ImageDownloadFailure.network(let reason) {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit("Network error downloading image: \(reason)"))}")
-        } catch {
-            return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit("Failed to download image: \(error.localizedDescription)"))}")
-        }
-
-        // Create file attachment for multimodal injection. Filename extension reflects the real mime.
-        let ext: String
-        switch downloadedImage.mimeType {
-        case "image/png": ext = "png"
-        case "image/gif": ext = "gif"
-        case "image/webp": ext = "webp"
-        default: ext = "jpg"
-        }
-        let filename = "page_image_\(UUID().uuidString.prefix(8)).\(ext)"
-        let attachment = FileAttachment(data: downloadedImage.data, mimeType: downloadedImage.mimeType, filename: filename)
-
-        print("[ToolExecutor] Downloaded page image for multimodal injection: \(downloadedImage.data.count) bytes from \(args.imageUrl)")
-
-        let result = """
-        {"success": true, "mimeType": "\(downloadedImage.mimeType)", "sizeBytes": \(downloadedImage.data.count), "message": "Image downloaded successfully. You can now see and analyze it."}
-        """
-
-        return ToolResultMessage(toolCallId: call.id, content: result, fileAttachment: attachment)
-    }
-    
 }
 
 // MARK: - URL Tool Argument Types
@@ -2118,16 +2061,6 @@ extension ToolExecutor {
 struct WebFetchArguments: Codable {
     let url: String
     let prompt: String
-}
-
-struct WebFetchImageArguments: Codable {
-    let imageUrl: String
-    let caption: String?
-
-    enum CodingKeys: String, CodingKey {
-        case imageUrl = "image_url"
-        case caption
-    }
 }
 
 // MARK: - Send Document to Chat Tool

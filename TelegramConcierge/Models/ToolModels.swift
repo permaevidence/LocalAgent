@@ -433,7 +433,7 @@ enum AvailableTools {
     static let webFetch = ToolDefinition(
         function: FunctionDefinition(
             name: "web_fetch",
-            description: "IMPORTANT: web_fetch WILL FAIL for authenticated or private URLs. Before using this tool, check if the URL points to an authenticated service (e.g. Google Docs, Confluence, Jira, Notion). If so, look for a specialized MCP tool that provides authenticated access.\n\nFetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or web_research_sweep when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, use web_fetch_image with an image URL from the images array. Ideal for: reading articles, documentation, product pages, API references, or any URL from search results where you need targeted information.\n\nUsage notes:\n- For GitHub URLs (PRs, issues, pull request diffs, repo contents), prefer using the gh CLI via bash instead — e.g. `gh pr view`, `gh issue view`, `gh api repos/<owner>/<repo>/...`. It handles auth automatically and is faster.\n- For a single known file in a public repo, `web_fetch` on the raw.githubusercontent.com URL is the lightest option (no clone, no API).\n- If the URL redirects to a different host, the tool will inform you and provide the redirect URL in the response. Make a new web_fetch request with the redirect URL to fetch the content.\n- The tool includes a short-lived cache so repeated calls on the same URL within a single session are cheap — you can re-fetch without worrying about re-ranking cost.",
+            description: "IMPORTANT: web_fetch WILL FAIL for authenticated or private URLs. Before using this tool, check if the URL points to an authenticated service (e.g. Google Docs, Confluence, Jira, Notion). If so, look for a specialized MCP tool that provides authenticated access.\n\nFetches content from a URL and processes it with an AI model that extracts only the information matching your prompt. Use AFTER web_search or web_research_sweep when you need the content of a specific page. Returns a focused excerpt plus structured image and link arrays. If you want to actually SEE an image from the page, download it with bash curl -o /tmp/img.png <url> then read_file to view it multimodally. Ideal for: reading articles, documentation, product pages, API references, or any URL from search results where you need targeted information.\n\nUsage notes:\n- For GitHub URLs (PRs, issues, pull request diffs, repo contents), prefer using the gh CLI via bash instead — e.g. `gh pr view`, `gh issue view`, `gh api repos/<owner>/<repo>/...`. It handles auth automatically and is faster.\n- For a single known file in a public repo, `web_fetch` on the raw.githubusercontent.com URL is the lightest option (no clone, no API).\n- If the URL redirects to a different host, the tool will inform you and provide the redirect URL in the response. Make a new web_fetch request with the redirect URL to fetch the content.\n- The tool includes a short-lived cache so repeated calls on the same URL within a single session are cheap — you can re-fetch without worrying about re-ranking cost.",
             parameters: FunctionParameters(
                 properties: [
                     "url": ParameterProperty(
@@ -450,26 +450,6 @@ enum AvailableTools {
         )
     )
 
-    static let webFetchImage = ToolDefinition(
-        function: FunctionDefinition(
-            name: "web_fetch_image",
-            description: "Download and view a specific image from a webpage. Use AFTER web_fetch when you want to actually see and analyze an image. The images array from web_fetch contains captions and URLs - use the caption to decide which image is relevant, then call this tool with the image_url. The downloaded image will be visible to you for analysis.",
-            parameters: FunctionParameters(
-                properties: [
-                    "image_url": ParameterProperty(
-                        type: "string",
-                        description: "Direct URL to the image to download and view. Use the url field from an image in the images array returned by web_fetch."
-                    ),
-                    "caption": ParameterProperty(
-                        type: "string",
-                        description: "Optional caption or description for the image (from the web_fetch response). Helps with context."
-                    )
-                ],
-                required: ["image_url"]
-            )
-        )
-    )
-    
     // MARK: - Send Document to Telegram Chat
     
     static let sendDocumentToChat = ToolDefinition(
@@ -927,7 +907,7 @@ enum AvailableTools {
     /// are added; email/calendar/contacts tools have been fully removed from the
     /// agent surface in favor of the gws CLI.
     static func all(includeWebSearch: Bool) -> [ToolDefinition] {
-        let webTools = includeWebSearch ? [webSearch, webResearchSweep, webFetch, webFetchImage] : []
+        let webTools = includeWebSearch ? [webSearch, webResearchSweep, webFetch] : []
         return webTools + coreToolsWithoutWebSearch
     }
     
