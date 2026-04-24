@@ -207,12 +207,8 @@ actor ToolExecutor {
             content = await executeListRecentFiles(call)
         case "bash":
             content = await executeBash(call)
-        case "bash_output":
-            content = await executeBashOutput(call)
-        case "bash_kill":
-            content = await executeBashKill(call)
-        case "bash_watch":
-            content = await executeBashWatch(call)
+        case "bash_manage":
+            content = await executeBashManage(call)
         case "todo_write":
             content = await executeTodoWrite(call)
         case "list_running_subagents":
@@ -241,9 +237,6 @@ actor ToolExecutor {
 
         case "web_fetch":
             content = await executeWebFetch(call)
-            
-        case "download_from_url":
-            content = await executeDownloadFromUrl(call)
             
         case "send_document_to_chat":
             content = await executeSendDocumentToChat(call)
@@ -2085,10 +2078,10 @@ extension ToolExecutor {
         do {
             downloadedImage = try await webOrchestrator.downloadImageOrThrow(url: args.imageUrl, caption: args.caption ?? "")
         } catch WebOrchestrator.ImageDownloadFailure.unsupportedFormat(let mime) {
-            let msg = "Vision models cannot read \(mime) images (e.g. SVG badges, PDFs). Supported formats: jpeg, png, gif, webp. Use web_fetch with a specific prompt to describe the content, or download_from_url to save the file locally."
+            let msg = "Vision models cannot read \(mime) images (e.g. SVG badges, PDFs). Supported formats: jpeg, png, gif, webp. Use web_fetch with a specific prompt to describe the content, or bash curl to save the file locally."
             return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
         } catch WebOrchestrator.ImageDownloadFailure.notAnImage(let mime) {
-            let msg = "URL did not return an image (Content-Type: \(mime)). Use web_fetch or download_from_url for non-image content."
+            let msg = "URL did not return an image (Content-Type: \(mime)). Use web_fetch for page content or bash curl to download the file."
             return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \(jsonStringLit(msg))}")
         } catch WebOrchestrator.ImageDownloadFailure.httpError(let code) {
             return ToolResultMessage(toolCallId: call.id, content: "{\"error\": \"Image fetch failed with HTTP \(code). The URL may be expired (common for GitHub camo proxies) or require auth.\"}")
@@ -2122,103 +2115,6 @@ extension ToolExecutor {
         return ToolResultMessage(toolCallId: call.id, content: result, fileAttachment: attachment)
     }
     
-    func executeDownloadFromUrl(_ call: ToolCall) async -> String {
-        guard let argsData = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(DownloadFromUrlArguments.self, from: argsData) else {
-            return "{\"error\": \"Failed to parse download_from_url arguments\"}"
-        }
-        
-        // Validate URL format
-        guard let url = URL(string: args.url),
-              let scheme = url.scheme,
-              ["http", "https"].contains(scheme.lowercased()) else {
-            return "{\"error\": \"Invalid URL format. URL must start with http:// or https://\"}"
-        }
-        
-        do {
-            // Download the file
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 120
-            
-            // Add common headers to avoid blocks
-            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                return "{\"error\": \"Download failed with HTTP status \(statusCode)\"}"
-            }
-            
-            // Determine filename
-            let filename: String
-            if let preferredFilename = args.filename, !preferredFilename.isEmpty {
-                filename = preferredFilename
-            } else {
-                // Try to derive from Content-Disposition header or URL
-                if let contentDisposition = httpResponse.value(forHTTPHeaderField: "Content-Disposition"),
-                   let filenameMatch = contentDisposition.range(of: "filename=\"([^\"]+)\"", options: .regularExpression) {
-                    filename = String(contentDisposition[filenameMatch]).replacingOccurrences(of: "filename=\"", with: "").replacingOccurrences(of: "\"", with: "")
-                } else if let lastComponent = url.pathComponents.last, lastComponent.contains(".") {
-                    filename = lastComponent
-                } else {
-                    // Generate filename based on content type
-                    let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
-                    let ext = extensionForMimeType(contentType)
-                    filename = "download_\(UUID().uuidString.prefix(8)).\(ext)"
-                }
-            }
-            
-            // Save to the documents directory used by Telegram uploads
-            let fileURL = documentsDirectory.appendingPathComponent(filename)
-            
-            try data.write(to: fileURL)
-            
-            // Also save to images directory if it's an image (for Gemini vision access)
-            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
-            if contentType.hasPrefix("image/") {
-                let imageFileURL = imagesDirectory.appendingPathComponent(filename)
-                try? data.write(to: imageFileURL)
-            }
-            
-            print("[ToolExecutor] Downloaded file: \(filename) (\(data.count) bytes)")
-            
-            let result = DownloadFromUrlResult(
-                success: true,
-                filename: filename,
-                fileSize: data.count,
-                contentType: contentType,
-                message: "File downloaded successfully. You can reference it as '\(filename)' or attach it to emails."
-            )
-            
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            if let resultData = try? encoder.encode(result), let json = String(data: resultData, encoding: .utf8) {
-                return json
-            }
-            return "{\"success\": true, \"filename\": \"\(filename)\", \"message\": \"File downloaded\"}"
-        } catch {
-            return "{\"error\": \"Download failed: \(error.localizedDescription)\"}"
-        }
-    }
-    
-    private func extensionForMimeType(_ mimeType: String) -> String {
-        let type = mimeType.lowercased().components(separatedBy: ";").first ?? mimeType.lowercased()
-        switch type {
-        case "image/jpeg", "image/jpg": return "jpg"
-        case "image/png": return "png"
-        case "image/gif": return "gif"
-        case "image/webp": return "webp"
-        case "application/pdf": return "pdf"
-        case "text/html": return "html"
-        case "text/plain": return "txt"
-        case "application/json": return "json"
-        case "application/xml", "text/xml": return "xml"
-        case "application/zip": return "zip"
-        default: return "bin"
-        }
-    }
 }
 
 // MARK: - URL Tool Argument Types
@@ -2235,24 +2131,6 @@ struct WebFetchImageArguments: Codable {
     enum CodingKeys: String, CodingKey {
         case imageUrl = "image_url"
         case caption
-    }
-}
-
-struct DownloadFromUrlArguments: Codable {
-    let url: String
-    let filename: String?
-}
-
-struct DownloadFromUrlResult: Codable {
-    let success: Bool
-    let filename: String
-    let fileSize: Int
-    let contentType: String
-    let message: String
-    
-    enum CodingKeys: String, CodingKey {
-        case success, filename, message, contentType
-        case fileSize = "file_size"
     }
 }
 

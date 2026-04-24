@@ -291,7 +291,7 @@ class ConversationManager: ObservableObject {
                     // Check for completed background subagents
                     await checkBackgroundSubagentCompletions()
 
-                    // Check for pending bash_watch matches (mid-stream output triggers)
+                    // Check for pending bash_manage watch matches (mid-stream output triggers)
                     await checkBashWatchMatches()
 
                     if DebugTelemetry.shared.verbose {
@@ -1005,8 +1005,8 @@ class ConversationManager: ObservableObject {
         case "write_file", "edit_file", "apply_patch": return "✏️"
         case "read_file", "grep", "glob", "list_dir", "list_recent_files": return "🔎"
         case "lsp_hover", "lsp_definition", "lsp_references": return "🔬"
-        case "bash", "bash_output", "bash_watch", "bash_kill": return "💻"
-        case "send_document_to_chat", "download_from_url": return "📎"
+        case "bash", "bash_manage": return "💻"
+        case "send_document_to_chat": return "📎"
         case "shortcuts", "run_shortcut", "list_shortcuts": return "⌘"
         case "todo_write": return "📋"
         case "view_conversation_chunk": return "🗂"
@@ -2373,14 +2373,12 @@ class ConversationManager: ObservableObject {
         // Bash (catch-all for shell). Check AFTER more specific patterns so
         // "bash gws gmail" etc. falls here only if no other match applied.
         if toolNames.contains("bash")
-            || toolNames.contains("bash_output")
-            || toolNames.contains("bash_watch")
-            || toolNames.contains("bash_kill") {
+            || toolNames.contains("bash_manage") {
             return "💻 Running command..."
         }
 
         // Document / media sends.
-        if toolNames.contains("send_document_to_chat") || toolNames.contains("download_from_url") {
+        if toolNames.contains("send_document_to_chat") {
             return "📎 Handling files..."
         }
 
@@ -2919,9 +2917,9 @@ class ConversationManager: ObservableObject {
         statusMessage = "Listening... (Last check: \(formattedTime()))"
     }
 
-    // MARK: - Background bash_watch match handling
+    // MARK: - Background bash_manage watch match handling
 
-    /// Drain pending `bash_watch` regex matches and inject them into the conversation as
+    /// Drain pending `bash_manage watch` regex matches and inject them into the conversation as
     /// synthetic user messages, coalesced by handle so that a burst of matches within a
     /// single poll tick produces ONE wake-up (not N re-entries into the agentic loop).
     /// Reuses the `.bashComplete` message kind — these are ephemeral notifications that
@@ -2991,7 +2989,7 @@ class ConversationManager: ObservableObject {
             } else {
                 let last = group.last!
                 let remaining = max(last.limit - last.matchesSoFar, 0)
-                body += "\nThe watch is still active (\(remaining) of \(last.limit) remaining). Use bash_output for full context or bash_kill to terminate."
+                body += "\nThe watch is still active (\(remaining) of \(last.limit) remaining). Use bash_manage(mode='output') for full context or bash_manage(mode='kill') to terminate."
             }
 
             let userMessage = Message(role: .user, content: body, kind: .bashComplete)
@@ -3025,10 +3023,10 @@ class ConversationManager: ObservableObject {
                         try await telegramService.sendMessage(chatId: chatId, text: finalResponse)
                     }
                 }
-                print("[ConversationManager] bash_watch match batch for \(handle) processed (\(totalCount) match\(totalCount == 1 ? "" : "es"))")
+                print("[ConversationManager] bash_manage watch match batch for \(handle) processed (\(totalCount) match\(totalCount == 1 ? "" : "es"))")
             } catch {
-                self.error = "Failed to process bash_watch match: \(error.localizedDescription)"
-                print("[ConversationManager] Failed to process bash_watch match: \(error)")
+                self.error = "Failed to process bash_manage watch match: \(error.localizedDescription)"
+                print("[ConversationManager] Failed to process bash_manage watch match: \(error)")
             }
         }
 

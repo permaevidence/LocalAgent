@@ -105,7 +105,7 @@ enum BashTools {
                 "status": "running",
                 "command": command,
                 "description": description ?? "",
-                "message": "Process started in background. Use bash_output(\"\(handle.id)\") to peek at output, bash_kill(\"\(handle.id)\") to stop. You will be notified automatically when it exits."
+                "message": "Process started in background. Use bash_manage(mode='output', handle='\(handle.id)') to peek at output, bash_manage(mode='kill', handle='\(handle.id)') to stop. You will be notified automatically when it exits."
             ]))
         } catch {
             return OpResult(content: jsonError("failed to spawn background process: \(error.localizedDescription)"))

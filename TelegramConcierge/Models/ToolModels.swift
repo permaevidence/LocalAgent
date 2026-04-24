@@ -470,26 +470,6 @@ enum AvailableTools {
         )
     )
     
-    static let downloadFromUrl = ToolDefinition(
-        function: FunctionDefinition(
-            name: "download_from_url",
-            description: "Download a file or image from a URL. Use to save images, PDFs, documents, or other files from the web. The file is saved locally and you can reference it in subsequent messages or attach it to emails. Supports: images (jpg, png, gif, webp), PDFs, and common document formats.",
-            parameters: FunctionParameters(
-                properties: [
-                    "url": ParameterProperty(
-                        type: "string",
-                        description: "Direct URL to the file to download (e.g., 'https://example.com/image.jpg'). Must be a direct link to the file, not a webpage."
-                    ),
-                    "filename": ParameterProperty(
-                        type: "string",
-                        description: "Optional preferred filename for the downloaded file. If not provided, will be derived from the URL or generated."
-                    )
-                ],
-                required: ["url"]
-            )
-        )
-    )
-    
     // MARK: - Send Document to Telegram Chat
     
     static let sendDocumentToChat = ToolDefinition(
@@ -676,7 +656,7 @@ enum AvailableTools {
     static let bash = ToolDefinition(
         function: FunctionDefinition(
             name: "bash",
-            description: "Executes a given shell command via /bin/zsh -lc and returns its output.\n\nThe working directory persists between commands is not supported — use the workdir parameter each call if you need a specific directory. Supports ~ and $VAR expansion.\n\nIMPORTANT: Avoid using this tool to run `find`, `grep`, `rg`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:\n\n - File search: use glob (NOT find or ls)\n - Content search: use grep (NOT grep or rg)\n - Read files: use read_file (NOT cat/head/tail)\n - Edit files: use edit_file (NOT sed/awk)\n - Write files: use write_file (NOT echo >/cat <<EOF)\n - Communication: output text directly (NOT echo/printf)\n\nWhile the bash tool can do similar things, it's better to use the built-in tools as they provide a better experience and make it easier to review tool calls and give permission.\n\nForeground (default): waits for the command to finish, returns stdout/stderr/exit_code. Default 120s timeout, 600s hard max, 30 KB output cap per stream.\n\nBackground (run_in_background=true): returns immediately with a handle like 'bash_1' and the process keeps running. You will be notified automatically when it exits. Use bash_output to peek at live output, bash_kill to stop it. Use background mode for dev servers, long builds, and any command that may exceed the foreground timeout.",
+            description: "Executes a given shell command via /bin/zsh -lc and returns its output.\n\nThe working directory persists between commands is not supported — use the workdir parameter each call if you need a specific directory. Supports ~ and $VAR expansion.\n\nIMPORTANT: Avoid using this tool to run `find`, `grep`, `rg`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:\n\n - File search: use glob (NOT find or ls)\n - Content search: use grep (NOT grep or rg)\n - Read files: use read_file (NOT cat/head/tail)\n - Edit files: use edit_file (NOT sed/awk)\n - Write files: use write_file (NOT echo >/cat <<EOF)\n - Communication: output text directly (NOT echo/printf)\n\nWhile the bash tool can do similar things, it's better to use the built-in tools as they provide a better experience and make it easier to review tool calls and give permission.\n\nForeground (default): waits for the command to finish, returns stdout/stderr/exit_code. Default 120s timeout, 600s hard max, 30 KB output cap per stream.\n\nBackground (run_in_background=true): returns immediately with a handle like 'bash_1' and the process keeps running. You will be notified automatically when it exits. Use bash_manage(mode='output') to peek at live output, bash_manage(mode='kill') to stop it, or bash_manage(mode='watch') to subscribe to regex matches. Use background mode for dev servers, long builds, and any command that may exceed the foreground timeout.",
             parameters: FunctionParameters(
                 properties: [
                     "command": ParameterProperty(type: "string", description: "The shell command to run."),
@@ -690,53 +670,35 @@ enum AvailableTools {
         )
     )
 
-    static let bashOutput = ToolDefinition(
+    static let bashManage = ToolDefinition(
         function: FunctionDefinition(
-            name: "bash_output",
-            description: "Read the current accumulated stdout/stderr of a background bash handle without stopping it. Returns status (running/exited/killed/crashed), exit_code when finished, and bytes-so-far. Use the 'since' byte offset for incremental reads across polls.",
+            name: "bash_manage",
+            description: "Manage background bash processes. Three modes: (1) 'output' — read accumulated stdout/stderr without stopping the process, with optional incremental reads via 'since' byte offset. (2) 'watch' — subscribe to live output matching a regex pattern; matches arrive as synthetic [BASH WATCH MATCH] user messages so you can react immediately. Auto-unsubscribes after 'limit' matches or on process exit. (3) 'kill' — send SIGTERM then SIGKILL after a grace period.",
             parameters: FunctionParameters(
                 properties: [
-                    "handle": ParameterProperty(type: "string", description: "The handle returned by bash(run_in_background=true), e.g. 'bash_1'."),
-                    "since": ParameterProperty(type: "integer", description: "Optional byte offset into the stdout stream. Omit or pass 0 for the full accumulated output.")
-                ],
-                required: ["handle"]
-            )
-        )
-    )
-
-    static let bashWatch = ToolDefinition(
-        function: FunctionDefinition(
-            name: "bash_watch",
-            description: "Subscribe to output from a running background bash process. When a line matching the regex pattern appears on stdout OR stderr, a synthetic [BASH WATCH MATCH] user message is injected into the conversation — the agent wakes up and can react immediately (kill the process, run a fix, notify user, etc.). The watch auto-unsubscribes after `limit` matches or when the process exits. Use for tailing dev servers, catching errors during installs, progress-gated workflows. For simple wait-for-completion, just use `bash` with run_in_background and wait for the completion event.",
-            parameters: FunctionParameters(
-                properties: [
+                    "mode": ParameterProperty(
+                        type: "string",
+                        description: "Action to perform on the background process.",
+                        enumValues: ["output", "watch", "kill"]
+                    ),
                     "handle": ParameterProperty(
                         type: "string",
-                        description: "The background bash handle returned from an earlier bash call (e.g. 'bash_3'). Process must still be running."
+                        description: "The background bash handle (e.g. 'bash_1') returned by bash(run_in_background=true)."
+                    ),
+                    "since": ParameterProperty(
+                        type: "integer",
+                        description: "For mode='output' only. Byte offset into stdout stream for incremental reads. Omit or pass 0 for full output."
                     ),
                     "pattern": ParameterProperty(
                         type: "string",
-                        description: "Regular expression (POSIX/NSRegularExpression syntax) matched against each line of stdout/stderr as it arrives. Case-sensitive by default — prefix with (?i) for case-insensitive. Keep it specific — broad patterns like '.' will flood the conversation and auto-unsubscribe on first match."
+                        description: "For mode='watch' only. Regex (POSIX/NSRegularExpression) matched against each line of stdout/stderr. Case-sensitive; prefix with (?i) for case-insensitive."
                     ),
                     "limit": ParameterProperty(
                         type: "integer",
-                        description: "Maximum number of match events to emit before auto-unsubscribing. Default 10. Reasonable range 1-50."
+                        description: "For mode='watch' only. Max match events before auto-unsubscribe. Default 10, range 1-50."
                     )
                 ],
-                required: ["handle", "pattern"]
-            )
-        )
-    )
-
-    static let bashKill = ToolDefinition(
-        function: FunctionDefinition(
-            name: "bash_kill",
-            description: "Terminate a background bash handle. Sends SIGTERM, then SIGKILL after a short grace period if still running. Use when a background process is no longer needed or is misbehaving.",
-            parameters: FunctionParameters(
-                properties: [
-                    "handle": ParameterProperty(type: "string", description: "The handle to kill, e.g. 'bash_1'.")
-                ],
-                required: ["handle"]
+                required: ["mode", "handle"]
             )
         )
     )
@@ -964,7 +926,7 @@ enum AvailableTools {
 
     /// New filesystem tool surface (replaces the sandboxed document tools).
     static var filesystemTools: [ToolDefinition] {
-        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashOutput, bashKill, bashWatch, todoWrite, lspHover, lspDefinition, lspReferences]
+        [readFile, writeFile, editFile, applyPatch, grep, glob, listDir, listRecentFiles, bash, bashManage, todoWrite, lspHover, lspDefinition, lspReferences]
     }
 
     /// Non-email tools that do not depend on web search credentials.
@@ -983,7 +945,7 @@ enum AvailableTools {
         let subagentTools: [ToolDefinition] = subagentsEnabled
             ? [agentTool, listRunningSubagents, listSubagentSessions, cancelSubagent]
             : []
-        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, downloadFromUrl, sendDocumentToChat, shortcuts] + subagentTools + [skill]
+        return filesystemTools + [manageReminders, viewConversationChunk, generateImage, sendDocumentToChat, shortcuts] + subagentTools + [skill]
     }
 
     /// All available tools. `includeWebSearch` toggles whether the four web tools

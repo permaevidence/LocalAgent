@@ -1,7 +1,7 @@
 import Foundation
 
-/// Handlers for the new filesystem tool surface: read_file, write_file, edit_file,
-/// apply_patch, grep, glob, list_dir, list_recent_files, bash, bash_output, bash_kill.
+/// Handlers for the filesystem tool surface: read_file, write_file, edit_file,
+/// apply_patch, grep, glob, list_dir, list_recent_files, bash, bash_manage.
 ///
 /// Parsing pattern: decode arguments from JSONValue (since the tool schema uses
 /// string-typed parameters that may arrive as numbers/bools/objects), delegate to the
@@ -154,59 +154,59 @@ extension ToolExecutor {
         }
     }
 
-    // MARK: - bash_output
+    // MARK: - bash_manage (unified output/watch/kill)
 
-    func executeBashOutput(_ call: ToolCall) async -> String {
+    func executeBashManage(_ call: ToolCall) async -> String {
         let args = parseArgs(call.function.arguments)
+        guard let mode = args.string("mode") else {
+            return "{\"error\": \"bash_manage requires 'mode' (output, watch, or kill)\"}"
+        }
         guard let handle = args.string("handle") else {
-            return "{\"error\": \"bash_output requires 'handle'\"}"
+            return "{\"error\": \"bash_manage requires 'handle'\"}"
         }
-        let since = args.int("since") ?? 0
-        let result = await BashTools.output(handle: handle, since: since)
-        return result.content
-    }
 
-    // MARK: - bash_kill
+        switch mode {
+        case "output":
+            let since = args.int("since") ?? 0
+            let result = await BashTools.output(handle: handle, since: since)
+            return result.content
 
-    func executeBashKill(_ call: ToolCall) async -> String {
-        let args = parseArgs(call.function.arguments)
-        guard let handle = args.string("handle") else {
-            return "{\"error\": \"bash_kill requires 'handle'\"}"
-        }
-        let result = await BashTools.kill(handle: handle)
-        return result.content
-    }
+        case "kill":
+            let result = await BashTools.kill(handle: handle)
+            return result.content
 
-    // MARK: - bash_watch
-
-    func executeBashWatch(_ call: ToolCall) async -> String {
-        guard let data = call.function.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(BashWatchArguments.self, from: data) else {
-            return "{\"error\": \"Invalid bash_watch arguments — expected {handle, pattern, limit?}\"}"
-        }
-        let limit = max(1, min(args.limit ?? 10, 50))
-        let result = await BackgroundProcessRegistry.shared.registerWatch(
-            handle: args.handle,
-            pattern: args.pattern,
-            limit: limit
-        )
-        switch result {
-        case .success(let watchId):
-            let payload: [String: Any] = [
-                "success": true,
-                "watch_id": watchId,
-                "handle": args.handle,
-                "pattern": args.pattern,
-                "limit": limit,
-                "note": "Matches will arrive as synthetic [BASH WATCH MATCH] user messages. Watch auto-unsubscribes after \(limit) matches or on process exit."
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
-               let str = String(data: data, encoding: .utf8) {
-                return str
+        case "watch":
+            guard let data = call.function.arguments.data(using: .utf8),
+                  let watchArgs = try? JSONDecoder().decode(BashWatchArguments.self, from: data) else {
+                return "{\"error\": \"mode='watch' requires 'pattern' (regex string)\"}"
             }
-            return "{\"error\": \"failed to encode bash_watch response\"}"
-        case .failure(let err):
-            return "{\"error\": \"\(escapeJSON(err.description))\"}"
+            let limit = max(1, min(watchArgs.limit ?? 10, 50))
+            let result = await BackgroundProcessRegistry.shared.registerWatch(
+                handle: handle,
+                pattern: watchArgs.pattern,
+                limit: limit
+            )
+            switch result {
+            case .success(let watchId):
+                let payload: [String: Any] = [
+                    "success": true,
+                    "watch_id": watchId,
+                    "handle": handle,
+                    "pattern": watchArgs.pattern,
+                    "limit": limit,
+                    "note": "Matches will arrive as synthetic [BASH WATCH MATCH] user messages. Watch auto-unsubscribes after \(limit) matches or on process exit."
+                ]
+                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+                   let str = String(data: data, encoding: .utf8) {
+                    return str
+                }
+                return "{\"error\": \"failed to encode bash_manage watch response\"}"
+            case .failure(let err):
+                return "{\"error\": \"\(escapeJSON(err.description))\"}"
+            }
+
+        default:
+            return "{\"error\": \"Unknown mode '\(mode)'. Use 'output', 'watch', or 'kill'.\"}"
         }
     }
 
