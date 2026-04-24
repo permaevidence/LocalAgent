@@ -695,7 +695,7 @@ actor OpenRouterService {
             let hasMultimodal = hasImages || hasDocuments || hasReferencedImages || hasReferencedDocuments
             
             // Only send media inline for the CURRENT user message (during the active agentic loop)
-            // Historical messages get text-only hints pointing to the read_document tool
+            // Historical messages get text-only hints pointing to the read_file tool
             let isCurrentMessage = (currentUserMessageId != nil && message.id == currentUserMessageId)
             
             if hasMultimodal && isCurrentMessage {
@@ -809,7 +809,7 @@ actor OpenRouterService {
 
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .parts(contentParts)))
             } else if hasMultimodal {
-                // Historical message with media: text-only with hints to use read_document tool
+                // Historical message with media: text-only with hints to use read_file tool
                 var textContent = message.content
                 
                 // Add hints for referenced attachments (historical) with descriptions
@@ -822,7 +822,7 @@ actor OpenRouterService {
                             parts.append(filename)
                         }
                     }
-                    textContent = "[Referenced image(s): \(parts.joined(separator: "; ")) — use read_document to view] \(textContent)"
+                    textContent = "[Referenced image(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
                 }
                 if !message.referencedDocumentFileNames.isEmpty {
                     var parts: [String] = []
@@ -833,7 +833,7 @@ actor OpenRouterService {
                             parts.append(filename)
                         }
                     }
-                    textContent = "[Referenced document(s): \(parts.joined(separator: "; ")) — use read_document to view] \(textContent)"
+                    textContent = "[Referenced document(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
                 }
                 
                 // Add hints for primary attachments (historical) with descriptions
@@ -846,7 +846,7 @@ actor OpenRouterService {
                             parts.append(filename)
                         }
                     }
-                    textContent = "[Past image(s): \(parts.joined(separator: "; ")) — use read_document to view] \(textContent)"
+                    textContent = "[Past image(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
                 }
                 if !message.documentFileNames.isEmpty {
                     var parts: [String] = []
@@ -857,7 +857,7 @@ actor OpenRouterService {
                             parts.append(filename)
                         }
                     }
-                    textContent = "[Past document(s): \(parts.joined(separator: "; ")) — use read_document to view] \(textContent)"
+                    textContent = "[Past document(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
                 }
                 
                 if textContent.isEmpty {

@@ -711,7 +711,7 @@ enum DocumentGeneratorError: LocalizedError {
         case .noContent:
             return "No content provided for the document."
         case .imageNotFound(let filename):
-            return "Image file not found: '\(filename)'. Use list_documents to see available files."
+            return "Image file not found: '\(filename)'. Use glob or list_dir to find available files."
         }
     }
 }

@@ -401,50 +401,6 @@ enum AvailableTools {
             )
         )
     )
-        // MARK: - Document Tools
-    
-    static let listDocuments = ToolDefinition(
-        function: FunctionDefinition(
-            name: "list_documents",
-            description: "List stored documents ranked by recent usage (most recently opened first; never-opened files fall back to newest created first). Use this to find document filenames before attaching them to emails. Supports pagination: pass limit (default 40, max 100) and cursor (from previous response next_cursor) to continue browsing older files page by page. Returns universal ISO 8601 UTC timestamps for each document.",
-            parameters: FunctionParameters(
-                properties: [
-                    "limit": ParameterProperty(
-                        type: "integer",
-                        description: "Optional number of documents to return per page. Default 40, max 100."
-                    ),
-                    "cursor": ParameterProperty(
-                        type: "string",
-                        description: "Optional pagination cursor from a previous list_documents response (next_cursor). Omit on first call to get the latest documents."
-                    )
-                ],
-                required: []
-            )
-        )
-    )
-    
-    static let readDocument = ToolDefinition(
-        function: FunctionDefinition(
-            name: "read_document",
-            description: "Open and read one or more documents from local file storage. Use proactively to view, analyze, read, or examine files that are relevant to the user's request, but of which you can only see the name and description. It is important that you see first hand the documents that you are analyzing. It returns raw file data (images, PDFs, documents) for direct multimodal analysis. You can open up to 10 documents per call. You can use list_documents to find available files to read/open.",
-            parameters: FunctionParameters(
-                properties: [
-                    "document_filenames": ParameterProperty(
-                        type: "array",
-                        description: "Array of document filenames to read (from list_documents). Supports 1 to 10 files per call.",
-                        items: ArrayItemsSchema(type: "string")
-                    ),
-                    "document_filename": ParameterProperty(
-                        type: "string",
-                        description: "Optional legacy single filename form (from list_documents, e.g. 'abc123.pdf'). Prefer document_filenames."
-                    )
-                ],
-                required: ["document_filenames"]
-            )
-        )
-    )
-        // MARK: - Contact Tools
-    
     // MARK: - Image Generation Tool
     
     static let generateImage = ToolDefinition(
@@ -534,136 +490,17 @@ enum AvailableTools {
         )
     )
     
-    // MARK: - Document Generation Tool
-    
-    static let generateDocument = ToolDefinition(
-        function: FunctionDefinition(
-            name: "generate_document",
-            description: "Generate a document file (PDF, Word, or Excel/CSV) with specified content. Use for: creating reports, summaries, spreadsheets, formal documents, invoices, meeting notes, OR full-page image PDFs. For fullscreen images, use layout='fullscreen_image' with image_filename. IMPORTANT: When embedding images in PDFs, use read_document first to preview the image and verify it's appropriate for the content before referencing it. Generated files are saved and automatically sent via Telegram.",
-            parameters: FunctionParameters(
-                properties: [
-                    "document_type": ParameterProperty(
-                        type: "string",
-                        description: "Type of document: 'pdf' (best for formatted reports, letters, or fullscreen images), 'excel' (CSV format, best for data/tables), or 'word' (RTF format, best for editable documents).",
-                        enumValues: ["pdf", "excel", "word"]
-                    ),
-                    "title": ParameterProperty(
-                        type: "string",
-                        description: "Document title - used as filename and shown as main heading. Optional for fullscreen_image layout."
-                    ),
-                    "layout": ParameterProperty(
-                        type: "string",
-                        description: "PDF layout mode: 'standard' (default, with title/sections/margins) or 'fullscreen_image' (image fills entire page with no margins or title). Only applies to PDFs.",
-                        enumValues: ["standard", "fullscreen_image"]
-                    ),
-                    "image_filenames": ParameterProperty(
-                        type: "array",
-                        description: "Required for fullscreen_image layout. Array of image filenames. Each image becomes a full page in the PDF. Use list_documents to find available images.",
-                        items: ArrayItemsSchema(type: "string")
-                    ),
-                    "sections": ParameterProperty(
-                        type: "array",
-                        description: "Array of section objects for PDF/Word content.",
-                        items: ArrayItemsSchema(
-                            type: "object",
-                            properties: [
-                                "heading": ParameterProperty(
-                                    type: "string",
-                                    description: "Optional section heading."
-                                ),
-                                "body": ParameterProperty(
-                                    type: "string",
-                                    description: "Optional section body text."
-                                ),
-                                "bullet_points": ParameterProperty(
-                                    type: "array",
-                                    description: "Optional bullet points for the section.",
-                                    items: ArrayItemsSchema(type: "string")
-                                ),
-                                "table": ParameterProperty(
-                                    type: "object",
-                                    description: "Optional inline table for the section.",
-                                    properties: [
-                                        "headers": ParameterProperty(
-                                            type: "array",
-                                            description: "Optional column headers.",
-                                            items: ArrayItemsSchema(type: "string")
-                                        ),
-                                        "rows": ParameterProperty(
-                                            type: "array",
-                                            description: "Required 2D array of cell values.",
-                                            items: ArrayItemsSchema(
-                                                type: "array",
-                                                items: ArrayItemsSchema(type: "string")
-                                            )
-                                        )
-                                    ],
-                                    required: ["rows"]
-                                ),
-                                "image": ParameterProperty(
-                                    type: "object",
-                                    description: "Optional embedded image reference.",
-                                    properties: [
-                                        "filename": ParameterProperty(
-                                            type: "string",
-                                            description: "Filename from the documents/images directory."
-                                        ),
-                                        "caption": ParameterProperty(
-                                            type: "string",
-                                            description: "Optional caption below the image."
-                                        ),
-                                        "width": ParameterProperty(
-                                            type: "number",
-                                            description: "Optional width as a percentage of page width (10-100)."
-                                        ),
-                                        "alignment": ParameterProperty(
-                                            type: "string",
-                                            description: "Optional image alignment.",
-                                            enumValues: ["left", "center", "right"]
-                                        )
-                                    ],
-                                    required: ["filename"]
-                                )
-                            ]
-                        )
-                    ),
-                    "table_data": ParameterProperty(
-                        type: "object",
-                        description: "For Excel or simple table documents.",
-                        properties: [
-                            "headers": ParameterProperty(
-                                type: "array",
-                                description: "Optional column headers.",
-                                items: ArrayItemsSchema(type: "string")
-                            ),
-                            "rows": ParameterProperty(
-                                type: "array",
-                                description: "Required 2D array of cell values.",
-                                items: ArrayItemsSchema(
-                                    type: "array",
-                                    items: ArrayItemsSchema(type: "string")
-                                )
-                            )
-                        ],
-                        required: ["rows"]
-                    )
-                ],
-                required: ["document_type"]
-            )
-        )
-    )
-    
     // MARK: - Send Document to Telegram Chat
     
     static let sendDocumentToChat = ToolDefinition(
         function: FunctionDefinition(
             name: "send_document_to_chat",
-            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image that's in your file management. Works with: PDFs, images, documents downloaded from URLs, email attachments, or any file in your documents folder. You can use list_documents to find the filename before sending.",
+            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image. Works with: PDFs, images, documents downloaded from URLs, email attachments, or any file in the documents folder.",
             parameters: FunctionParameters(
                 properties: [
                     "document_filename": ParameterProperty(
                         type: "string",
-                        description: "The filename of the document to send (from list_documents, e.g. 'abc123.pdf'). This is the stored filename."
+                        description: "The filename of the document to send (e.g. 'report.pdf'). This is the stored filename in the documents folder."
                     ),
                     "caption": ParameterProperty(
                         type: "string",

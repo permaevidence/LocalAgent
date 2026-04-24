@@ -2170,7 +2170,7 @@ extension ToolExecutor {
                 }
             }
             
-            // Save to the same documents directory used by list_documents and Telegram uploads
+            // Save to the documents directory used by Telegram uploads
             let fileURL = documentsDirectory.appendingPathComponent(filename)
             
             try data.write(to: fileURL)
@@ -2268,7 +2268,7 @@ extension ToolExecutor {
         // Find the document file
         let documentURL = documentsDirectory.appendingPathComponent(args.documentFilename)
         guard FileManager.default.fileExists(atPath: documentURL.path) else {
-            return "{\"error\": \"Document not found: \(args.documentFilename). Use list_documents to see available files.\"}"
+            return "{\"error\": \"Document not found: \(args.documentFilename). Use glob or list_dir to find available files.\"}"
         }
         
         do {
