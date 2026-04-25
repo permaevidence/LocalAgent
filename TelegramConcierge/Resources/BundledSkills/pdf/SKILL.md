@@ -81,13 +81,19 @@ Pitch decks, feature summaries, value props. **Vary layouts on consecutive pages
 
 **When in doubt, prefer dense running text over visual patterns.** A well-written paragraph is always better than a half-empty card grid.
 
+### No text-only two-column layouts
+
+**Never split pure text into two columns on the same page.** Two-column text (CSS `column-count: 2` or side-by-side text blocks) looks fragmented and is hard to read. Always use a single full-width column for prose.
+
+Two-column layouts are ONLY acceptable when one column is an image/diagram and the other is text (the Split pattern). If both sides would be text, use a single column instead.
+
 ### Named layout patterns
 
 | Pattern | Best for | Key features |
 | --- | --- | --- |
-| **Manifesto** | Philosophy, vision, intros, narrative | 1 or 2-column running prose + large italic pull-quote with left accent bar |
+| **Manifesto** | Philosophy, vision, intros, narrative | Single-column running prose + large italic pull-quote with left accent bar. **Never two-column text.** |
 | **Stack** | Architecture layers, process steps, roadmaps | Vertical rows, bold uppercase tag left + description right. **Only when each item has 100+ words; otherwise use flowing prose.** |
-| **Split** | Feature showcases, comparisons | 40/60 or 50/50 horizontal: visual one side, prose/list the other. **Only when both sides fill their pane; otherwise single column.** |
+| **Split** | Feature showcases, comparisons | 40/60 or 50/50 horizontal: **image/diagram one side, prose/list the other.** Never text on both sides. **Only when both sides fill their pane; otherwise single column.** |
 | **Pillars** | Value props, capabilities | Grid of cards — **3-column or asymmetric**, colored top-border accent. Never square grids. **Only when each card has 80+ words of substance.** |
 | **Hero** | A concept better shown than told | Full-width image/diagram + caption + short context |
 | **Quote** | Section transitions, memorable statements | Large typographic treatment (28-40pt italic), minimal surround |
@@ -105,7 +111,7 @@ Pitch decks, feature summaries, value props. **Vary layouts on consecutive pages
 ### CSS snippets for patterns
 
 ```css
-.manifesto-cols { column-count: 2; column-gap: 1.5cm; text-align: justify; }
+/* .manifesto-cols: removed — never use two-column text layouts */
 .pull-quote { font-size: 20pt; font-style: italic; color: #0b57d0; border-left: 4pt solid #0b57d0; padding: 0.8cm 1cm; margin: 1.5cm 0; background: #f0f7ff; }
 .stack-layer { display: grid; grid-template-columns: 180px 1fr; gap: 1cm; padding: 0.8cm; border: 1pt solid #eee; margin-bottom: 0.5cm; border-radius: 4pt; page-break-inside: avoid; }
 .layer-label { font-family: 'Inter', sans-serif; font-weight: 800; color: #0b57d0; text-transform: uppercase; font-size: 9pt; letter-spacing: 0.1em; }
@@ -214,6 +220,7 @@ Out of scope. Brochures depend on brand identity, imagery decisions, and visual 
 | Every page looks identical (presentation) | One layout pattern applied to all | Alternate Manifesto / Stack / Split / Pillars / Hero / Quote / Data |
 | Stack/Pillars page looks like a bullet list | Items have <100 words each, dressed up as cards | Rewrite as flowing prose with bold inline headings |
 | Split page half-empty | Text pane has <150 words, bottom of page is whitespace | Switch to single-column flowing text; float images inline |
+| Two columns of text side by side | Text split into columns without an image | Never use `column-count: 2` or text-vs-text split; use full-width single column |
 | Essay has pullquotes or card grids | Misclassified as presentation | Strip decorative elements; essays want consistency |
 | Invoice columns misaligned | Mixed numeric + text columns, no tabular figures | `font-variant-numeric: tabular-nums` on numeric cells |
 | Tables cut at page breaks | No `page-break-inside: avoid` on rows | Add to `tr` |
