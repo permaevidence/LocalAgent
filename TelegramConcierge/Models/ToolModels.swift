@@ -656,13 +656,13 @@ enum AvailableTools {
     static let bashManage = ToolDefinition(
         function: FunctionDefinition(
             name: "bash_manage",
-            description: "Manage background bash processes. Three modes: (1) 'output' — read accumulated stdout/stderr without stopping the process, with optional incremental reads via 'since' byte offset. (2) 'watch' — subscribe to live output matching a regex pattern; matches arrive as synthetic [BASH WATCH MATCH] user messages so you can react immediately. Auto-unsubscribes after 'limit' matches or on process exit. (3) 'kill' — send SIGTERM then SIGKILL after a grace period.",
+            description: "Manage background bash processes. Four modes: (1) 'output' — read accumulated stdout/stderr without stopping the process, with optional incremental reads via 'since' byte offset. (2) 'input' — write text to the running process's stdin; set append_newline=true for line-oriented prompts. This is pipe-based stdin, not a real TTY. (3) 'watch' — subscribe to live output matching a regex pattern; matches arrive as synthetic [BASH WATCH MATCH] user messages so you can react immediately. Auto-unsubscribes after 'limit' matches or on process exit. (4) 'kill' — send SIGTERM then SIGKILL after a grace period.",
             parameters: FunctionParameters(
                 properties: [
                     "mode": ParameterProperty(
                         type: "string",
                         description: "Action to perform on the background process.",
-                        enumValues: ["output", "watch", "kill"]
+                        enumValues: ["output", "input", "watch", "kill"]
                     ),
                     "handle": ParameterProperty(
                         type: "string",
@@ -671,6 +671,14 @@ enum AvailableTools {
                     "since": ParameterProperty(
                         type: "integer",
                         description: "For mode='output' only. Byte offset into stdout stream for incremental reads. Omit or pass 0 for full output."
+                    ),
+                    "text": ParameterProperty(
+                        type: "string",
+                        description: "For mode='input' only. Text to write to the process's stdin. This is sent exactly unless append_newline=true."
+                    ),
+                    "append_newline": ParameterProperty(
+                        type: "boolean",
+                        description: "For mode='input' only. If true, appends a single newline after text. Default false."
                     ),
                     "pattern": ParameterProperty(
                         type: "string",

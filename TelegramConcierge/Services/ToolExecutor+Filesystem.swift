@@ -154,12 +154,12 @@ extension ToolExecutor {
         }
     }
 
-    // MARK: - bash_manage (unified output/watch/kill)
+    // MARK: - bash_manage (unified output/input/watch/kill)
 
     func executeBashManage(_ call: ToolCall) async -> String {
         let args = parseArgs(call.function.arguments)
         guard let mode = args.string("mode") else {
-            return "{\"error\": \"bash_manage requires 'mode' (output, watch, or kill)\"}"
+            return "{\"error\": \"bash_manage requires 'mode' (output, input, watch, or kill)\"}"
         }
         guard let handle = args.string("handle") else {
             return "{\"error\": \"bash_manage requires 'handle'\"}"
@@ -169,6 +169,14 @@ extension ToolExecutor {
         case "output":
             let since = args.int("since") ?? 0
             let result = await BashTools.output(handle: handle, since: since)
+            return result.content
+
+        case "input":
+            guard let text = args.stringAllowingEmpty("text") else {
+                return "{\"error\": \"mode='input' requires 'text'\"}"
+            }
+            let appendNewline = args.bool("append_newline") ?? false
+            let result = await BashTools.input(handle: handle, text: text, appendNewline: appendNewline)
             return result.content
 
         case "kill":
@@ -206,7 +214,7 @@ extension ToolExecutor {
             }
 
         default:
-            return "{\"error\": \"Unknown mode '\(mode)'. Use 'output', 'watch', or 'kill'.\"}"
+            return "{\"error\": \"Unknown mode '\(mode)'. Use 'output', 'input', 'watch', or 'kill'.\"}"
         }
     }
 
@@ -301,6 +309,13 @@ extension ToolExecutor {
 
         func string(_ key: String) -> String? {
             if let s = raw[key] as? String { return s.isEmpty ? nil : s }
+            // Be permissive: models sometimes emit numbers/bools where strings are expected.
+            if let n = raw[key] as? NSNumber { return n.stringValue }
+            return nil
+        }
+
+        func stringAllowingEmpty(_ key: String) -> String? {
+            if let s = raw[key] as? String { return s }
             // Be permissive: models sometimes emit numbers/bools where strings are expected.
             if let n = raw[key] as? NSNumber { return n.stringValue }
             return nil

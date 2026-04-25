@@ -5,6 +5,7 @@ import Foundation
 /// - `runForeground` spawns a subshell, waits, returns the full result.
 /// - `runBackground` spawns detached, returns a handle immediately.
 /// - `output(handle:)` reads accumulated output for a background handle.
+/// - `input(handle:text:)` writes text to a running background handle's stdin.
 /// - `kill(handle:)` terminates a background handle (SIGTERM then SIGKILL).
 ///
 /// When a background process exits, ConversationManager polls
@@ -105,7 +106,7 @@ enum BashTools {
                 "status": "running",
                 "command": command,
                 "description": description ?? "",
-                "message": "Process started in background. Use bash_manage(mode='output', handle='\(handle.id)') to peek at output, bash_manage(mode='kill', handle='\(handle.id)') to stop. You will be notified automatically when it exits."
+                "message": "Process started in background. Use bash_manage(mode='output', handle='\(handle.id)') to peek at output, bash_manage(mode='input', handle='\(handle.id)', text='...') to send stdin, bash_manage(mode='kill', handle='\(handle.id)') to stop. You will be notified automatically when it exits."
             ]))
         } catch {
             return OpResult(content: jsonError("failed to spawn background process: \(error.localizedDescription)"))
@@ -133,6 +134,25 @@ enum BashTools {
         ]
         if let code = snapshot.exitCode { payload["exit_code"] = code }
         return OpResult(content: jsonString(payload))
+    }
+
+    static func input(handle: String, text: String, appendNewline: Bool = false) async -> OpResult {
+        do {
+            let bytesWritten = try await BackgroundProcessRegistry.shared.writeInput(
+                handleId: handle,
+                text: text,
+                appendNewline: appendNewline
+            )
+            return OpResult(content: jsonString([
+                "success": true,
+                "handle": handle,
+                "bytes_written": bytesWritten,
+                "append_newline": appendNewline,
+                "message": "Input written to background process stdin. Use bash_manage(mode='output') to inspect the response."
+            ]))
+        } catch {
+            return OpResult(content: jsonError(error.localizedDescription))
+        }
     }
 
     static func kill(handle: String) async -> OpResult {
@@ -260,6 +280,7 @@ actor BackgroundProcessRegistry {
         let description: String?
         let workdir: String?
         let process: Process
+        let stdin: FileHandle
         var stdout: String = ""
         var stderr: String = ""
         /// Trailing partial line not yet terminated by \n — held until a newline arrives
@@ -271,12 +292,13 @@ actor BackgroundProcessRegistry {
         let startedAt: Date
         var completionDelivered = false
 
-        init(id: String, command: String, description: String?, workdir: String?, process: Process) {
+        init(id: String, command: String, description: String?, workdir: String?, process: Process, stdin: FileHandle) {
             self.id = id
             self.command = command
             self.description = description
             self.workdir = workdir
             self.process = process
+            self.stdin = stdin
             self.startedAt = Date()
         }
     }
@@ -323,10 +345,19 @@ actor BackgroundProcessRegistry {
 
         let outPipe = Pipe()
         let errPipe = Pipe()
+        let inPipe = Pipe()
+        process.standardInput = inPipe
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        let entry = Entry(id: id, command: command, description: description, workdir: workdir, process: process)
+        let entry = Entry(
+            id: id,
+            command: command,
+            description: description,
+            workdir: workdir,
+            process: process,
+            stdin: inPipe.fileHandleForWriting
+        )
 
         let ioQ = self.ioQueue
         // Strong capture of `entry` is fine: the entry is retained by the registry dictionary
@@ -381,6 +412,7 @@ actor BackgroundProcessRegistry {
         process.terminationHandler = { proc in
             outPipe.fileHandleForReading.readabilityHandler = nil
             errPipe.fileHandleForReading.readabilityHandler = nil
+            try? inPipe.fileHandleForWriting.close()
             let residualOut = outPipe.fileHandleForReading.availableData
             let residualErr = errPipe.fileHandleForReading.availableData
             ioQ.async {
@@ -429,6 +461,38 @@ actor BackgroundProcessRegistry {
         )
     }
 
+    enum InputError: Error, LocalizedError {
+        case handleNotFound(String)
+        case processNotRunning(String)
+        case invalidEncoding
+
+        var errorDescription: String? {
+            switch self {
+            case .handleNotFound(let handle):
+                return "unknown background handle: \(handle)"
+            case .processNotRunning(let handle):
+                return "background process is not running: \(handle)"
+            case .invalidEncoding:
+                return "failed to encode input as UTF-8"
+            }
+        }
+    }
+
+    func writeInput(handleId: String, text: String, appendNewline: Bool) throws -> Int {
+        guard let e = entries[handleId] else {
+            throw InputError.handleNotFound(handleId)
+        }
+        guard e.status == .running, e.process.isRunning else {
+            throw InputError.processNotRunning(handleId)
+        }
+        let payload = appendNewline ? text + "\n" : text
+        guard let data = payload.data(using: .utf8) else {
+            throw InputError.invalidEncoding
+        }
+        try e.stdin.write(contentsOf: data)
+        return data.count
+    }
+
     /// Compact summary of running processes, used by the system prompt.
     func liveSummary() -> [(id: String, command: String, description: String?, runningFor: Int)] {
         entries.values
@@ -474,6 +538,7 @@ actor BackgroundProcessRegistry {
     func kill(handleId: String) async -> Bool {
         guard let e = entries[handleId] else { return false }
         guard e.status == .running else { return false }
+        try? e.stdin.close()
         e.process.terminate()
         try? await Task.sleep(nanoseconds: 300_000_000)
         if e.process.isRunning {
