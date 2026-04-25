@@ -71,14 +71,24 @@ blockquote { border-left: 3pt solid #bbb; margin: 0 0 1em; padding: 0 0 0 1em; c
 
 Pitch decks, feature summaries, value props. **Vary layouts on consecutive pages.** Never repeat the same pattern. Do NOT default to a square card grid on every page — that's the "lazy deck" failure mode.
 
+### Content volume rule
+
+**Before choosing a visual pattern, check how much content you actually have for each element on the page.** If individual items (cards, layers, panes) contain less than ~100 words each, do NOT use a visual pattern — write it as flowing prose with **bold inline headings** instead. Visual patterns (Stack, Split, Pillars) exist to organize substantial content, not to dress up thin bullet points as cards.
+
+- **Stack with thin items** (each item < 100 words): use flowing prose instead. Write each point as a bold heading + paragraph in a single running column.
+- **Split with thin content**: only use when BOTH sides have enough to fill their pane. If the text side is under ~150 words, merge everything into a single flowing column. An image floating within prose is better than a half-empty split layout.
+- **Pillars/cards**: only when each card has a title + 80+ words of substance. Three title-and-one-liner cards is a bullet list pretending to be a layout — write it as prose.
+
+**When in doubt, prefer dense running text over visual patterns.** A well-written paragraph is always better than a half-empty card grid.
+
 ### Named layout patterns
 
 | Pattern | Best for | Key features |
 | --- | --- | --- |
 | **Manifesto** | Philosophy, vision, intros, narrative | 1 or 2-column running prose + large italic pull-quote with left accent bar |
-| **Stack** | Architecture layers, process steps, roadmaps | Vertical rows, bold uppercase tag left + description right |
-| **Split** | Feature showcases, comparisons | 40/60 or 50/50 horizontal: visual one side, prose/list the other |
-| **Pillars** | Value props, capabilities | Grid of cards — **3-column or asymmetric**, colored top-border accent. Never square grids. |
+| **Stack** | Architecture layers, process steps, roadmaps | Vertical rows, bold uppercase tag left + description right. **Only when each item has 100+ words; otherwise use flowing prose.** |
+| **Split** | Feature showcases, comparisons | 40/60 or 50/50 horizontal: visual one side, prose/list the other. **Only when both sides fill their pane; otherwise single column.** |
+| **Pillars** | Value props, capabilities | Grid of cards — **3-column or asymmetric**, colored top-border accent. Never square grids. **Only when each card has 80+ words of substance.** |
 | **Hero** | A concept better shown than told | Full-width image/diagram + caption + short context |
 | **Quote** | Section transitions, memorable statements | Large typographic treatment (28-40pt italic), minimal surround |
 | **Data** | Technical depth, metrics | Table or chart carries the page, annotation supports |
@@ -202,6 +212,8 @@ Out of scope. Brochures depend on brand identity, imagery decisions, and visual 
 | Cover content bunched at top | Missing flex on page container | flex-column + `justify-content: space-between` on a 24cm min-height container |
 | Content page half-empty | Under-written section | Merge pages, expand prose, add intro bridge under H2, or enlarge a figure |
 | Every page looks identical (presentation) | One layout pattern applied to all | Alternate Manifesto / Stack / Split / Pillars / Hero / Quote / Data |
+| Stack/Pillars page looks like a bullet list | Items have <100 words each, dressed up as cards | Rewrite as flowing prose with bold inline headings |
+| Split page half-empty | Text pane has <150 words, bottom of page is whitespace | Switch to single-column flowing text; float images inline |
 | Essay has pullquotes or card grids | Misclassified as presentation | Strip decorative elements; essays want consistency |
 | Invoice columns misaligned | Mixed numeric + text columns, no tabular figures | `font-variant-numeric: tabular-nums` on numeric cells |
 | Tables cut at page breaks | No `page-break-inside: avoid` on rows | Add to `tr` |
