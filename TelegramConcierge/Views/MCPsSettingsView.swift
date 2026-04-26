@@ -370,6 +370,14 @@ struct MCPsSettingsView: View {
                                 .background(Color.gray.opacity(0.2))
                                 .cornerRadius(3)
                         }
+                        if cfg.loading == .deferred {
+                            Text("deferred")
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.15))
+                                .cornerRadius(3)
+                        }
                     }
                     Text(commandPreview(cfg))
                         .font(.caption2)
@@ -431,6 +439,41 @@ struct MCPsSettingsView: View {
             argumentsEditor(binding: binding)
             envEditor(binding: binding)
             secretRefsEditor(binding: binding)
+
+            // Loading mode picker
+            HStack(spacing: 8) {
+                Text("Loading")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Picker("", selection: Binding(
+                    get: { binding.wrappedValue.loading },
+                    set: { newValue in replaceConfig(at: binding, loading: newValue) }
+                )) {
+                    Text("Always (tools in prompt)").tag(MCPServerConfig.LoadingMode.always)
+                    Text("Deferred (on-demand)").tag(MCPServerConfig.LoadingMode.deferred)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+            }
+
+            // Description field (shown when deferred)
+            if binding.wrappedValue.loading == .deferred {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description — shown to the LLM so it knows when to discover this server's tools. Auto-generated from tool names if left blank.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField(
+                        "e.g. Browser automation and web scraping",
+                        text: Binding(
+                            get: { binding.wrappedValue.description ?? "" },
+                            set: { newValue in
+                                replaceConfig(at: binding, serverDescription: newValue.isEmpty ? nil : newValue)
+                            }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                }
+            }
 
             HStack {
                 Toggle("Disabled", isOn: Binding(
@@ -591,7 +634,9 @@ struct MCPsSettingsView: View {
             arguments: old.arguments,
             environment: old.environment,
             disabled: newDisabled,
-            secretRefs: old.secretRefs
+            secretRefs: old.secretRefs,
+            loading: old.loading,
+            description: old.description
         )
         dirty = true
     }
@@ -602,16 +647,26 @@ struct MCPsSettingsView: View {
         arguments: [String]? = nil,
         environment: [String: String]? = nil,
         disabled: Bool? = nil,
-        secretRefs: [String]? = nil
+        secretRefs: [String]? = nil,
+        loading: MCPServerConfig.LoadingMode? = nil,
+        serverDescription: String?? = nil
     ) {
         let old = binding.wrappedValue
+        let newDesc: String?
+        if let outer = serverDescription {
+            newDesc = outer   // caller explicitly set (possibly to nil)
+        } else {
+            newDesc = old.description  // unchanged
+        }
         binding.wrappedValue = MCPServerConfig(
             name: old.name,
             command: command ?? old.command,
             arguments: arguments ?? old.arguments,
             environment: environment ?? old.environment,
             disabled: disabled ?? old.disabled,
-            secretRefs: secretRefs ?? old.secretRefs
+            secretRefs: secretRefs ?? old.secretRefs,
+            loading: loading ?? old.loading,
+            description: newDesc
         )
         dirty = true
     }

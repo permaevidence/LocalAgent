@@ -419,7 +419,8 @@ actor OpenRouterService {
         finalResponseInstruction: String? = nil,
         modelOverride: String? = nil,
         providerOverride: [String]? = nil,
-        reasoningEffortOverride: String? = nil
+        reasoningEffortOverride: String? = nil,
+        deferredMCPSummaries: [(name: String, description: String, toolCount: Int)]? = nil
     ) async throws -> LLMResponse {
         guard isLMStudio || !apiKey.isEmpty else {
             throw OpenRouterError.notConfigured
@@ -560,6 +561,17 @@ actor OpenRouterService {
                 if !skillsIndex.isEmpty {
                     prompt += "\n\n" + skillsIndex
                 }
+            }
+
+            // On-demand MCPs — lightweight summaries for deferred servers.
+            // The agent can call tool_search(server) to fetch full schemas,
+            // then mcp_call(server, tool, arguments) to invoke.
+            if let deferred = deferredMCPSummaries, !deferred.isEmpty {
+                var section = "\n\n**On-demand MCPs** — call `tool_search(server: \"<name>\")` to discover tools, then `mcp_call` to invoke.\n"
+                for entry in deferred {
+                    section += "- **\(entry.name)** (\(entry.toolCount) tools): \(entry.description)\n"
+                }
+                prompt += section
             }
 
             prompt += """

@@ -1418,8 +1418,12 @@ class ConversationManager: ObservableObject {
             // per-agent filter below see up-to-date installed-server state.
             await MCPAgentRouting.refreshFromRegistry()
 
+            // Fetch deferred MCP summaries (for on-demand tool discovery).
+            let deferredSummaries = await MCPRegistry.shared.deferredServerSummaries()
+
             let nativeTools = AvailableTools.all(
-                includeWebSearch: !serperKey.isEmpty
+                includeWebSearch: !serperKey.isEmpty,
+                hasDeferredMCPs: !deferredSummaries.isEmpty
             )
             let allMcpTools = await MCPRegistry.shared.allToolDefinitions()
             // Phase 2 default: main agent sees no MCP tools unless the user
@@ -1442,7 +1446,8 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries.isEmpty ? nil : chunkSummaries,
                 totalChunkCount: totalChunkCount,
                 currentUserMessageId: currentUserMessageId,
-                turnStartDate: systemPromptDate
+                turnStartDate: systemPromptDate,
+                deferredMCPSummaries: deferredSummaries.isEmpty ? nil : deferredSummaries
             )
             print("[TIMING] LLM API call took: \(String(format: "%.2f", Date().timeIntervalSince(llmStartTime)))s")
             let roundSpendUSD = spendUSD(from: response)

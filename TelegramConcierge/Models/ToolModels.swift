@@ -882,6 +882,36 @@ enum AvailableTools {
         )
     )
 
+    // MARK: - Deferred MCP Discovery
+
+    static let toolSearch = ToolDefinition(
+        function: FunctionDefinition(
+            name: "tool_search",
+            description: "Fetch the full tool schemas for a deferred MCP server. Call this when you see a server listed in the 'On-demand MCPs' section of the system prompt and decide you need its tools. Returns every tool name, description, and parameter schema as formatted text. After reading the result, use mcp_call to invoke specific tools.",
+            parameters: FunctionParameters(
+                properties: [
+                    "server": ParameterProperty(type: "string", description: "The MCP server name exactly as shown in the on-demand list (e.g. 'playwright').")
+                ],
+                required: ["server"]
+            )
+        )
+    )
+
+    static let mcpCall = ToolDefinition(
+        function: FunctionDefinition(
+            name: "mcp_call",
+            description: "Invoke a tool on a deferred MCP server. Use tool_search first to discover available tools and their parameter schemas, then call this with the exact tool name and arguments. The server must be listed in the on-demand MCPs section.",
+            parameters: FunctionParameters(
+                properties: [
+                    "server": ParameterProperty(type: "string", description: "The MCP server name (e.g. 'playwright')."),
+                    "tool": ParameterProperty(type: "string", description: "The tool name as returned by tool_search (e.g. 'browser_navigate')."),
+                    "arguments": ParameterProperty(type: "object", description: "The tool's arguments as a JSON object. Pass {} if the tool takes no arguments.")
+                ],
+                required: ["server", "tool", "arguments"]
+            )
+        )
+    )
+
     // MARK: - Tool Arrays
 
     /// New filesystem tool surface (replaces the sandboxed document tools).
@@ -908,13 +938,15 @@ enum AvailableTools {
     }
 
     /// All available tools. `includeWebSearch` toggles whether the four web tools
-    /// are added; email/calendar/contacts tools have been fully removed from the
-    /// agent surface in favor of the gws CLI.
-    static func all(includeWebSearch: Bool) -> [ToolDefinition] {
+    /// are added; `hasDeferredMCPs` adds the `tool_search` and `mcp_call` proxy
+    /// tools for on-demand MCP discovery. Email/calendar/contacts tools have
+    /// been fully removed from the agent surface in favor of the gws CLI.
+    static func all(includeWebSearch: Bool, hasDeferredMCPs: Bool = false) -> [ToolDefinition] {
         let webTools = includeWebSearch ? [webSearch, webResearchSweep, webFetch] : []
-        return webTools + coreToolsWithoutWebSearch
+        let deferredTools: [ToolDefinition] = hasDeferredMCPs ? [toolSearch, mcpCall] : []
+        return webTools + coreToolsWithoutWebSearch + deferredTools
     }
-    
+
     /// Backward-compatible default: include web search
     static var all: [ToolDefinition] {
         all(includeWebSearch: true)

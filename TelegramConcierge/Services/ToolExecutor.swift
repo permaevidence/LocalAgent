@@ -223,6 +223,11 @@ actor ToolExecutor {
         case "skill":
             content = executeLoadSkill(call)
 
+        case "tool_search":
+            content = await executeToolSearch(call)
+        case "mcp_call":
+            content = await executeMcpCall(call)
+
         // generate_image is handled in the special multimodal injection switch above
 
         case "web_fetch":
@@ -724,6 +729,50 @@ actor ToolExecutor {
             result += lines.joined(separator: "\n")
         }
         return result
+    }
+
+    // MARK: - Deferred MCP Discovery
+
+    private func executeToolSearch(_ call: ToolCall) async -> String {
+        struct Args: Decodable { let server: String? }
+        guard let data = call.function.arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(Args.self, from: data),
+              let server = args.server?.trimmingCharacters(in: .whitespaces),
+              !server.isEmpty else {
+            return "{\"error\": \"'server' parameter is required.\"}"
+        }
+        guard let result = await MCPRegistry.shared.toolSchemasForServer(server) else {
+            return "{\"error\": \"MCP server '\(server)' is not available. It may not be installed, or it failed to start.\"}"
+        }
+        return result
+    }
+
+    private func executeMcpCall(_ call: ToolCall) async -> String {
+        guard let data = call.function.arguments.data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "{\"error\": \"Failed to parse mcp_call arguments as JSON object.\"}"
+        }
+        guard let server = raw["server"] as? String, !server.isEmpty else {
+            return "{\"error\": \"'server' parameter is required.\"}"
+        }
+        guard let tool = raw["tool"] as? String, !tool.isEmpty else {
+            return "{\"error\": \"'tool' parameter is required.\"}"
+        }
+        let arguments = raw["arguments"] as? [String: Any] ?? [:]
+
+        // Construct the prefixed name and serialize arguments for the standard
+        // MCPRegistry.callTool path — reuses all existing validation & dispatch.
+        let prefixedName = "mcp__\(server)__\(tool)"
+        let argsJSON: String
+        if arguments.isEmpty {
+            argsJSON = "{}"
+        } else if let argsData = try? JSONSerialization.data(withJSONObject: arguments),
+                  let str = String(data: argsData, encoding: .utf8) {
+            argsJSON = str
+        } else {
+            return "{\"error\": \"Failed to serialize arguments to JSON.\"}"
+        }
+        return await MCPRegistry.shared.callTool(prefixedName: prefixedName, argumentsJSON: argsJSON)
     }
 }
 

@@ -34,13 +34,28 @@ actor MCPRegistry {
 
     // MARK: - Public API
 
-    /// Returns every MCP tool converted to a native `ToolDefinition`, ready
-    /// to append to the LLM tool block. Sorted deterministically by prefixed
-    /// name (`mcp__<server>__<tool>`) so the output is byte-stable across
-    /// turns — critical for prompt-cache hits.
+    /// Returns MCP tools for servers whose `loading` is `.always`, converted
+    /// to native `ToolDefinition`s. Sorted deterministically by prefixed name
+    /// (`mcp__<server>__<tool>`) — critical for prompt-cache hits.
+    ///
+    /// Deferred servers are excluded here; use `deferredServerSummaries()` and
+    /// `toolSchemasForServer(_:)` to support on-demand discovery.
     ///
     /// Triggers bootstrap on first call. Later calls reuse the cached list.
     func allToolDefinitions() async -> [ToolDefinition] {
+        await ensureBootstrapped()
+        var combined: [MCPTool] = []
+        for entry in entries.values where !entry.failed && entry.config.loading == .always {
+            let tools = await entry.client.listedTools
+            combined.append(contentsOf: tools)
+        }
+        combined.sort { $0.prefixedName < $1.prefixedName }
+        return combined.map(Self.convertToToolDefinition)
+    }
+
+    /// Returns ALL MCP tools (both always and deferred) as `ToolDefinition`s.
+    /// Used by SubagentRunner which needs full access regardless of loading mode.
+    func allToolDefinitionsUnfiltered() async -> [ToolDefinition] {
         await ensureBootstrapped()
         var combined: [MCPTool] = []
         for entry in entries.values where !entry.failed {
@@ -49,6 +64,72 @@ actor MCPRegistry {
         }
         combined.sort { $0.prefixedName < $1.prefixedName }
         return combined.map(Self.convertToToolDefinition)
+    }
+
+    /// Compact summaries for every deferred server that connected successfully.
+    /// Each entry includes: server name, description (user-provided or auto),
+    /// and tool count. Used to inject a lightweight hint into the system prompt.
+    func deferredServerSummaries() async -> [(name: String, description: String, toolCount: Int)] {
+        await ensureBootstrapped()
+        var out: [(String, String, Int)] = []
+        for (name, entry) in entries where !entry.failed && entry.config.loading == .deferred {
+            let tools = await entry.client.listedTools
+            guard !tools.isEmpty else { continue }
+            let desc = entry.config.description ?? Self.autoDescription(tools: tools)
+            out.append((name, desc, tools.count))
+        }
+        return out.sorted { $0.0 < $1.0 }
+    }
+
+    /// Returns a formatted text block describing every tool on `serverName`,
+    /// including parameter schemas. Intended as the result of `tool_search`.
+    func toolSchemasForServer(_ serverName: String) async -> String? {
+        await ensureBootstrapped()
+        guard let entry = entries[serverName], !entry.failed else { return nil }
+        let tools = await entry.client.listedTools
+        guard !tools.isEmpty else { return nil }
+
+        var lines: [String] = []
+        lines.append("MCP server '\(serverName)' — \(tools.count) tools:")
+        lines.append("")
+        for tool in tools.sorted(by: { $0.toolName < $1.toolName }) {
+            lines.append("## \(tool.toolName)")
+            if !tool.description.isEmpty {
+                lines.append(tool.description)
+            }
+            let props = (tool.inputSchema["properties"] as? [String: Any]) ?? [:]
+            let required = Set((tool.inputSchema["required"] as? [String]) ?? [])
+            if !props.isEmpty {
+                lines.append("Parameters:")
+                for key in props.keys.sorted() {
+                    guard let dict = props[key] as? [String: Any] else { continue }
+                    let type = (dict["type"] as? String) ?? "string"
+                    let desc = (dict["description"] as? String) ?? ""
+                    let req = required.contains(key) ? " (required)" : ""
+                    var enumNote = ""
+                    if let vals = dict["enum"] as? [Any] {
+                        enumNote = " — enum: \(vals.map { "\($0)" }.joined(separator: ", "))"
+                    }
+                    lines.append("  - \(key): \(type)\(req)\(enumNote)\(desc.isEmpty ? "" : " — \(desc)")")
+                }
+            } else {
+                lines.append("Parameters: none")
+            }
+            lines.append("")
+        }
+        lines.append("Use mcp_call(server: \"\(serverName)\", tool: \"<tool_name>\", arguments: {...}) to invoke.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Auto-generate a short description from tool names (fallback when user
+    /// hasn't provided one). Shows up to 5 names, then "and N more".
+    private static func autoDescription(tools: [MCPTool]) -> String {
+        let names = tools.map(\.toolName).sorted()
+        if names.count <= 5 {
+            return "Provides: \(names.joined(separator: ", "))"
+        }
+        let first5 = names.prefix(5).joined(separator: ", ")
+        return "Provides: \(first5), and \(names.count - 5) more"
     }
 
     /// Dispatch a tool call from `ToolExecutor`. The argument is the prefixed
@@ -142,6 +223,8 @@ actor MCPRegistry {
             if !cfg.environment.isEmpty { dict["env"] = cfg.environment }
             if cfg.disabled { dict["disabled"] = true }
             if !cfg.secretRefs.isEmpty { dict["secretRefs"] = cfg.secretRefs }
+            if cfg.loading != .always { dict["loading"] = cfg.loading.rawValue }
+            if let desc = cfg.description, !desc.isEmpty { dict["description"] = desc }
             servers[cfg.name] = dict
         }
         let root: [String: Any] = ["mcpServers": servers]
@@ -252,13 +335,18 @@ actor MCPRegistry {
             let env = (dict["env"] as? [String: String]) ?? [:]
             let disabled = (dict["disabled"] as? Bool) ?? false
             let secretRefs = (dict["secretRefs"] as? [String]) ?? []
+            let loadingStr = (dict["loading"] as? String) ?? "always"
+            let loading: MCPServerConfig.LoadingMode = (loadingStr == "deferred") ? .deferred : .always
+            let desc = dict["description"] as? String
             out.append(MCPServerConfig(
                 name: name,
                 command: command,
                 arguments: args,
                 environment: env,
                 disabled: disabled,
-                secretRefs: secretRefs
+                secretRefs: secretRefs,
+                loading: loading,
+                description: desc
             ))
         }
         return out.sorted { $0.name < $1.name }
@@ -325,7 +413,9 @@ actor MCPRegistry {
                     arguments: config.arguments,
                     environment: config.environment,
                     disabled: config.disabled,
-                    secretRefs: config.secretRefs
+                    secretRefs: config.secretRefs,
+                    loading: config.loading,
+                    description: config.description
                 )
             }
         }

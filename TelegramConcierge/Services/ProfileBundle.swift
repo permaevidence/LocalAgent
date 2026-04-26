@@ -43,6 +43,8 @@ enum ProfileBundle {
             if !cfg.environment.isEmpty { dict["env"] = cfg.environment }
             if cfg.disabled { dict["disabled"] = true }
             if !cfg.secretRefs.isEmpty { dict["secretRefs"] = cfg.secretRefs }
+            if cfg.loading != .always { dict["loading"] = cfg.loading.rawValue }
+            if let desc = cfg.description, !desc.isEmpty { dict["description"] = desc }
             mcpServers[cfg.name] = dict
         }
         root["mcpServers"] = mcpServers
@@ -120,13 +122,18 @@ enum ProfileBundle {
                 let env = (dict["env"] as? [String: String]) ?? [:]
                 let disabled = (dict["disabled"] as? Bool) ?? false
                 let secretRefs = (dict["secretRefs"] as? [String]) ?? []
+                let loadingStr = (dict["loading"] as? String) ?? "always"
+                let loading: MCPServerConfig.LoadingMode = (loadingStr == "deferred") ? .deferred : .always
+                let desc = dict["description"] as? String
                 let cfg = MCPServerConfig(
                     name: name,
                     command: command,
                     arguments: args,
                     environment: env,
                     disabled: disabled,
-                    secretRefs: secretRefs
+                    secretRefs: secretRefs,
+                    loading: loading,
+                    description: desc
                 )
                 if merged[name] != nil {
                     replacedServers.append(name)
