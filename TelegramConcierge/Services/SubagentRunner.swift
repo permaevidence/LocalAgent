@@ -76,11 +76,11 @@ actor SubagentRunner {
         if let whitelist = subagentType.allowedToolNames {
             filteredTools = filteredTools.filter { whitelist.contains($0.function.name) }
         }
-        // Use unfiltered list so subagents can access deferred-server tools too
-        // (e.g. Browse subagent using Playwright even when it's deferred for main).
-        let allMcpTools = await MCPRegistry.shared.allToolDefinitionsUnfiltered()
-        let subagentMcpTools = MCPAgentRouting.filterMcpTools(
-            forAgent: subagentType.name,
+        // Subagents get all routed tools directly (always + deferred combined)
+        // since they have their own context window and don't benefit from deferral.
+        let allMcpTools = await MCPRegistry.shared.allToolDefinitions()
+        let subagentMcpTools = MCPAgentRouting.allToolsForAgent(
+            agent: subagentType.name,
             allTools: allMcpTools,
             fallbackPatterns: subagentType.mcpToolPatterns
         )

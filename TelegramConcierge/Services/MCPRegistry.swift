@@ -34,28 +34,15 @@ actor MCPRegistry {
 
     // MARK: - Public API
 
-    /// Returns MCP tools for servers whose `loading` is `.always`, converted
-    /// to native `ToolDefinition`s. Sorted deterministically by prefixed name
-    /// (`mcp__<server>__<tool>`) — critical for prompt-cache hits.
-    ///
-    /// Deferred servers are excluded here; use `deferredServerSummaries()` and
-    /// `toolSchemasForServer(_:)` to support on-demand discovery.
+    /// Returns every MCP tool converted to a native `ToolDefinition`, ready
+    /// to append to the LLM tool block. Sorted deterministically by prefixed
+    /// name (`mcp__<server>__<tool>`) so the output is byte-stable across
+    /// turns — critical for prompt-cache hits.
     ///
     /// Triggers bootstrap on first call. Later calls reuse the cached list.
+    /// Per-agent filtering (including always vs deferred) is handled by
+    /// `MCPAgentRouting`, not here.
     func allToolDefinitions() async -> [ToolDefinition] {
-        await ensureBootstrapped()
-        var combined: [MCPTool] = []
-        for entry in entries.values where !entry.failed && entry.config.loading == .always {
-            let tools = await entry.client.listedTools
-            combined.append(contentsOf: tools)
-        }
-        combined.sort { $0.prefixedName < $1.prefixedName }
-        return combined.map(Self.convertToToolDefinition)
-    }
-
-    /// Returns ALL MCP tools (both always and deferred) as `ToolDefinition`s.
-    /// Used by SubagentRunner which needs full access regardless of loading mode.
-    func allToolDefinitionsUnfiltered() async -> [ToolDefinition] {
         await ensureBootstrapped()
         var combined: [MCPTool] = []
         for entry in entries.values where !entry.failed {
@@ -66,13 +53,15 @@ actor MCPRegistry {
         return combined.map(Self.convertToToolDefinition)
     }
 
-    /// Compact summaries for every deferred server that connected successfully.
-    /// Each entry includes: server name, description (user-provided or auto),
-    /// and tool count. Used to inject a lightweight hint into the system prompt.
-    func deferredServerSummaries() async -> [(name: String, description: String, toolCount: Int)] {
+    /// Compact summaries for the specified server names. Each entry includes:
+    /// server name, description (user-provided or auto), and tool count.
+    /// Used to inject lightweight hints into the system prompt for deferred MCPs.
+    /// Which servers are deferred is decided by MCPAgentRouting, not here.
+    func serverSummaries(for serverNames: Set<String>) async -> [(name: String, description: String, toolCount: Int)] {
         await ensureBootstrapped()
         var out: [(String, String, Int)] = []
-        for (name, entry) in entries where !entry.failed && entry.config.loading == .deferred {
+        for name in serverNames {
+            guard let entry = entries[name], !entry.failed else { continue }
             let tools = await entry.client.listedTools
             guard !tools.isEmpty else { continue }
             let desc = entry.config.description ?? Self.autoDescription(tools: tools)
@@ -223,7 +212,6 @@ actor MCPRegistry {
             if !cfg.environment.isEmpty { dict["env"] = cfg.environment }
             if cfg.disabled { dict["disabled"] = true }
             if !cfg.secretRefs.isEmpty { dict["secretRefs"] = cfg.secretRefs }
-            if cfg.loading != .always { dict["loading"] = cfg.loading.rawValue }
             if let desc = cfg.description, !desc.isEmpty { dict["description"] = desc }
             servers[cfg.name] = dict
         }
@@ -335,8 +323,6 @@ actor MCPRegistry {
             let env = (dict["env"] as? [String: String]) ?? [:]
             let disabled = (dict["disabled"] as? Bool) ?? false
             let secretRefs = (dict["secretRefs"] as? [String]) ?? []
-            let loadingStr = (dict["loading"] as? String) ?? "always"
-            let loading: MCPServerConfig.LoadingMode = (loadingStr == "deferred") ? .deferred : .always
             let desc = dict["description"] as? String
             out.append(MCPServerConfig(
                 name: name,
@@ -345,7 +331,6 @@ actor MCPRegistry {
                 environment: env,
                 disabled: disabled,
                 secretRefs: secretRefs,
-                loading: loading,
                 description: desc
             ))
         }
@@ -414,7 +399,6 @@ actor MCPRegistry {
                     environment: config.environment,
                     disabled: config.disabled,
                     secretRefs: config.secretRefs,
-                    loading: config.loading,
                     description: config.description
                 )
             }

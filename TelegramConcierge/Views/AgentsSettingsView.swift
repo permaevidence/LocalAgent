@@ -28,11 +28,11 @@ struct AgentsSettingsView: View {
     @State private var serverTools: [String: [String]] = [:]
 
     /// Current routing config on disk, keyed by agent name.
-    @State private var routingConfig: [String: [String]] = [:]
+    @State private var routingConfig: [String: MCPAgentRouting.AgentRouting] = [:]
 
-    /// Per-server enabled-tool sets for the selected agent (working copy).
-    /// [serverName: Set<prefixedToolName>]
-    @State private var workingSet: [String: Set<String>] = [:]
+    /// Per-server loading mode for the selected agent (working copy).
+    /// Values: "none", "always", "deferred"
+    @State private var serverModeSet: [String: String] = [:]
 
     /// Dirty flag — did the user change anything since last save / load?
     @State private var isDirty: Bool = false
@@ -799,64 +799,30 @@ struct AgentsSettingsView: View {
     @ViewBuilder
     private func mcpServerPanel(server: String) -> some View {
         let tools = serverTools[server] ?? []
-        let enabled = workingSet[server] ?? []
-        let allOn = !tools.isEmpty && enabled.count == tools.count
-        let partial = !enabled.isEmpty && !allOn
+        let mode = serverModeSet[server] ?? "none"
 
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(tools, id: \.self) { tool in
-                    Toggle(isOn: Binding(
-                        get: { enabled.contains(tool) },
-                        set: { newValue in
-                            var next = workingSet[server] ?? []
-                            if newValue { next.insert(tool) } else { next.remove(tool) }
-                            workingSet[server] = next
-                            isDirty = true
-                        }
-                    )) {
-                        Text(toolShortName(tool))
-                            .font(.caption)
-                            .monospaced()
-                    }
-                    .toggleStyle(.checkbox)
-                }
-                if tools.isEmpty {
-                    Text("This server has no tools advertised (yet).")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server)
+                    .font(.body.weight(.medium))
+                Text("\(tools.count) tools")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
-            .padding(.leading, 20)
-        } label: {
-            HStack {
-                Toggle(isOn: Binding(
-                    get: { allOn },
-                    set: { newValue in
-                        if newValue {
-                            workingSet[server] = Set(tools)
-                        } else {
-                            workingSet[server] = []
-                        }
-                        isDirty = true
-                    }
-                )) {
-                    HStack(spacing: 6) {
-                        Text(server)
-                            .font(.body.weight(.medium))
-                        Text("\(enabled.count) / \(tools.count)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        if partial {
-                            Image(systemName: "minus.square.fill")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                        }
-                    }
+            Spacer()
+            Picker("", selection: Binding(
+                get: { mode },
+                set: { newValue in
+                    serverModeSet[server] = newValue
+                    isDirty = true
                 }
-                .toggleStyle(.checkbox)
-                Spacer()
+            )) {
+                Text("None").tag("none")
+                Text("Always").tag("always")
+                Text("Deferred").tag("deferred")
             }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 250)
         }
     }
 
@@ -925,26 +891,30 @@ struct AgentsSettingsView: View {
         isLoading = false
     }
 
-    /// Build the per-server working set from the routing config for `agent`.
-    /// Pattern expansion rules:
-    ///   - `mcp__<server>__*`  → every tool the server currently advertises
-    ///   - `mcp__*`            → every tool on every server
-    ///   - exact               → that one tool
+    /// Build per-server mode from the routing config for `agent`.
+    /// Each server is mapped to "none", "always", or "deferred".
     private func loadWorkingSet(for agent: String) {
-        var set: [String: Set<String>] = [:]
-        let patterns = routingConfig[agent]
+        let routing = routingConfig[agent]
             ?? routingConfig[caseInsensitiveKey(agent, in: routingConfig) ?? ""]
-            ?? []
+            ?? MCPAgentRouting.AgentRouting(always: [], deferred: [])
+
+        var modes: [String: String] = [:]
         for (server, tools) in serverTools {
-            var enabled: Set<String> = []
-            for tool in tools {
-                if patterns.contains(where: { MCPAgentRouting.matches(pattern: $0, name: tool) }) {
-                    enabled.insert(tool)
-                }
+            let hasAlways = tools.contains { tool in
+                routing.always.contains { MCPAgentRouting.matches(pattern: $0, name: tool) }
             }
-            set[server] = enabled
+            let hasDeferred = tools.contains { tool in
+                routing.deferred.contains { MCPAgentRouting.matches(pattern: $0, name: tool) }
+            }
+            if hasAlways {
+                modes[server] = "always"
+            } else if hasDeferred {
+                modes[server] = "deferred"
+            } else {
+                modes[server] = "none"
+            }
         }
-        workingSet = set
+        serverModeSet = modes
         isDirty = false
 
         // Load the agent's model override (if any) into the edit drafts so the
@@ -964,35 +934,40 @@ struct AgentsSettingsView: View {
         }
     }
 
-    private func caseInsensitiveKey(_ k: String, in d: [String: [String]]) -> String? {
+    private func caseInsensitiveKey(_ k: String, in d: [String: MCPAgentRouting.AgentRouting]) -> String? {
         let lower = k.lowercased()
         return d.keys.first { $0.lowercased() == lower }
     }
 
     // MARK: - Save
 
-    /// Compact the working set into a routing entry:
-    ///   - whole server enabled → single `mcp__<server>__*` glob
-    ///   - partial → exact names
-    ///   - none → omit
+    /// Compact the server modes into an AgentRouting entry:
+    ///   - "always"  → `mcp__<server>__*` in the always array
+    ///   - "deferred" → `mcp__<server>__*` in the deferred array
+    ///   - "none"    → omitted
     private func saveRouting() {
-        var patterns: [String] = []
+        var alwaysPatterns: [String] = []
+        var deferredPatterns: [String] = []
         for server in serverTools.keys.sorted() {
-            let enabled = workingSet[server] ?? []
-            let total = serverTools[server]?.count ?? 0
-            guard !enabled.isEmpty else { continue }
-            if enabled.count == total, total > 0 {
-                patterns.append("mcp__\(server)__*")
-            } else {
-                patterns.append(contentsOf: enabled.sorted())
+            let mode = serverModeSet[server] ?? "none"
+            switch mode {
+            case "always":
+                alwaysPatterns.append("mcp__\(server)__*")
+            case "deferred":
+                deferredPatterns.append("mcp__\(server)__*")
+            default:
+                break
             }
         }
 
         var next = routingConfig
-        if patterns.isEmpty {
+        if alwaysPatterns.isEmpty && deferredPatterns.isEmpty {
             next.removeValue(forKey: selectedAgent)
         } else {
-            next[selectedAgent] = patterns
+            next[selectedAgent] = MCPAgentRouting.AgentRouting(
+                always: alwaysPatterns,
+                deferred: deferredPatterns
+            )
         }
 
         do {

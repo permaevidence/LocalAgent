@@ -1418,20 +1418,26 @@ class ConversationManager: ObservableObject {
             // per-agent filter below see up-to-date installed-server state.
             await MCPAgentRouting.refreshFromRegistry()
 
-            // Fetch deferred MCP summaries (for on-demand tool discovery).
-            let deferredSummaries = await MCPRegistry.shared.deferredServerSummaries()
-
-            let nativeTools = AvailableTools.all(
-                includeWebSearch: !serperKey.isEmpty,
-                hasDeferredMCPs: !deferredSummaries.isEmpty
-            )
             let allMcpTools = await MCPRegistry.shared.allToolDefinitions()
             // Phase 2 default: main agent sees no MCP tools unless the user
-            // opts them in via ~/LocalAgent/mcp-routing.json ("main": [...]).
+            // opts them in via ~/LocalAgent/mcp-routing.json ("main": {...}).
+            // "always" tools go in the tools array; "deferred" get a summary
+            // in the system prompt for on-demand discovery.
             let mainMcpTools = MCPAgentRouting.filterMcpTools(
                 forAgent: "main",
                 allTools: allMcpTools,
                 fallbackPatterns: nil
+            )
+            let deferredServerNames = MCPAgentRouting.deferredServers(
+                forAgent: "main",
+                allTools: allMcpTools,
+                fallbackPatterns: nil
+            )
+            let deferredSummaries = await MCPRegistry.shared.serverSummaries(for: deferredServerNames)
+
+            let nativeTools = AvailableTools.all(
+                includeWebSearch: !serperKey.isEmpty,
+                hasDeferredMCPs: !deferredSummaries.isEmpty
             )
             let toolsForRound = nativeTools + mainMcpTools
             let allowedToolNames = Set(toolsForRound.map { $0.function.name })

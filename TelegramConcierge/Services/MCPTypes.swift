@@ -24,27 +24,14 @@ import Foundation
 /// Keychain key itself is `mcp_env_<server>_<VAR_NAME>` (populated via Settings
 /// in a later phase). This keeps plaintext secrets out of mcp.json.
 public struct MCPServerConfig: Sendable, Equatable {
-
-    /// Controls when this server's tools are exposed to the LLM.
-    public enum LoadingMode: String, Sendable, Equatable {
-        /// Tools are included in the `tools` array every turn (current behavior).
-        case always
-        /// Tools are NOT in the `tools` array. A one-line summary is shown in the
-        /// system prompt; the agent can discover full schemas via `tool_search`
-        /// and invoke them via `mcp_call` — preserving the prompt cache.
-        case deferred
-    }
-
     public let name: String
     public let command: String
     public let arguments: [String]
     public let environment: [String: String]
     public let disabled: Bool
     public let secretRefs: [String]
-    /// How this server's tools are surfaced to the LLM. Default: `.always`.
-    public let loading: LoadingMode
-    /// Human-readable purpose shown to the LLM when `loading == .deferred`.
-    /// Auto-generated from tool names if nil.
+    /// Human-readable purpose shown to the LLM when the server is deferred
+    /// for an agent. Auto-generated from tool names if nil.
     public let description: String?
 
     public init(
@@ -54,7 +41,6 @@ public struct MCPServerConfig: Sendable, Equatable {
         environment: [String: String] = [:],
         disabled: Bool = false,
         secretRefs: [String] = [],
-        loading: LoadingMode = .always,
         description: String? = nil
     ) {
         self.name = name
@@ -63,7 +49,6 @@ public struct MCPServerConfig: Sendable, Equatable {
         self.environment = environment
         self.disabled = disabled
         self.secretRefs = secretRefs
-        self.loading = loading
         self.description = description
     }
 }

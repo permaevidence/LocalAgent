@@ -43,14 +43,22 @@ enum ProfileBundle {
             if !cfg.environment.isEmpty { dict["env"] = cfg.environment }
             if cfg.disabled { dict["disabled"] = true }
             if !cfg.secretRefs.isEmpty { dict["secretRefs"] = cfg.secretRefs }
-            if cfg.loading != .always { dict["loading"] = cfg.loading.rawValue }
             if let desc = cfg.description, !desc.isEmpty { dict["description"] = desc }
             mcpServers[cfg.name] = dict
         }
         root["mcpServers"] = mcpServers
 
-        // mcp-routing.json — read directly (already a [String:[String]] map).
-        root["mcpRouting"] = MCPAgentRouting.currentConfig()
+        // mcp-routing.json — serialize AgentRouting to JSON-compatible dicts.
+        let routingConfig = MCPAgentRouting.currentConfig()
+        var routingDict: [String: Any] = [:]
+        for (agent, routing) in routingConfig {
+            if routing.deferred.isEmpty {
+                routingDict[agent] = routing.always
+            } else {
+                routingDict[agent] = ["always": routing.always, "deferred": routing.deferred]
+            }
+        }
+        root["mcpRouting"] = routingDict
 
         // User-defined agents — ship each .md file verbatim so round-trips
         // preserve the full prompt body.
@@ -122,8 +130,6 @@ enum ProfileBundle {
                 let env = (dict["env"] as? [String: String]) ?? [:]
                 let disabled = (dict["disabled"] as? Bool) ?? false
                 let secretRefs = (dict["secretRefs"] as? [String]) ?? []
-                let loadingStr = (dict["loading"] as? String) ?? "always"
-                let loading: MCPServerConfig.LoadingMode = (loadingStr == "deferred") ? .deferred : .always
                 let desc = dict["description"] as? String
                 let cfg = MCPServerConfig(
                     name: name,
@@ -132,7 +138,6 @@ enum ProfileBundle {
                     environment: env,
                     disabled: disabled,
                     secretRefs: secretRefs,
-                    loading: loading,
                     description: desc
                 )
                 if merged[name] != nil {
@@ -153,11 +158,22 @@ enum ProfileBundle {
 
         // --- MCP routing ---
         var routingReplaced: [String] = []
-        if let bundledRouting = root["mcpRouting"] as? [String: [String]] {
+        if let bundledRouting = root["mcpRouting"] as? [String: Any] {
             var current = MCPAgentRouting.currentConfig()
-            for (agent, patterns) in bundledRouting {
+            for (agent, raw) in bundledRouting {
+                let routing: MCPAgentRouting.AgentRouting
+                if let list = raw as? [String] {
+                    // Backward compat: plain array → always
+                    routing = MCPAgentRouting.AgentRouting(always: list, deferred: [])
+                } else if let obj = raw as? [String: Any] {
+                    let always = (obj["always"] as? [String]) ?? []
+                    let deferred = (obj["deferred"] as? [String]) ?? []
+                    routing = MCPAgentRouting.AgentRouting(always: always, deferred: deferred)
+                } else {
+                    continue
+                }
                 if current[agent] != nil { routingReplaced.append(agent) }
-                current[agent] = patterns
+                current[agent] = routing
             }
             try MCPAgentRouting.save(config: current)
         }
