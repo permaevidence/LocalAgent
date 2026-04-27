@@ -750,15 +750,16 @@ actor OpenRouterService {
 
             if hasMultimodal {
                 // Multimodal message: inline base64 data for files still on disk,
-                // text-only hints for files that have been cleaned up.
-                // Media persists across turns until the message is pruned by context pressure.
+                // text-only hints when media has been pruned by the watermark system
+                // or when files have been cleaned up from disk.
+                let shouldInline = !message.mediaPruned
                 var contentParts: [ContentPart] = []
                 var textHints: [String] = []
 
                 // Referenced images (context from replied-to messages)
                 for refImageFileName in message.referencedImageFileNames {
                     let imageURL = imagesDirectory.appendingPathComponent(refImageFileName)
-                    if let imageData = try? Data(contentsOf: imageURL) {
+                    if shouldInline, let imageData = try? Data(contentsOf: imageURL) {
                         let base64String = imageData.base64EncodedString()
                         let mimeType = refImageFileName.hasSuffix(".png") ? "image/png" : "image/jpeg"
                         let dataURL = "data:\(mimeType);base64,\(base64String)"
@@ -774,7 +775,7 @@ actor OpenRouterService {
                 // Referenced documents (context from replied-to messages)
                 for refDocFileName in message.referencedDocumentFileNames {
                     let documentURL = documentsDirectory.appendingPathComponent(refDocFileName)
-                    if let documentData = try? Data(contentsOf: documentURL) {
+                    if shouldInline, let documentData = try? Data(contentsOf: documentURL) {
                         let ext = documentURL.pathExtension.lowercased()
                         let mimeType: String
                         switch ext {
@@ -809,7 +810,7 @@ actor OpenRouterService {
                 // Primary images
                 for imageFileName in message.imageFileNames {
                     let imageURL = imagesDirectory.appendingPathComponent(imageFileName)
-                    if let imageData = try? Data(contentsOf: imageURL) {
+                    if shouldInline, let imageData = try? Data(contentsOf: imageURL) {
                         let base64String = imageData.base64EncodedString()
                         let mimeType = imageFileName.hasSuffix(".png") ? "image/png" : "image/jpeg"
                         let dataURL = "data:\(mimeType);base64,\(base64String)"
@@ -825,7 +826,7 @@ actor OpenRouterService {
                 // Primary documents (PDFs, text files, etc.)
                 for documentFileName in message.documentFileNames {
                     let documentURL = documentsDirectory.appendingPathComponent(documentFileName)
-                    if let documentData = try? Data(contentsOf: documentURL) {
+                    if shouldInline, let documentData = try? Data(contentsOf: documentURL) {
                         let ext = documentURL.pathExtension.lowercased()
                         let mimeType: String
                         switch ext {

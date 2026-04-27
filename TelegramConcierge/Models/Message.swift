@@ -66,6 +66,11 @@ struct Message: Identifiable, Codable, Equatable {
     // Compact tool log — generated at turn end, used as fallback when toolInteractions are pruned
     var compactToolLog: String?
 
+    // When true, inline multimodal data (images/PDFs) is skipped and replaced
+    // by text hints with descriptions. Set by the Watermark pruner alongside
+    // tool interaction pruning to free context under memory pressure.
+    var mediaPruned: Bool
+
     // Origin classification for synthetic user messages — drives Watermark-time compression.
     // Default `.userText` means the user actually typed this and it must NEVER be compressed.
     var kind: MessageKind
@@ -75,8 +80,22 @@ struct Message: Identifiable, Codable, Equatable {
         case assistant
     }
     
+    // MARK: - Media helpers
+
+    /// Whether this message carries inline media that hasn't been pruned yet.
+    var hasUnprunedMedia: Bool {
+        !mediaPruned && !(imageFileNames.isEmpty && documentFileNames.isEmpty
+            && referencedImageFileNames.isEmpty && referencedDocumentFileNames.isEmpty)
+    }
+
+    /// Total number of media files across all attachment arrays.
+    var mediaFileCount: Int {
+        imageFileNames.count + documentFileNames.count
+            + referencedImageFileNames.count + referencedDocumentFileNames.count
+    }
+
     // MARK: - Convenience accessors for single-attachment cases
-    
+
     var imageFileName: String? { imageFileNames.first }
     var documentFileName: String? { documentFileNames.first }
     var imageFileSize: Int? { imageFileSizes.first }
@@ -107,6 +126,7 @@ struct Message: Identifiable, Codable, Equatable {
         subagentSessionEvents: [SubagentSessionEvent] = [],
         toolInteractions: [ToolInteraction] = [],
         compactToolLog: String? = nil,
+        mediaPruned: Bool = false,
         kind: MessageKind = .userText
     ) {
         self.id = id
@@ -127,6 +147,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.subagentSessionEvents = subagentSessionEvents
         self.toolInteractions = toolInteractions
         self.compactToolLog = compactToolLog
+        self.mediaPruned = mediaPruned
         self.kind = kind
     }
     
@@ -138,7 +159,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, kind
+        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, mediaPruned, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -230,6 +251,9 @@ struct Message: Identifiable, Codable, Equatable {
         // Compact tool log (new field, default nil for old messages)
         compactToolLog = try? container.decodeIfPresent(String.self, forKey: .compactToolLog)
 
+        // Media pruned flag (new field, default false for old messages)
+        mediaPruned = (try? container.decodeIfPresent(Bool.self, forKey: .mediaPruned)) ?? false
+
         // Message kind (new field, default to `.userText` for old stored messages so
         // legacy data is never accidentally treated as compressible).
         kind = (try? container.decodeIfPresent(MessageKind.self, forKey: .kind)) ?? .userText
@@ -266,6 +290,10 @@ struct Message: Identifiable, Codable, Equatable {
             try container.encode(toolInteractions, forKey: .toolInteractions)
         }
         try container.encodeIfPresent(compactToolLog, forKey: .compactToolLog)
+        // Only encode mediaPruned when true (non-default)
+        if mediaPruned {
+            try container.encode(mediaPruned, forKey: .mediaPruned)
+        }
         // Only encode kind when non-default, mirroring the conditional-encode pattern above.
         if kind != .userText {
             try container.encode(kind, forKey: .kind)
