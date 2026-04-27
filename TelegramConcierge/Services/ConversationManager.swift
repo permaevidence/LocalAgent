@@ -1045,30 +1045,28 @@ class ConversationManager: ObservableObject {
 
         let beforeTokens = totalTokens
 
-        // Phase 1: prune tool interactions
+        // Single chronological pass: prune oldest content first (tools + media)
         var prunedToolCount = 0
-        for i in 0..<messages.count {
-            guard totalTokens > targetTokens else { break }
-            guard i != protectedIndex else { continue }
-            guard messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty else { continue }
-
-            let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
-            messages[i].toolInteractions = []
-            totalTokens -= savedTokens
-            prunedToolCount += 1
-        }
-
-        // Phase 2: prune inline media if still over budget
         var prunedMediaCount = 0
         for i in 0..<messages.count {
             guard totalTokens > targetTokens else { break }
             guard i != protectedIndex else { continue }
-            guard messages[i].hasUnprunedMedia else { continue }
 
-            let savedTokens = messages[i].mediaFileCount * (1500 - 50)
-            messages[i].mediaPruned = true
-            totalTokens -= savedTokens
-            prunedMediaCount += 1
+            if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
+                let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
+                messages[i].toolInteractions = []
+                totalTokens -= savedTokens
+                prunedToolCount += 1
+            }
+
+            guard totalTokens > targetTokens else { break }
+
+            if messages[i].hasUnprunedMedia {
+                let savedTokens = messages[i].mediaFileCount * (1500 - 50)
+                messages[i].mediaPruned = true
+                totalTokens -= savedTokens
+                prunedMediaCount += 1
+            }
         }
 
         if prunedToolCount > 0 {
@@ -1932,30 +1930,31 @@ class ConversationManager: ObservableObject {
 
         print("[ConversationManager] Context budget exceeded: ~\(totalTokens) tokens > \(maxTokens). Pruning to ~\(targetTokens)...")
 
-        // Phase 1: prune tool interactions (oldest first, protect latest turn)
+        // Single chronological pass: prune oldest content first (tools + media),
+        // regardless of type, so a turn-2 file is pruned before turn-5 tools.
         var prunedToolCount = 0
-        for i in 0..<messages.count {
-            guard totalTokens > targetTokens else { break }
-            guard i != protectedIndex else { continue }
-            guard messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty else { continue }
-
-            let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
-            messages[i].toolInteractions = []
-            totalTokens -= savedTokens
-            prunedToolCount += 1
-        }
-
-        // Phase 2: if still over budget, prune inline media (oldest first)
         var prunedMediaCount = 0
         for i in 0..<messages.count {
             guard totalTokens > targetTokens else { break }
             guard i != protectedIndex else { continue }
-            guard messages[i].hasUnprunedMedia else { continue }
 
-            let savedTokens = messages[i].mediaFileCount * (1500 - 50)
-            messages[i].mediaPruned = true
-            totalTokens -= savedTokens
-            prunedMediaCount += 1
+            // Prune tool interactions on this message
+            if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
+                let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
+                messages[i].toolInteractions = []
+                totalTokens -= savedTokens
+                prunedToolCount += 1
+            }
+
+            guard totalTokens > targetTokens else { break }
+
+            // Prune inline media on this message
+            if messages[i].hasUnprunedMedia {
+                let savedTokens = messages[i].mediaFileCount * (1500 - 50)
+                messages[i].mediaPruned = true
+                totalTokens -= savedTokens
+                prunedMediaCount += 1
+            }
         }
 
         // Parallel pass: collapse stale synthetic user messages (emails, subagent
@@ -2017,30 +2016,28 @@ class ConversationManager: ObservableObject {
 
         print("[ConversationManager] Mid-loop context exceeded: ~\(totalTokens) > \(maxTokens). Pruning...")
 
-        // Phase 1: prune tool interactions
+        // Single chronological pass: prune oldest content first (tools + media)
         var prunedToolCount = 0
-        for i in 0..<messagesForLLM.count {
-            guard totalTokens > targetTokens else { break }
-            guard i != protectedIndex else { continue }
-            guard messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty else { continue }
-
-            let savedTokens = estimateToolInteractionTokens(messagesForLLM[i].toolInteractions)
-            messagesForLLM[i].toolInteractions = []
-            totalTokens -= savedTokens
-            prunedToolCount += 1
-        }
-
-        // Phase 2: prune inline media if still over budget
         var prunedMediaCount = 0
         for i in 0..<messagesForLLM.count {
             guard totalTokens > targetTokens else { break }
             guard i != protectedIndex else { continue }
-            guard messagesForLLM[i].hasUnprunedMedia else { continue }
 
-            let savedTokens = messagesForLLM[i].mediaFileCount * (1500 - 50)
-            messagesForLLM[i].mediaPruned = true
-            totalTokens -= savedTokens
-            prunedMediaCount += 1
+            if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
+                let savedTokens = estimateToolInteractionTokens(messagesForLLM[i].toolInteractions)
+                messagesForLLM[i].toolInteractions = []
+                totalTokens -= savedTokens
+                prunedToolCount += 1
+            }
+
+            guard totalTokens > targetTokens else { break }
+
+            if messagesForLLM[i].hasUnprunedMedia {
+                let savedTokens = messagesForLLM[i].mediaFileCount * (1500 - 50)
+                messagesForLLM[i].mediaPruned = true
+                totalTokens -= savedTokens
+                prunedMediaCount += 1
+            }
         }
 
         if prunedToolCount > 0 {
