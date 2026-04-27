@@ -747,16 +747,15 @@ actor OpenRouterService {
             let hasReferencedImages = !message.referencedImageFileNames.isEmpty
             let hasReferencedDocuments = !message.referencedDocumentFileNames.isEmpty
             let hasMultimodal = hasImages || hasDocuments || hasReferencedImages || hasReferencedDocuments
-            
-            // Only send media inline for the CURRENT user message (during the active agentic loop)
-            // Historical messages get text-only hints pointing to the read_file tool
-            let isCurrentMessage = (currentUserMessageId != nil && message.id == currentUserMessageId)
-            
-            if hasMultimodal && isCurrentMessage {
-                // Current message: use multimodal content array with inline base64 data
-                var contentParts: [ContentPart] = []
 
-                // Add referenced images first (context from replied-to messages)
+            if hasMultimodal {
+                // Multimodal message: inline base64 data for files still on disk,
+                // text-only hints for files that have been cleaned up.
+                // Media persists across turns until the message is pruned by context pressure.
+                var contentParts: [ContentPart] = []
+                var textHints: [String] = []
+
+                // Referenced images (context from replied-to messages)
                 for refImageFileName in message.referencedImageFileNames {
                     let imageURL = imagesDirectory.appendingPathComponent(refImageFileName)
                     if let imageData = try? Data(contentsOf: imageURL) {
@@ -764,14 +763,18 @@ actor OpenRouterService {
                         let mimeType = refImageFileName.hasSuffix(".png") ? "image/png" : "image/jpeg"
                         let dataURL = "data:\(mimeType);base64,\(base64String)"
                         contentParts.append(.image(ImageURL(url: dataURL)))
+                        textHints.append("[Referenced image: \(refImageFileName)]")
+                    } else {
+                        let desc = await FileDescriptionService.shared.get(filename: refImageFileName)
+                        let label = desc != nil ? "\(refImageFileName) — \"\(desc!)\"" : refImageFileName
+                        textHints.append("[Referenced image: \(label) — use read_file to view]")
                     }
                 }
 
-                // Add referenced documents (context from replied-to messages)
+                // Referenced documents (context from replied-to messages)
                 for refDocFileName in message.referencedDocumentFileNames {
                     let documentURL = documentsDirectory.appendingPathComponent(refDocFileName)
                     if let documentData = try? Data(contentsOf: documentURL) {
-                        let base64String = documentData.base64EncodedString()
                         let ext = documentURL.pathExtension.lowercased()
                         let mimeType: String
                         switch ext {
@@ -783,15 +786,27 @@ actor OpenRouterService {
                         default: mimeType = "application/octet-stream"
                         }
                         if isInlineMimeTypeSupported(mimeType) {
-                            let dataURL = "data:\(mimeType);base64,\(base64String)"
-                            contentParts.append(.image(ImageURL(url: dataURL)))
-                        } else {
-                            print("[OpenRouterService] Skipping inline referenced document \(refDocFileName) due to unsupported MIME type: \(mimeType)")
+                            if normalizeMimeType(mimeType) == "application/pdf" && requiresPDFToImageConversion {
+                                let pageImages = renderPDFPagesToImages(documentData, filename: refDocFileName)
+                                if !pageImages.isEmpty {
+                                    contentParts.append(contentsOf: pageImages)
+                                    textHints.append("[Referenced document: \(refDocFileName) (\(pageImages.count) pages)]")
+                                }
+                            } else {
+                                let base64String = documentData.base64EncodedString()
+                                let dataURL = "data:\(mimeType);base64,\(base64String)"
+                                contentParts.append(.image(ImageURL(url: dataURL)))
+                                textHints.append("[Referenced document: \(refDocFileName)]")
+                            }
                         }
+                    } else {
+                        let desc = await FileDescriptionService.shared.get(filename: refDocFileName)
+                        let label = desc != nil ? "\(refDocFileName) — \"\(desc!)\"" : refDocFileName
+                        textHints.append("[Referenced document: \(label) — use read_file to view]")
                     }
                 }
 
-                // Add primary images
+                // Primary images
                 for imageFileName in message.imageFileNames {
                     let imageURL = imagesDirectory.appendingPathComponent(imageFileName)
                     if let imageData = try? Data(contentsOf: imageURL) {
@@ -799,10 +814,15 @@ actor OpenRouterService {
                         let mimeType = imageFileName.hasSuffix(".png") ? "image/png" : "image/jpeg"
                         let dataURL = "data:\(mimeType);base64,\(base64String)"
                         contentParts.append(.image(ImageURL(url: dataURL)))
+                        textHints.append("[Image: \(imageFileName)]")
+                    } else {
+                        let desc = await FileDescriptionService.shared.get(filename: imageFileName)
+                        let label = desc != nil ? "\(imageFileName) — \"\(desc!)\"" : imageFileName
+                        textHints.append("[Image: \(label) — use read_file to view]")
                     }
                 }
 
-                // Add primary documents (PDFs, text files, etc.)
+                // Primary documents (PDFs, text files, etc.)
                 for documentFileName in message.documentFileNames {
                     let documentURL = documentsDirectory.appendingPathComponent(documentFileName)
                     if let documentData = try? Data(contentsOf: documentURL) {
@@ -817,125 +837,47 @@ actor OpenRouterService {
                         default: mimeType = "application/octet-stream"
                         }
                         if isInlineMimeTypeSupported(mimeType) {
-                            // PDF on local model: render pages to images
                             if normalizeMimeType(mimeType) == "application/pdf" && requiresPDFToImageConversion {
                                 let pageImages = renderPDFPagesToImages(documentData, filename: documentFileName)
                                 if !pageImages.isEmpty {
                                     print("[OpenRouterService] Rendered \(pageImages.count) page(s) from \(documentFileName) as PNG for local model")
                                     contentParts.append(contentsOf: pageImages)
+                                    textHints.append("[Document: \(documentFileName) (\(pageImages.count) pages)]")
                                 } else {
                                     print("[OpenRouterService] Failed to render PDF \(documentFileName) to images")
+                                    textHints.append("[Document: \(documentFileName) — render failed, use read_file to view]")
                                 }
                             } else {
                                 let base64String = documentData.base64EncodedString()
                                 let dataURL = "data:\(mimeType);base64,\(base64String)"
                                 contentParts.append(.image(ImageURL(url: dataURL)))
+                                textHints.append("[Document: \(documentFileName)]")
                             }
                         } else {
                             print("[OpenRouterService] Skipping inline document \(documentFileName) due to unsupported MIME type: \(mimeType)")
+                            textHints.append("[Document: \(documentFileName) — not viewable inline]")
                         }
+                    } else {
+                        let desc = await FileDescriptionService.shared.get(filename: documentFileName)
+                        let label = desc != nil ? "\(documentFileName) — \"\(desc!)\"" : documentFileName
+                        textHints.append("[Document: \(label) — use read_file to view]")
                     }
                 }
 
-                // Build text content with timestamp, date header, and filename hints
+                // Build text content with hints and user message
                 var textContent = message.content
-
-                // Add hints for referenced attachments
-                if !message.referencedImageFileNames.isEmpty {
-                    let refImageList = message.referencedImageFileNames.joined(separator: ", ")
-                    textContent = "[Referenced image(s) from cited message: \(refImageList)] \(textContent)"
+                if !textHints.isEmpty {
+                    textContent = textHints.joined(separator: " ") + " " + textContent
                 }
-                if !message.referencedDocumentFileNames.isEmpty {
-                    let refDocList = message.referencedDocumentFileNames.joined(separator: ", ")
-                    textContent = "[Referenced document(s) from cited message: \(refDocList)] \(textContent)"
-                }
-
-                // Add hints for primary attachments
-                if !message.imageFileNames.isEmpty {
-                    let imageList = message.imageFileNames.joined(separator: ", ")
-                    textContent = "[Image file(s): \(imageList)] \(textContent)"
-                }
-                if !message.documentFileNames.isEmpty {
-                    let docList = message.documentFileNames.joined(separator: ", ")
-                    textContent = "[Document file(s): \(docList)] \(textContent)"
-                }
-
-                if textContent.isEmpty {
+                if textContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     textContent = (hasDocuments || hasReferencedDocuments) ? "Please analyze this document." : "What's in this image?"
                 }
-                // Add date header (if new day) and time prefix
-                // Only prefix user messages with the time. Prefixing assistant
-                // messages causes the model to imitate the pattern and emit
-                // "[HH:mm] ..." at the start of its own replies. Date header
-                // still applies to both to mark day boundaries consistently.
+
                 let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
                 textContent = rolePrefix + textContent
                 contentParts.append(.text(textContent))
 
                 apiMessages.append(OpenRouterAPIMessage(role: role, content: .parts(contentParts)))
-            } else if hasMultimodal {
-                // Historical message with media: text-only with hints to use read_file tool
-                var textContent = message.content
-                
-                // Add hints for referenced attachments (historical) with descriptions
-                if !message.referencedImageFileNames.isEmpty {
-                    var parts: [String] = []
-                    for filename in message.referencedImageFileNames {
-                        if let desc = await FileDescriptionService.shared.get(filename: filename) {
-                            parts.append("\(filename) — \"\(desc)\"")
-                        } else {
-                            parts.append(filename)
-                        }
-                    }
-                    textContent = "[Referenced image(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
-                }
-                if !message.referencedDocumentFileNames.isEmpty {
-                    var parts: [String] = []
-                    for filename in message.referencedDocumentFileNames {
-                        if let desc = await FileDescriptionService.shared.get(filename: filename) {
-                            parts.append("\(filename) — \"\(desc)\"")
-                        } else {
-                            parts.append(filename)
-                        }
-                    }
-                    textContent = "[Referenced document(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
-                }
-                
-                // Add hints for primary attachments (historical) with descriptions
-                if !message.imageFileNames.isEmpty {
-                    var parts: [String] = []
-                    for filename in message.imageFileNames {
-                        if let desc = await FileDescriptionService.shared.get(filename: filename) {
-                            parts.append("\(filename) — \"\(desc)\"")
-                        } else {
-                            parts.append(filename)
-                        }
-                    }
-                    textContent = "[Past image(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
-                }
-                if !message.documentFileNames.isEmpty {
-                    var parts: [String] = []
-                    for filename in message.documentFileNames {
-                        if let desc = await FileDescriptionService.shared.get(filename: filename) {
-                            parts.append("\(filename) — \"\(desc)\"")
-                        } else {
-                            parts.append(filename)
-                        }
-                    }
-                    textContent = "[Past document(s): \(parts.joined(separator: "; ")) — use read_file to view] \(textContent)"
-                }
-                
-                if textContent.isEmpty {
-                    textContent = (hasDocuments || hasReferencedDocuments) ? "[User sent a document]" : "[User sent an image]"
-                }
-                // Add date header (if new day) and time prefix
-                // Only prefix user messages with the time. Prefixing assistant
-                // messages causes the model to imitate the pattern and emit
-                // "[HH:mm] ..." at the start of its own replies. Date header
-                // still applies to both to mark day boundaries consistently.
-                let rolePrefix = (message.role == .user) ? (dateHeader + timePrefix) : dateHeader
-                textContent = rolePrefix + textContent
-                apiMessages.append(OpenRouterAPIMessage(role: role, content: .text(textContent)))
             } else {
                 // Standard text message. Internal per-turn metadata is injected
                 // separately as a system note so the model does not mistake it
