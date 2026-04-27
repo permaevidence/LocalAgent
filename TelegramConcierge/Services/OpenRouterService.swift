@@ -242,65 +242,20 @@ actor OpenRouterService {
         """
     }
     
-    /// Estimate token cost for a document file
-    /// Since documents are only sent inline for the CURRENT message (one agentic loop),
-    /// historical messages just have a filename hint + description. We return minimal tokens.
-    /// - Voice messages (.ogg/.oga): 0 tokens (transcribed locally)
-    /// - All other files: 50 tokens (filename hint + description in history)
-    private func estimateDocumentTokens(fileName: String, fileSize: Int) -> Int {
-        // Voice messages are transcribed locally - 0 tokens for Gemini
-        if isVoiceMessage(fileName) {
-            return 0
-        }
-        
-        // All documents: just filename hint + description
-        return 50
-    }
-    
-    /// Estimate token cost for an image
-    /// Since images are only sent inline for the CURRENT message,
-    /// historical messages just have a filename hint + description.
-    private func estimateImageTokens(fileSize: Int) -> Int {
-        return 50  // Filename hint + description
-    }
-    
+    /// Estimate token cost for archiving/chunking decisions.
+    /// Counts only the TEXT footprint: message content + small breadcrumb cost per
+    /// attachment (filename + description hint). Does NOT count inline media bytes
+    /// or tool interactions — those are managed by the Watermark pruner separately.
     func estimateTokens(for message: Message) -> Int {
         var tokens = message.content.count / 4
-        
-        // Image token cost: 50 tokens (filename + description hint)
-        for _ in message.imageFileNames {
-            tokens += 50
-        }
-        
-        // Document token cost: 50 tokens (filename + description hint)
-        for fileName in message.documentFileNames {
-            if isVoiceMessage(fileName) {
-                tokens += 0  // Voice messages transcribed locally
-            } else {
-                tokens += 50
-            }
-        }
-        
-        // Include referenced attachments (from replied-to messages)
-        // Since we don't store referenced image sizes anymore, we assume a generic 250 tokens
-        for _ in message.referencedImageFileNames {
-            tokens += 250
-        }
-        
-        for (index, fileName) in message.referencedDocumentFileNames.enumerated() {
-            if index < message.referencedDocumentFileSizes.count {
-                tokens += estimateDocumentTokens(fileName: fileName, fileSize: message.referencedDocumentFileSizes[index])
-            } else {
-                if isVideoFile(fileName) || isVoiceMessage(fileName) {
-                    tokens += 0
-                } else if isAudioFile(fileName) {
-                    tokens += 200
-                } else {
-                    tokens += 500
-                }
-            }
-        }
-        
+
+        // All attachments (primary + referenced): 50 tokens each for the text breadcrumb
+        let breadcrumbCount = message.imageFileNames.count
+            + message.documentFileNames.filter { !isVoiceMessage($0) }.count
+            + message.referencedImageFileNames.count
+            + message.referencedDocumentFileNames.filter { !isVoiceMessage($0) }.count
+        tokens += breadcrumbCount * 50
+
         return max(tokens, 1)
     }
     
