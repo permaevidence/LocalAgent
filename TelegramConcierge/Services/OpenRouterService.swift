@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 actor OpenRouterService {
     private let openRouterBaseURL = "https://openrouter.ai/api/v1/chat/completions"
@@ -165,6 +166,37 @@ actor OpenRouterService {
             return "File received and saved locally."
         }
         return fallbackDescriptionForUnsupportedFile(filename: filename, mimeType: mimeType)
+    }
+
+    /// Whether the current provider requires PDFs to be rendered as images.
+    /// LM Studio (and other local inference servers) only accept image MIME types
+    /// in the image_url content block — raw PDF bytes cause HTTP 400.
+    private var requiresPDFToImageConversion: Bool {
+        isLMStudio
+    }
+
+    /// Renders each page of a PDF document to a PNG image.
+    /// Used as a fallback for providers that don't support native PDF input.
+    private func renderPDFPagesToImages(_ pdfData: Data, filename: String) -> [ContentPart] {
+        guard let doc = PDFDocument(data: pdfData) else { return [] }
+        var parts: [ContentPart] = []
+        let scale: CGFloat = 2.0 // 2x for readable text at standard DPI
+
+        for i in 0..<doc.pageCount {
+            guard let page = doc.page(at: i) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            let size = NSSize(width: bounds.width * scale, height: bounds.height * scale)
+            let thumbnail = page.thumbnail(of: size, for: .mediaBox)
+
+            if let tiffData = thumbnail.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                let base64String = pngData.base64EncodedString()
+                let dataURL = "data:image/png;base64,\(base64String)"
+                parts.append(.image(ImageURL(url: dataURL)))
+            }
+        }
+        return parts
     }
 
     private func historyMetadataNote(for message: Message) async -> String? {
@@ -770,11 +802,10 @@ actor OpenRouterService {
                     }
                 }
 
-                // Add primary documents (PDFs sent directly to Gemini)
+                // Add primary documents (PDFs, text files, etc.)
                 for documentFileName in message.documentFileNames {
                     let documentURL = documentsDirectory.appendingPathComponent(documentFileName)
                     if let documentData = try? Data(contentsOf: documentURL) {
-                        let base64String = documentData.base64EncodedString()
                         let ext = documentURL.pathExtension.lowercased()
                         let mimeType: String
                         switch ext {
@@ -786,8 +817,20 @@ actor OpenRouterService {
                         default: mimeType = "application/octet-stream"
                         }
                         if isInlineMimeTypeSupported(mimeType) {
-                            let dataURL = "data:\(mimeType);base64,\(base64String)"
-                            contentParts.append(.image(ImageURL(url: dataURL)))
+                            // PDF on local model: render pages to images
+                            if normalizeMimeType(mimeType) == "application/pdf" && requiresPDFToImageConversion {
+                                let pageImages = renderPDFPagesToImages(documentData, filename: documentFileName)
+                                if !pageImages.isEmpty {
+                                    print("[OpenRouterService] Rendered \(pageImages.count) page(s) from \(documentFileName) as PNG for local model")
+                                    contentParts.append(contentsOf: pageImages)
+                                } else {
+                                    print("[OpenRouterService] Failed to render PDF \(documentFileName) to images")
+                                }
+                            } else {
+                                let base64String = documentData.base64EncodedString()
+                                let dataURL = "data:\(mimeType);base64,\(base64String)"
+                                contentParts.append(.image(ImageURL(url: dataURL)))
+                            }
                         } else {
                             print("[OpenRouterService] Skipping inline document \(documentFileName) due to unsupported MIME type: \(mimeType)")
                         }
@@ -975,11 +1018,25 @@ actor OpenRouterService {
                     var nonInlineFiles: [String] = []
                     for attachment in currentInteractionFiles {
                         if isInlineMimeTypeSupported(attachment.mimeType) {
-                            let base64String = attachment.data.base64EncodedString()
-                            let dataURL = "data:\(attachment.mimeType);base64,\(base64String)"
-                            print("[OpenRouterService] Adding file to user message: \(attachment.filename) (\(attachment.mimeType), \(attachment.data.count) bytes)")
-                            contentParts.append(.image(ImageURL(url: dataURL)))
-                            visibleFiles.append(attachment.filename)
+                            let normalized = normalizeMimeType(attachment.mimeType)
+                            // PDF on local model: render pages to images
+                            if normalized == "application/pdf" && requiresPDFToImageConversion {
+                                let pageImages = renderPDFPagesToImages(attachment.data, filename: attachment.filename)
+                                if !pageImages.isEmpty {
+                                    print("[OpenRouterService] Rendered \(pageImages.count) page(s) from \(attachment.filename) as PNG for local model")
+                                    contentParts.append(contentsOf: pageImages)
+                                    visibleFiles.append("\(attachment.filename) (\(pageImages.count) pages)")
+                                } else {
+                                    print("[OpenRouterService] Failed to render PDF \(attachment.filename) to images")
+                                    nonInlineFiles.append(attachment.filename)
+                                }
+                            } else {
+                                let base64String = attachment.data.base64EncodedString()
+                                let dataURL = "data:\(attachment.mimeType);base64,\(base64String)"
+                                print("[OpenRouterService] Adding file to user message: \(attachment.filename) (\(attachment.mimeType), \(attachment.data.count) bytes)")
+                                contentParts.append(.image(ImageURL(url: dataURL)))
+                                visibleFiles.append(attachment.filename)
+                            }
                         } else {
                             print("[OpenRouterService] Skipping inline tool attachment \(attachment.filename) due to unsupported MIME type: \(attachment.mimeType)")
                             nonInlineFiles.append(attachment.filename)
