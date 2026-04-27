@@ -57,11 +57,17 @@ class ConversationManager: ObservableObject {
     private var frozenEmailContext: String?
     private var frozenContextDay: Date?
 
+    /// Actual prompt_tokens from the most recent API response. Used as the
+    /// real HIGH watermark trigger for pruning instead of rough estimates.
+    private var lastPromptTokens: Int?
+
     private struct ToolAwareResponse {
         let finalText: String
         let compactToolLog: String?
         let toolInteractions: [ToolInteraction]
         let accessedProjects: [String]?
+        /// Sum of measured token costs across all tool interactions in this turn.
+        let measuredToolTokens: Int?
         /// Absolute paths of pre-existing files modified during the turn (FilesLedger diff).
         let editedFilePaths: [String]
         /// Absolute paths of files newly created during the turn (FilesLedger diff).
@@ -792,7 +798,8 @@ class ConversationManager: ObservableObject {
                 accessedProjectIds: response.accessedProjects ?? [],
                 subagentSessionEvents: response.subagentSessionEvents,
                 toolInteractions: response.toolInteractions,
-                compactToolLog: response.compactToolLog
+                compactToolLog: response.compactToolLog,
+                measuredToolTokens: response.measuredToolTokens
             )
             messages.append(assistantMessage)
             didMutateHistory = true
@@ -1029,7 +1036,7 @@ class ConversationManager: ObservableObject {
             // Inline media costs ~1500 tokens/file; pruned media costs ~50 (text hint)
             let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
             totalTokens += message.mediaFileCount * mediaTokensPerFile
-            let msgToolTokens = estimateToolInteractionTokens(message.toolInteractions)
+            let msgToolTokens = toolInteractionTokens(message.toolInteractions)
             totalTokens += msgToolTokens
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
                 prunableToolTokens += msgToolTokens
@@ -1053,7 +1060,7 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
-                let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
+                let savedTokens = toolInteractionTokens(messages[i].toolInteractions)
                 messages[i].toolInteractions = []
                 totalTokens -= savedTokens
                 prunedToolCount += 1
@@ -1415,6 +1422,7 @@ class ConversationManager: ObservableObject {
                 compactToolLog: nil,
                 toolInteractions: [],
                 accessedProjects: [],
+                measuredToolTokens: nil,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: []
@@ -1422,6 +1430,9 @@ class ConversationManager: ObservableObject {
         }
 
         var sessionEvents: [SubagentSessionEvent] = []
+
+        // Track prompt_tokens across rounds to compute per-interaction deltas
+        var prevRoundPromptTokens: Int? = lastPromptTokens
 
         toolLoop: for round in 1...maxToolRoundsSafetyLimit {
             try Task.checkCancellation()
@@ -1486,10 +1497,18 @@ class ConversationManager: ObservableObject {
             case .text(let content, let promptTokens, _):
                 // LLM decided to respond with text - we're done
                 if let tokens = promptTokens {
+                    lastPromptTokens = tokens
+                    // Attribute delta to the last tool interaction if one exists
+                    if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
+                        let delta = tokens - prev
+                        toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
+                    }
                     print("[ConversationManager] LLM returned text response after \(round) round(s) (\(tokens) prompt tokens)")
                 } else {
                     print("[ConversationManager] LLM returned text response after \(round) round(s)")
                 }
+                // Sum measured costs across all tool interactions
+                let totalMeasured = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
                 let accessedProjects = extractAccessedProjects(from: toolInteractions)
                 let changed = await computeLedgerDiff()
                 return ToolAwareResponse(
@@ -1497,14 +1516,25 @@ class ConversationManager: ObservableObject {
                     compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                     toolInteractions: toolInteractions,
                     accessedProjects: accessedProjects,
+                    measuredToolTokens: totalMeasured > 0 ? totalMeasured : nil,
                     editedFilePaths: changed.edited,
                     generatedFilePaths: changed.generated,
-                subagentSessionEvents: sessionEvents
+                    subagentSessionEvents: sessionEvents
                 )
 
-            case .toolCalls(let assistantMessage, let calls, _, _):
+            case .toolCalls(let assistantMessage, let calls, let roundPromptTokens, _):
                 // Model wants to use more tools
                 print("[ConversationManager] Round \(round): LLM requested \(calls.count) tool(s): \(calls.map { $0.function.name })")
+
+                // Track prompt tokens and attribute delta to previous interaction
+                if let tokens = roundPromptTokens {
+                    lastPromptTokens = tokens
+                    if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
+                        let delta = tokens - prev
+                        toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
+                    }
+                    prevRoundPromptTokens = tokens
+                }
                 
                 if cumulativeToolSpendUSD >= toolSpendLimitPerTurnUSD {
                     didHitToolSpendLimit = true
@@ -1520,12 +1550,14 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached during tool loop: \(exceededMessage)")
+                    let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
                     let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
                         compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
+                        measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1659,12 +1691,14 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached after tool execution: \(exceededMessage)")
+                    let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
                     let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
                         compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
+                        measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1713,6 +1747,7 @@ class ConversationManager: ObservableObject {
             KeychainHelper.recordOpenRouterSpend(finalSpendUSD)
         }
         
+        let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
         let accessedProjects = extractAccessedProjects(from: toolInteractions)
         let changed = await computeLedgerDiff()
 
@@ -1723,6 +1758,7 @@ class ConversationManager: ObservableObject {
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
+                measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
@@ -1733,6 +1769,7 @@ class ConversationManager: ObservableObject {
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
+                measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
@@ -1845,20 +1882,35 @@ class ConversationManager: ObservableObject {
         return defaultTargetContextTokens
     }
 
-    /// Estimate tokens for tool interactions (assistant tool_calls + tool results)
-    private func estimateToolInteractionTokens(_ interactions: [ToolInteraction]) -> Int {
+    /// Token cost for tool interactions. Uses measured API delta when available,
+    /// falls back to character-based estimation otherwise.
+    private func toolInteractionTokens(_ interactions: [ToolInteraction]) -> Int {
         var tokens = 0
         for interaction in interactions {
-            tokens += (interaction.assistantMessage.content?.count ?? 0) / 4
-            for call in interaction.assistantMessage.toolCalls {
-                tokens += call.function.arguments.count / 4
-                tokens += call.function.name.count / 4 + 20
-            }
-            for result in interaction.results {
-                tokens += result.content.count / 4 + 20
+            if let measured = interaction.measuredTokenCost {
+                tokens += measured
+            } else {
+                // Fallback: rough estimate from content lengths
+                tokens += (interaction.assistantMessage.content?.count ?? 0) / 4
+                for call in interaction.assistantMessage.toolCalls {
+                    tokens += call.function.arguments.count / 4
+                    tokens += call.function.name.count / 4 + 20
+                }
+                for result in interaction.results {
+                    tokens += result.content.count / 4 + 20
+                }
             }
         }
         return tokens
+    }
+
+    /// Token cost for a message's tool interactions. Prefers the per-message
+    /// measured total (sum of all round deltas), falls back to per-interaction.
+    private func toolTokensForMessage(_ message: Message) -> Int {
+        if let measured = message.measuredToolTokens, measured > 0 {
+            return measured
+        }
+        return toolInteractionTokens(message.toolInteractions)
     }
 
     /// Estimate system prompt size from its components
@@ -1895,22 +1947,32 @@ class ConversationManager: ObservableObject {
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messages)
 
-        // Estimate full context: system prompt + all messages + all stored tool interactions
-        var totalTokens = estimateSystemPromptTokens(
-            calendarContext: calendarContext,
-            emailContext: emailContext,
-            chunkSummaries: chunkSummaries
-        )
+        // Use real prompt_tokens from API when available, fall back to estimation
+        var totalTokens: Int
+        if let real = lastPromptTokens {
+            totalTokens = real
+            print("[ConversationManager] Using real prompt_tokens: \(real)")
+        } else {
+            totalTokens = estimateSystemPromptTokens(
+                calendarContext: calendarContext,
+                emailContext: emailContext,
+                chunkSummaries: chunkSummaries
+            )
+            for message in messages {
+                totalTokens += message.content.count / 4 + 1
+                let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
+                totalTokens += message.mediaFileCount * mediaTokensPerFile
+                totalTokens += toolInteractionTokens(message.toolInteractions)
+            }
+            print("[ConversationManager] Using estimated tokens: \(totalTokens)")
+        }
+
+        // Calculate prunable savings (always estimated — we know totals but not per-item)
         var prunableToolTokens = 0
         var prunableMediaTokens = 0
         for (i, message) in messages.enumerated() {
-            totalTokens += message.content.count / 4 + 1
-            let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
-            totalTokens += message.mediaFileCount * mediaTokensPerFile
-            let toolTokens = estimateToolInteractionTokens(message.toolInteractions)
-            totalTokens += toolTokens
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
-                prunableToolTokens += toolTokens
+                prunableToolTokens += toolTokensForMessage(message)
             }
             if i != protectedIndex && message.hasUnprunedMedia {
                 prunableMediaTokens += message.mediaFileCount * (1500 - 50)
@@ -1940,8 +2002,9 @@ class ConversationManager: ObservableObject {
 
             // Prune tool interactions on this message
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
-                let savedTokens = estimateToolInteractionTokens(messages[i].toolInteractions)
+                let savedTokens = toolTokensForMessage(messages[i])
                 messages[i].toolInteractions = []
+                messages[i].measuredToolTokens = nil
                 totalTokens -= savedTokens
                 prunedToolCount += 1
             }
@@ -2001,7 +2064,7 @@ class ConversationManager: ObservableObject {
             totalTokens += message.content.count / 4 + 1
             let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
             totalTokens += message.mediaFileCount * mediaTokensPerFile
-            let toolTokens = estimateToolInteractionTokens(message.toolInteractions)
+            let toolTokens = toolInteractionTokens(message.toolInteractions)
             totalTokens += toolTokens
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
                 prunableToolTokens += toolTokens
@@ -2010,7 +2073,7 @@ class ConversationManager: ObservableObject {
                 prunableMediaTokens += message.mediaFileCount * (1500 - 50)
             }
         }
-        totalTokens += estimateToolInteractionTokens(currentTurnInteractions)
+        totalTokens += toolInteractionTokens(currentTurnInteractions)
 
         guard totalTokens > maxTokens, (prunableToolTokens > 0 || prunableMediaTokens > 0) else { return false }
 
@@ -2024,7 +2087,7 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
-                let savedTokens = estimateToolInteractionTokens(messagesForLLM[i].toolInteractions)
+                let savedTokens = toolInteractionTokens(messagesForLLM[i].toolInteractions)
                 messagesForLLM[i].toolInteractions = []
                 totalTokens -= savedTokens
                 prunedToolCount += 1

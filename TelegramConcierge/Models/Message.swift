@@ -71,6 +71,11 @@ struct Message: Identifiable, Codable, Equatable {
     // tool interaction pruning to free context under memory pressure.
     var mediaPruned: Bool
 
+    // Measured total token cost of this message's tool interactions,
+    // derived from API prompt_tokens deltas. Used by the pruner instead
+    // of rough estimates. nil when no real data is available.
+    var measuredToolTokens: Int?
+
     // Origin classification for synthetic user messages — drives Watermark-time compression.
     // Default `.userText` means the user actually typed this and it must NEVER be compressed.
     var kind: MessageKind
@@ -127,6 +132,7 @@ struct Message: Identifiable, Codable, Equatable {
         toolInteractions: [ToolInteraction] = [],
         compactToolLog: String? = nil,
         mediaPruned: Bool = false,
+        measuredToolTokens: Int? = nil,
         kind: MessageKind = .userText
     ) {
         self.id = id
@@ -148,6 +154,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.toolInteractions = toolInteractions
         self.compactToolLog = compactToolLog
         self.mediaPruned = mediaPruned
+        self.measuredToolTokens = measuredToolTokens
         self.kind = kind
     }
     
@@ -159,7 +166,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, mediaPruned, kind
+        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, mediaPruned, measuredToolTokens, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -254,6 +261,9 @@ struct Message: Identifiable, Codable, Equatable {
         // Media pruned flag (new field, default false for old messages)
         mediaPruned = (try? container.decodeIfPresent(Bool.self, forKey: .mediaPruned)) ?? false
 
+        // Measured tool tokens (new field, default nil for old messages)
+        measuredToolTokens = try? container.decodeIfPresent(Int.self, forKey: .measuredToolTokens)
+
         // Message kind (new field, default to `.userText` for old stored messages so
         // legacy data is never accidentally treated as compressible).
         kind = (try? container.decodeIfPresent(MessageKind.self, forKey: .kind)) ?? .userText
@@ -294,6 +304,7 @@ struct Message: Identifiable, Codable, Equatable {
         if mediaPruned {
             try container.encode(mediaPruned, forKey: .mediaPruned)
         }
+        try container.encodeIfPresent(measuredToolTokens, forKey: .measuredToolTokens)
         // Only encode kind when non-default, mirroring the conditional-encode pattern above.
         if kind != .userText {
             try container.encode(kind, forKey: .kind)

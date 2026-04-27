@@ -1336,6 +1336,9 @@ actor OpenRouterService {
 struct ToolInteraction: Codable {
     let assistantMessage: AssistantToolCallMessage
     let results: [ToolResultMessage]
+    /// Actual token cost measured via prompt_tokens delta between API rounds.
+    /// nil when the API didn't report tokens or for subagent interactions.
+    var measuredTokenCost: Int?
 }
 
 // MARK: - Request Models
