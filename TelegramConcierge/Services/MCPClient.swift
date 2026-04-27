@@ -67,6 +67,11 @@ actor MCPClient {
         }
         proc.environment = environment
 
+        // macOS GUI apps launch with cwd=/. MCP servers that create files
+        // relative to cwd (e.g. Playwright creating .playwright-mcp/) would
+        // fail with ENOENT trying to write to /. Set a sane working directory.
+        proc.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+
         let stdin = Pipe()
         let stdout = Pipe()
         let stderr = Pipe()
