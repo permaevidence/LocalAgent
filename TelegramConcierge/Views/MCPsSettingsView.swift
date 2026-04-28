@@ -22,6 +22,7 @@ struct MCPsSettingsView: View {
     @State private var isLoading: Bool = true
     @State private var errorNote: String?
     @State private var showingAddSheet: Bool = false
+    @State private var pendingRemoveIndex: Int? = nil
 
     // Secrets editing (per editing session)
     @State private var secretValues: [String: String] = [:]   // "<server>|<VAR>" → value
@@ -67,6 +68,28 @@ struct MCPsSettingsView: View {
             Button("OK") {}
         } message: {
             Text(importResultText)
+        }
+        .alert("Remove MCP server?",
+               isPresented: Binding(
+                   get: { pendingRemoveIndex != nil },
+                   set: { if !$0 { pendingRemoveIndex = nil } }
+               )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingRemoveIndex = nil
+            }
+            Button("Remove", role: .destructive) {
+                if let idx = pendingRemoveIndex {
+                    servers.remove(at: idx)
+                    if editingIndex == idx { editingIndex = nil }
+                    pendingRemoveIndex = nil
+                    Task { await saveAndReconnect() }
+                }
+            }
+        } message: {
+            if let idx = pendingRemoveIndex, idx < servers.count {
+                Text("This will permanently remove \"\(servers[idx].name)\" and its configuration. API keys stored in Keychain will not be deleted.")
+            }
         }
     }
 
@@ -323,20 +346,18 @@ struct MCPsSettingsView: View {
                 // ON/OFF toggle — always visible
                 Button {
                     if cfg.disabled {
-                        // Turning ON: enable, save, and reconnect
                         updateServer(idx: idx, newDisabled: false)
                         Task { await saveAndReconnect() }
                     } else {
-                        // Turning OFF: disable, save, and reconnect
                         updateServer(idx: idx, newDisabled: true)
                         Task { await saveAndReconnect() }
                     }
                 } label: {
                     Text(cfg.disabled ? "OFF" : "ON")
-                        .font(.caption.weight(.bold))
+                        .font(.body.weight(.bold))
                         .foregroundColor(cfg.disabled ? .secondary : .white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(cfg.disabled ? Color.gray.opacity(0.25) : Color.green)
@@ -345,14 +366,13 @@ struct MCPsSettingsView: View {
                 .buttonStyle(.plain)
 
                 // Remove button — always visible
-                Button(role: .destructive) {
-                    servers.remove(at: idx)
-                    if editingIndex == idx { editingIndex = nil }
-                    Task { await saveAndReconnect() }
+                Button {
+                    pendingRemoveIndex = idx
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundColor(.red.opacity(0.7))
+                        .padding(6)
                 }
                 .buttonStyle(.plain)
             }
