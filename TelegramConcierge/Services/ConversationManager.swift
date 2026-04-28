@@ -1975,6 +1975,20 @@ class ConversationManager: ObservableObject {
         return toolInteractionTokens(message.toolInteractions)
     }
 
+    /// Estimated token savings from pruning a message's inline media to text hints.
+    /// Uses measured total tokens when available to derive actual media cost;
+    /// falls back to 1450 tokens/file estimate.
+    private func mediaSavingsForMessage(_ message: Message) -> Int {
+        if let measured = message.measuredTokens {
+            let textTokens = message.content.count / 4 + 1
+            let toolTokens = message.measuredToolTokens ?? toolInteractionTokens(message.toolInteractions)
+            let mediaCost = max(measured - textTokens - toolTokens, 0)
+            let hintCost = message.mediaFileCount * 50
+            return max(mediaCost - hintCost, 0)
+        }
+        return message.mediaFileCount * (1500 - 50)
+    }
+
     /// Estimate system prompt size from its components
     private func estimateSystemPromptTokens(
         calendarContext: String?,
@@ -2029,7 +2043,7 @@ class ConversationManager: ObservableObject {
             print("[ConversationManager] Using estimated tokens: \(totalTokens)")
         }
 
-        // Calculate prunable savings (always estimated — we know totals but not per-item)
+        // Calculate prunable savings — use measured data when available
         var prunableToolTokens = 0
         var prunableMediaTokens = 0
         for (i, message) in messages.enumerated() {
@@ -2037,7 +2051,7 @@ class ConversationManager: ObservableObject {
                 prunableToolTokens += toolTokensForMessage(message)
             }
             if i != protectedIndex && message.hasUnprunedMedia {
-                prunableMediaTokens += message.mediaFileCount * (1500 - 50)
+                prunableMediaTokens += mediaSavingsForMessage(message)
             }
         }
 
@@ -2067,6 +2081,7 @@ class ConversationManager: ObservableObject {
                 let savedTokens = toolTokensForMessage(messages[i])
                 messages[i].toolInteractions = []
                 messages[i].measuredToolTokens = nil
+                if let m = messages[i].measuredTokens { messages[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
                 prunedToolCount += 1
             }
@@ -2075,8 +2090,9 @@ class ConversationManager: ObservableObject {
 
             // Prune inline media on this message
             if messages[i].hasUnprunedMedia {
-                let savedTokens = messages[i].mediaFileCount * (1500 - 50)
+                let savedTokens = mediaSavingsForMessage(messages[i])
                 messages[i].mediaPruned = true
+                if let m = messages[i].measuredTokens { messages[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
                 prunedMediaCount += 1
             }
@@ -2115,27 +2131,34 @@ class ConversationManager: ObservableObject {
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messagesForLLM)
 
-        var totalTokens = estimateSystemPromptTokens(
-            calendarContext: calendarContext,
-            emailContext: emailContext,
-            chunkSummaries: chunkSummaries
-        )
+        // Use real prompt_tokens when available, fall back to estimation
+        var totalTokens: Int
+        if let real = lastPromptTokens {
+            totalTokens = real
+        } else {
+            totalTokens = estimateSystemPromptTokens(
+                calendarContext: calendarContext,
+                emailContext: emailContext,
+                chunkSummaries: chunkSummaries
+            )
+            for message in messagesForLLM {
+                totalTokens += message.content.count / 4 + 1
+                let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
+                totalTokens += message.mediaFileCount * mediaTokensPerFile
+                totalTokens += toolInteractionTokens(message.toolInteractions)
+            }
+            totalTokens += toolInteractionTokens(currentTurnInteractions)
+        }
         var prunableToolTokens = 0
         var prunableMediaTokens = 0
         for (i, message) in messagesForLLM.enumerated() {
-            totalTokens += message.content.count / 4 + 1
-            let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
-            totalTokens += message.mediaFileCount * mediaTokensPerFile
-            let toolTokens = toolInteractionTokens(message.toolInteractions)
-            totalTokens += toolTokens
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
-                prunableToolTokens += toolTokens
+                prunableToolTokens += toolTokensForMessage(message)
             }
             if i != protectedIndex && message.hasUnprunedMedia {
-                prunableMediaTokens += message.mediaFileCount * (1500 - 50)
+                prunableMediaTokens += mediaSavingsForMessage(message)
             }
         }
-        totalTokens += toolInteractionTokens(currentTurnInteractions)
 
         guard totalTokens > maxTokens, (prunableToolTokens > 0 || prunableMediaTokens > 0) else { return false }
 
@@ -2149,8 +2172,10 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
-                let savedTokens = toolInteractionTokens(messagesForLLM[i].toolInteractions)
+                let savedTokens = toolTokensForMessage(messagesForLLM[i])
                 messagesForLLM[i].toolInteractions = []
+                messagesForLLM[i].measuredToolTokens = nil
+                if let m = messagesForLLM[i].measuredTokens { messagesForLLM[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
                 prunedToolCount += 1
             }
@@ -2158,8 +2183,9 @@ class ConversationManager: ObservableObject {
             guard totalTokens > targetTokens else { break }
 
             if messagesForLLM[i].hasUnprunedMedia {
-                let savedTokens = messagesForLLM[i].mediaFileCount * (1500 - 50)
+                let savedTokens = mediaSavingsForMessage(messagesForLLM[i])
                 messagesForLLM[i].mediaPruned = true
+                if let m = messagesForLLM[i].measuredTokens { messagesForLLM[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
                 prunedMediaCount += 1
             }
@@ -2172,6 +2198,8 @@ class ConversationManager: ObservableObject {
                     && messagesForLLM[i].toolInteractions.isEmpty
                     && !messages[i].toolInteractions.isEmpty {
                     messages[i].toolInteractions = []
+                    messages[i].measuredToolTokens = nil
+                    messages[i].measuredTokens = messagesForLLM[i].measuredTokens
                 }
             }
             pruneOldCompactToolLogs()
@@ -2190,6 +2218,7 @@ class ConversationManager: ObservableObject {
                     && messagesForLLM[i].mediaPruned
                     && !messages[i].mediaPruned {
                     messages[i].mediaPruned = true
+                    messages[i].measuredTokens = messagesForLLM[i].measuredTokens
                 }
             }
         }
