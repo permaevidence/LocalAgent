@@ -286,11 +286,12 @@ actor OpenRouterService {
         return "[The tool downloaded file(s) not viewable inline in this model: \(unavailable.joined(separator: ", ")). Use the filenames and tool outputs to continue (e.g., import ZIPs with project tools).]"
     }
 
-    /// Whether the current provider requires PDFs to be rendered as images.
-    /// LM Studio (and other local inference servers) only accept image MIME types
-    /// in the image_url content block — raw PDF bytes cause HTTP 400.
+    /// Whether PDFs should be rendered as PNG images before sending to the model.
+    /// Native PDF input is only reliably supported by Gemini models on OpenRouter.
+    /// Everything else (LM Studio, other OpenRouter models) gets PNG rendering.
     private var requiresPDFToImageConversion: Bool {
-        isLMStudio
+        if isLMStudio { return true }
+        return !model.lowercased().contains("gemini")
     }
 
     /// Renders each page of a PDF document to a PNG image.
@@ -1311,16 +1312,26 @@ actor OpenRouterService {
         var describableFiles: [(filename: String, data: Data, mimeType: String)] = []
         
         for file in files {
-            if isInlineMimeTypeSupported(file.mimeType) {
-                let base64String = file.data.base64EncodedString()
-                let dataURL = "data:\(file.mimeType);base64,\(base64String)"
-                
-                // OpenRouter expects all files as ImageURL
-                contentParts.append(.image(ImageURL(url: dataURL)))
-                describableFiles.append(file)
-            } else {
+            guard isInlineMimeTypeSupported(file.mimeType) else {
                 descriptions[file.filename] = fallbackDescriptionForUnsupportedFile(filename: file.filename, mimeType: file.mimeType)
                 print("[OpenRouterService] Skipping file description multimodal upload for \(file.filename) due to unsupported MIME type: \(file.mimeType)")
+                continue
+            }
+
+            let normalized = normalizeMimeType(file.mimeType)
+            if normalized == "application/pdf" && requiresPDFToImageConversion {
+                let pageImages = renderPDFPagesToImages(file.data, filename: file.filename)
+                if !pageImages.isEmpty {
+                    contentParts.append(contentsOf: pageImages)
+                    describableFiles.append(file)
+                } else {
+                    descriptions[file.filename] = fallbackDescriptionForUnsupportedFile(filename: file.filename, mimeType: file.mimeType)
+                }
+            } else {
+                let base64String = file.data.base64EncodedString()
+                let dataURL = "data:\(file.mimeType);base64,\(base64String)"
+                contentParts.append(.image(ImageURL(url: dataURL)))
+                describableFiles.append(file)
             }
         }
         
