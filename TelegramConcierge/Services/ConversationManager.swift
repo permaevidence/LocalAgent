@@ -3933,6 +3933,48 @@ class ConversationManager: ObservableObject {
         files = await filesWithoutStoredDescriptions(files)
         guard !files.isEmpty else { return }
 
+        // ── Per-file limits: skip oversized files, cap PDF pages ──
+        var cappedFiles: [(filename: String, data: Data, mimeType: String)] = []
+        var fallbackDescriptions: [String: String] = [:]
+
+        for file in files {
+            if file.data.count > Self.descriptionMaxFileSizeBytes {
+                fallbackDescriptions[file.filename] = "Large file (\(file.data.count / 1024)KB)"
+                print("[ConversationManager] Skipping \(file.filename) for description: \(file.data.count) bytes exceeds \(Self.descriptionMaxFileSizeBytes) limit")
+                continue
+            }
+            if file.mimeType.lowercased() == "application/pdf",
+               let doc = PDFDocument(data: file.data),
+               doc.pageCount > Self.descriptionMaxPDFPages {
+                let sliced = PDFDocument()
+                for i in 0..<Self.descriptionMaxPDFPages {
+                    if let page = doc.page(at: i) { sliced.insert(page, at: i) }
+                }
+                if let slicedData = sliced.dataRepresentation() {
+                    cappedFiles.append((filename: file.filename, data: slicedData, mimeType: file.mimeType))
+                    print("[ConversationManager] Capped \(file.filename) from \(doc.pageCount) to \(Self.descriptionMaxPDFPages) pages for description")
+                } else {
+                    fallbackDescriptions[file.filename] = "PDF document (\(doc.pageCount) pages)"
+                }
+            } else {
+                cappedFiles.append(file)
+            }
+        }
+
+        // ── Batch limit: cap total files per API call ──
+        if cappedFiles.count > Self.descriptionMaxFiles {
+            for file in cappedFiles[Self.descriptionMaxFiles...] {
+                fallbackDescriptions[file.filename] = "File skipped (batch limit of \(Self.descriptionMaxFiles) reached)"
+            }
+            cappedFiles = Array(cappedFiles.prefix(Self.descriptionMaxFiles))
+        }
+
+        if !fallbackDescriptions.isEmpty {
+            await FileDescriptionService.shared.saveMultiple(fallbackDescriptions)
+        }
+
+        guard !cappedFiles.isEmpty else { return }
+
         let context = descriptionContextMessages(
             forMessageAt: messageIndex,
             in: sourceMessages,
@@ -3941,7 +3983,7 @@ class ConversationManager: ObservableObject {
 
         do {
             let descriptions = try await openRouterService.generateFileDescriptions(
-                files: files,
+                files: cappedFiles,
                 conversationContext: context
             )
             await FileDescriptionService.shared.saveMultiple(descriptions)
@@ -3996,6 +4038,11 @@ class ConversationManager: ObservableObject {
         
         return files
     }
+
+    /// Limits for the file-description API call made at prune time.
+    private static let descriptionMaxPDFPages = 10
+    private static let descriptionMaxFiles = 8
+    private static let descriptionMaxFileSizeBytes = 5 * 1024 * 1024 // 5 MB
 
     /// Tools whose output files deserve a persisted description. Everything
     /// else (read_file, grep, etc.) is transient working data that doesn't
