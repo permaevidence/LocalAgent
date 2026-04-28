@@ -20,9 +20,6 @@ struct MCPsSettingsView: View {
     @State private var statusByServer: [String: ServerStatus] = [:]
     @State private var editingIndex: Int? = nil
     @State private var isLoading: Bool = true
-    @State private var isApplying: Bool = false
-    @State private var dirty: Bool = false
-    @State private var statusNote: String?
     @State private var errorNote: String?
     @State private var showingAddSheet: Bool = false
 
@@ -46,7 +43,6 @@ struct MCPsSettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 heroHeader
                 serversCard
-                actionsCard
                 profileCard
             }
             .padding(.horizontal, 16)
@@ -61,7 +57,7 @@ struct MCPsSettingsView: View {
                 existingNames: Set(servers.map { $0.name }),
                 onAdd: { cfg in
                     servers.append(cfg)
-                    dirty = true
+                    Task { await saveAndReconnect() }
                     showingAddSheet = false
                 },
                 onCancel: { showingAddSheet = false }
@@ -87,15 +83,9 @@ struct MCPsSettingsView: View {
             do {
                 let data = try ProfileBundle.exportData()
                 try data.write(to: url, options: .atomic)
-                statusNote = "Exported profile to \(url.lastPathComponent)"
                 errorNote = nil
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    if statusNote?.contains("Exported") == true { statusNote = nil }
-                }
             } catch {
                 errorNote = "Export failed: \(error.localizedDescription)"
-                statusNote = nil
             }
         }
     }
@@ -123,7 +113,6 @@ struct MCPsSettingsView: View {
                 errorNote = nil
             } catch {
                 errorNote = "Import failed: \(error.localizedDescription)"
-                statusNote = nil
             }
         }
     }
@@ -191,7 +180,7 @@ struct MCPsSettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 cardTitle("Installed servers",
                           systemImage: "server.rack",
-                          subtitle: "Click a server to expand its settings. Status dot: green = connected, yellow = starting, red = failed, gray = disabled.")
+                          subtitle: "Click a server to expand its settings. Editing any field turns the server OFF — click ON to apply changes and reconnect.")
 
                 if isLoading {
                     HStack(spacing: 6) {
@@ -217,70 +206,16 @@ struct MCPsSettingsView: View {
                         }
                     }
                 }
-            }
-        }
-    }
 
-    // MARK: - Actions card
-
-    private var actionsCard: some View {
-        cardContainer {
-            VStack(alignment: .leading, spacing: 10) {
-                cardTitle("Save changes",
-                          systemImage: "arrow.triangle.2.circlepath",
-                          subtitle: "After adding, editing, or removing a server, press “Save & reconnect” to apply. LocalAgent restarts the affected servers in the background so the changes take effect on your next turn — no app restart needed.")
-
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await applyChanges() }
-                    } label: {
-                        if isApplying {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("Saving…")
-                            }
-                            .frame(maxWidth: .infinity)
-                        } else {
-                            Label("Save & reconnect", systemImage: "checkmark.circle.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!dirty || isApplying)
-
-                    Button {
-                        Task { await reload() }
-                    } label: {
-                        Label("Undo changes", systemImage: "arrow.uturn.backward")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(!dirty || isApplying)
-                }
-
-                if let note = statusNote {
-                    Label(note, systemImage: "checkmark.circle.fill")
-                        .font(.callout)
-                        .foregroundColor(.green)
-                } else if let err = errorNote {
+                if let err = errorNote {
                     Label(err, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundColor(.red)
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Where this is saved: \(MCPRegistry.mcpConfigPath())")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
-                    Text("API keys are stored securely in your macOS Keychain — never written to the config file above.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
             }
         }
     }
+
 
     // MARK: - Profile card
 
@@ -347,37 +282,33 @@ struct MCPsSettingsView: View {
     @ViewBuilder
     private func serverRow(idx: Int, cfg: MCPServerConfig) -> some View {
         let status = statusByServer[cfg.name]
-        DisclosureGroup(
-            isExpanded: Binding(
-                get: { editingIndex == idx },
-                set: { editingIndex = $0 ? idx : nil }
-            )
-        ) {
-            serverEditor(idx: idx)
-                .padding(.leading, 8)
-        } label: {
+        VStack(alignment: .leading, spacing: 0) {
+            // Always-visible header
             HStack(spacing: 8) {
+                Button {
+                    editingIndex = editingIndex == idx ? nil : idx
+                } label: {
+                    Image(systemName: editingIndex == idx ? "chevron.down" : "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 12)
+                }
+                .buttonStyle(.plain)
+
                 statusIndicator(for: status, disabled: cfg.disabled)
+
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(cfg.name)
-                            .font(.body.weight(.medium))
-                        if cfg.disabled {
-                            Text("disabled")
-                                .font(.caption2)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.gray.opacity(0.2))
-                                .cornerRadius(3)
-                        }
-                    }
+                    Text(cfg.name)
+                        .font(.body.weight(.medium))
                     Text(commandPreview(cfg))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
+
                 Spacer()
-                if let status = status {
+
+                if let status = status, !cfg.disabled {
                     if status.connected {
                         Text("\(status.toolCount) tools")
                             .font(.caption2)
@@ -388,6 +319,50 @@ struct MCPsSettingsView: View {
                             .foregroundColor(.red)
                     }
                 }
+
+                // ON/OFF toggle — always visible
+                Button {
+                    if cfg.disabled {
+                        // Turning ON: enable, save, and reconnect
+                        updateServer(idx: idx, newDisabled: false)
+                        Task { await saveAndReconnect() }
+                    } else {
+                        // Turning OFF: disable, save, and reconnect
+                        updateServer(idx: idx, newDisabled: true)
+                        Task { await saveAndReconnect() }
+                    }
+                } label: {
+                    Text(cfg.disabled ? "OFF" : "ON")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(cfg.disabled ? .secondary : .white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(cfg.disabled ? Color.gray.opacity(0.25) : Color.green)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                // Remove button — always visible
+                Button(role: .destructive) {
+                    servers.remove(at: idx)
+                    if editingIndex == idx { editingIndex = nil }
+                    Task { await saveAndReconnect() }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundColor(.red.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+            .contentShape(Rectangle())
+
+            // Expandable editor
+            if editingIndex == idx {
+                serverEditor(idx: idx)
+                    .padding(.leading, 20)
+                    .padding(.top, 8)
             }
         }
     }
@@ -423,14 +398,14 @@ struct MCPsSettingsView: View {
                 "Command (e.g. npx, uvx, /abs/path)",
                 text: Binding(
                     get: { binding.wrappedValue.command },
-                    set: { newValue in replaceConfig(at: binding, command: newValue) }
+                    set: { newValue in replaceConfigAndDisable(at: binding, idx: idx, command: newValue) }
                 )
             )
             .textFieldStyle(.roundedBorder)
 
-            argumentsEditor(binding: binding)
-            envEditor(binding: binding)
-            secretRefsEditor(binding: binding)
+            argumentsEditor(binding: binding, idx: idx)
+            envEditor(binding: binding, idx: idx)
+            secretRefsEditor(binding: binding, idx: idx)
 
             // Description field — shown to the LLM when this server is set
             // to "deferred" for an agent (configured in the Agents tab).
@@ -443,31 +418,11 @@ struct MCPsSettingsView: View {
                     text: Binding(
                         get: { binding.wrappedValue.description ?? "" },
                         set: { newValue in
-                            replaceConfig(at: binding, serverDescription: newValue.isEmpty ? nil : newValue)
+                            replaceConfigAndDisable(at: binding, idx: idx, serverDescription: newValue.isEmpty ? nil : newValue)
                         }
                     )
                 )
                 .textFieldStyle(.roundedBorder)
-            }
-
-            HStack {
-                Toggle("Disabled", isOn: Binding(
-                    get: { binding.wrappedValue.disabled },
-                    set: { newValue in
-                        updateServer(idx: idx, newDisabled: newValue)
-                    }
-                ))
-                .toggleStyle(.checkbox)
-
-                Spacer()
-
-                Button(role: .destructive) {
-                    servers.remove(at: idx)
-                    editingIndex = nil
-                    dirty = true
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                }
             }
 
             if let status = statusByServer[binding.wrappedValue.name],
@@ -481,7 +436,7 @@ struct MCPsSettingsView: View {
         .padding(.vertical, 4)
     }
 
-    private func argumentsEditor(binding: Binding<MCPServerConfig>) -> some View {
+    private func argumentsEditor(binding: Binding<MCPServerConfig>, idx: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Arguments")
                 .font(.caption)
@@ -492,7 +447,7 @@ struct MCPsSettingsView: View {
                     get: { binding.wrappedValue.arguments.joined(separator: " ") },
                     set: { newValue in
                         let parts = newValue.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-                        replaceConfig(at: binding, arguments: parts)
+                        replaceConfigAndDisable(at: binding, idx: idx, arguments: parts)
                     }
                 )
             )
@@ -500,7 +455,7 @@ struct MCPsSettingsView: View {
         }
     }
 
-    private func envEditor(binding: Binding<MCPServerConfig>) -> some View {
+    private func envEditor(binding: Binding<MCPServerConfig>, idx: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Environment variables — KEY=value, one per line. Non-sensitive values only (these ARE saved in plain text).")
                 .font(.caption)
@@ -509,7 +464,7 @@ struct MCPsSettingsView: View {
                 get: { formatEnv(binding.wrappedValue.environment) },
                 set: { newValue in
                     let parsed = parseEnv(newValue)
-                    replaceConfig(at: binding, environment: parsed)
+                    replaceConfigAndDisable(at: binding, idx: idx, environment: parsed)
                 }
             ))
             .frame(height: 60)
@@ -518,7 +473,7 @@ struct MCPsSettingsView: View {
         }
     }
 
-    private func secretRefsEditor(binding: Binding<MCPServerConfig>) -> some View {
+    private func secretRefsEditor(binding: Binding<MCPServerConfig>, idx: Int) -> some View {
         let serverName = binding.wrappedValue.name
         let refs = binding.wrappedValue.secretRefs
         return VStack(alignment: .leading, spacing: 4) {
@@ -527,7 +482,7 @@ struct MCPsSettingsView: View {
                 .foregroundColor(.secondary)
             ForEach(refs, id: \.self) { ref in
                 secretRow(server: serverName, ref: ref) {
-                    replaceConfig(at: binding, secretRefs: refs.filter { $0 != ref })
+                    replaceConfigAndDisable(at: binding, idx: idx, secretRefs: refs.filter { $0 != ref })
                 }
             }
             HStack {
@@ -537,7 +492,7 @@ struct MCPsSettingsView: View {
                     let key = "newSecretDraft|\(serverName)"
                     let draft = (secretValues[key] ?? "").trimmingCharacters(in: .whitespaces)
                     guard !draft.isEmpty, !refs.contains(draft) else { return }
-                    replaceConfig(at: binding, secretRefs: refs + [draft])
+                    replaceConfigAndDisable(at: binding, idx: idx, secretRefs: refs + [draft])
                     secretValues[key] = ""
                 }
             }
@@ -612,35 +567,47 @@ struct MCPsSettingsView: View {
             secretRefs: old.secretRefs,
             description: old.description
         )
-        dirty = true
     }
 
-    private func replaceConfig(
+    /// Edit a config field AND auto-disable the server so the user sees it
+    /// flip to OFF — they click ON when ready, which saves and reconnects.
+    private func replaceConfigAndDisable(
         at binding: Binding<MCPServerConfig>,
+        idx: Int,
         command: String? = nil,
         arguments: [String]? = nil,
         environment: [String: String]? = nil,
-        disabled: Bool? = nil,
         secretRefs: [String]? = nil,
         serverDescription: String?? = nil
     ) {
         let old = binding.wrappedValue
         let newDesc: String?
         if let outer = serverDescription {
-            newDesc = outer   // caller explicitly set (possibly to nil)
+            newDesc = outer
         } else {
-            newDesc = old.description  // unchanged
+            newDesc = old.description
         }
         binding.wrappedValue = MCPServerConfig(
             name: old.name,
             command: command ?? old.command,
             arguments: arguments ?? old.arguments,
             environment: environment ?? old.environment,
-            disabled: disabled ?? old.disabled,
+            disabled: true,
             secretRefs: secretRefs ?? old.secretRefs,
             description: newDesc
         )
-        dirty = true
+    }
+
+    /// Persist the current server list to disk and restart all MCPs.
+    private func saveAndReconnect() async {
+        do {
+            try MCPRegistry.saveConfigsToDisk(servers)
+            await MCPRegistry.shared.reloadFromDisk()
+            await MCPAgentRouting.refreshFromRegistry()
+            await reload()
+        } catch {
+            errorNote = "Save failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Env parsing
@@ -665,7 +632,6 @@ struct MCPsSettingsView: View {
 
     private func reload() async {
         isLoading = true
-        statusNote = nil
         errorNote = nil
         servers = MCPRegistry.loadConfigsFromDisk()
         let status = await MCPRegistry.shared.status()
@@ -679,29 +645,7 @@ struct MCPsSettingsView: View {
             )
         }
         statusByServer = map
-        dirty = false
         isLoading = false
-    }
-
-    private func applyChanges() async {
-        isApplying = true
-        defer { isApplying = false }
-        do {
-            try MCPRegistry.saveConfigsToDisk(servers)
-            await MCPRegistry.shared.reloadFromDisk()
-            await MCPAgentRouting.refreshFromRegistry()
-            dirty = false
-            statusNote = "Saved and restarted MCPs"
-            errorNote = nil
-            await reload()
-            Task {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if statusNote?.contains("Saved") == true { statusNote = nil }
-            }
-        } catch {
-            errorNote = "Save failed: \(error.localizedDescription)"
-            statusNote = nil
-        }
     }
 }
 
@@ -801,7 +745,7 @@ private struct AddMCPSheet: View {
                     .foregroundColor(.red)
             }
 
-            Text("After adding, you'll press “Save & reconnect” to make it live. You can set API keys and tokens in the server's details once it's listed.")
+            Text("The server will be added and connected immediately. You can set API keys and tokens in the server's details once it's listed.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
