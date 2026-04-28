@@ -3,7 +3,8 @@ import SwiftUI
 enum AppSection: String, CaseIterable, Identifiable {
     case chat
     case identity
-    case connection
+    case telegram
+    case llmProvider
     case services
     case agents
     case mcps
@@ -16,7 +17,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .chat: return "Chat"
         case .identity: return "Identity"
-        case .connection: return "Connection"
+        case .telegram: return "Telegram"
+        case .llmProvider: return "LLM Provider"
         case .services: return "Services"
         case .agents: return "Agents"
         case .mcps: return "MCPs"
@@ -29,7 +31,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .chat: return "bubble.left.and.bubble.right"
         case .identity: return "person.text.rectangle"
-        case .connection: return "antenna.radiowaves.left.and.right"
+        case .telegram: return "paperplane.fill"
+        case .llmProvider: return "brain.head.profile"
         case .services: return "puzzlepiece.extension"
         case .agents: return "person.2.wave.2"
         case .mcps: return "server.rack"
@@ -143,7 +146,7 @@ struct MainView: View {
             MCPsSettingsView()
         case .skills:
             SkillsSettingsView()
-        case .identity, .connection, .services, .data:
+        case .identity, .telegram, .llmProvider, .services, .data:
             SettingsView(section: selectedSection)
         }
     }

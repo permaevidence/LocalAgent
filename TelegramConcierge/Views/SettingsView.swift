@@ -184,8 +184,10 @@ struct SettingsView: View {
             switch section {
             case .identity:
                 identityTab
-            case .connection:
-                connectionTab
+            case .telegram:
+                telegramTab
+            case .llmProvider:
+                llmProviderTab
             case .services:
                 servicesTab
             case .data:
@@ -256,9 +258,9 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Connection Tab
+    // MARK: - Telegram Tab
 
-    private var connectionTab: some View {
+    private var telegramTab: some View {
         Form {
             Section {
                 SecureField("Bot Token", text: $telegramToken)
@@ -319,8 +321,31 @@ struct SettingsView: View {
                 Label("Telegram Bot", systemImage: "paperplane.fill")
             }
 
-            // LLM Provider section (was in AI Models tab)
-            
+            Section {
+                voiceTranscriptionContent
+            } header: {
+                Label("Voice Transcription", systemImage: "waveform")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal)
+        .onChange(of: telegramToken) { _ in autoSave { saveTelegramSection() } }
+        .onChange(of: chatId) { _ in autoSave { saveTelegramSection() } }
+        .onChange(of: voiceTranscriptionProvider) { _ in
+            autoSave { saveVoiceTranscriptionSection() }
+            if voiceTranscriptionProvider == .local {
+                Task {
+                    await WhisperKitService.shared.checkModelStatus()
+                }
+            }
+        }
+        .onChange(of: openAITranscriptionApiKey) { _ in autoSave { saveVoiceTranscriptionSection() } }
+    }
+
+    // MARK: - LLM Provider Tab
+
+    private var llmProviderTab: some View {
+        Form {
             Section {
                 Picker("LLM Provider", selection: $llmProvider) {
                     Text("OpenRouter").tag("openrouter")
@@ -479,8 +504,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.horizontal)
-        .onChange(of: telegramToken) { _ in autoSave { saveTelegramSection() } }
-        .onChange(of: chatId) { _ in autoSave { saveTelegramSection() } }
         .onChange(of: llmProvider) { _ in autoSave { saveOpenRouterSection() } }
         .onChange(of: lmStudioBaseURL) { _ in autoSave { saveOpenRouterSection() } }
         .onChange(of: lmStudioModel) { _ in autoSave { saveOpenRouterSection() } }
@@ -499,13 +522,6 @@ struct SettingsView: View {
 
     private var servicesTab: some View {
         Form {
-            // MARK: - Voice Transcription Section
-            Section {
-                voiceTranscriptionContent
-            } header: {
-                Label("Voice Transcription", systemImage: "waveform")
-            }
-
             Section {
                 SecureField("Serper API Key", text: $serperApiKey)
                     .textFieldStyle(.roundedBorder)
@@ -684,15 +700,6 @@ struct SettingsView: View {
         .onChange(of: vercelTimeout) { _ in autoSave { saveVercelSection() } }
         .onChange(of: instantApiToken) { _ in autoSave { saveInstantDatabaseSection() } }
         .onChange(of: instantCLICommand) { _ in autoSave { saveInstantDatabaseSection() } }
-        .onChange(of: voiceTranscriptionProvider) { _ in
-            autoSave { saveVoiceTranscriptionSection() }
-            if voiceTranscriptionProvider == .local {
-                Task {
-                    await WhisperKitService.shared.checkModelStatus()
-                }
-            }
-        }
-        .onChange(of: openAITranscriptionApiKey) { _ in autoSave { saveVoiceTranscriptionSection() } }
     }
 
     // MARK: - Data Tab
@@ -2445,6 +2452,6 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(section: .connection)
+    SettingsView(section: .llmProvider)
         .environmentObject(ConversationManager())
 }
