@@ -13,19 +13,13 @@ struct TelegramConciergeApp: App {
     var body: some Scene {
         WindowGroup {
             if onboardingComplete {
-                ContentView()
+                MainView()
                     .environmentObject(conversationManager)
             } else {
                 OnboardingView(isComplete: $onboardingComplete)
                     .environmentObject(conversationManager)
             }
         }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 560, height: 700)
-
-        Settings {
-            SettingsView()
-                .environmentObject(conversationManager)
-        }
+        .defaultSize(width: 960, height: 700)
     }
 }

@@ -3,7 +3,6 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @Environment(\.openSettings) private var openSettings
     @State private var scrollProxy: ScrollViewProxy?
     @State private var fileDescriptions: [String: String] = [:]
     @State private var showAlert = false
@@ -16,25 +15,13 @@ struct ContentView: View {
     var body: some View {
         HSplitView {
             mainContent
-                .frame(minWidth: 520, idealWidth: 640)
+                .frame(minWidth: 400, idealWidth: 520)
             if showTelemetry {
                 DebugTelemetryPanel()
                     .frame(minWidth: 280, idealWidth: 360)
             }
         }
-        .frame(minWidth: showTelemetry ? 820 : 520, minHeight: 500)
         .background(Color(nsColor: .windowBackgroundColor))
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showTelemetry.toggle()
-                } label: {
-                    Image(systemName: showTelemetry ? "sidebar.right" : "sidebar.squares.right")
-                }
-                .help(showTelemetry ? "Hide telemetry panel" : "Show telemetry panel")
-                .keyboardShortcut("t", modifiers: [.command, .shift])
-            }
-        }
         .task {
             await loadFileDescriptionsAsync()
         }
@@ -181,59 +168,27 @@ struct ContentView: View {
     
     // MARK: - Header
     
-    @State private var settingsHover = false
+    @State private var telemetryHover = false
     
     private var headerView: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                // App identity
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Telegram Concierge")
+                    Text("Chat")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("AI Chatbot")
+                    Text(conversationManager.isPolling ? "Connected" : "Disconnected")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                
+
                 Spacer()
-                
-                HStack(spacing: 6) {
-                    // Settings button
-                    headerIconButton(
-                        systemImage: "gearshape.fill",
-                        helpText: "Open Settings",
-                        isHovering: $settingsHover,
-                        action: { openSettings() }
-                    )
-                    
-                }
-                
-                // Polling toggle
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(conversationManager.isPolling ? Color.green : Color.gray.opacity(0.4))
-                        .frame(width: 7, height: 7)
-                    
-                    Toggle(isOn: Binding(
-                        get: { conversationManager.isPolling },
-                        set: { newValue in
-                            Task {
-                                if newValue {
-                                    await conversationManager.startPolling()
-                                } else {
-                                    conversationManager.stopPolling()
-                                }
-                            }
-                        }
-                    )) {
-                        Text(conversationManager.isPolling ? "Active" : "Inactive")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(conversationManager.isPolling ? .primary : .secondary)
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .tint(.green)
-                }
+
+                headerIconButton(
+                    systemImage: showTelemetry ? "sidebar.right" : "sidebar.squares.right",
+                    helpText: showTelemetry ? "Hide telemetry panel" : "Show telemetry panel",
+                    isHovering: $telemetryHover,
+                    action: { showTelemetry.toggle() }
+                )
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

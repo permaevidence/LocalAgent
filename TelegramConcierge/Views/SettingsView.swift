@@ -3,6 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    let section: AppSection
     @EnvironmentObject var conversationManager: ConversationManager
     
     @State private var telegramToken: String = ""
@@ -180,30 +181,19 @@ struct SettingsView: View {
 
             Divider()
 
-            TabView {
+            switch section {
+            case .identity:
                 identityTab
-                    .tabItem { Label("Identity", systemImage: "person.text.rectangle") }
-
+            case .connection:
                 connectionTab
-                    .tabItem { Label("Connection", systemImage: "antenna.radiowaves.left.and.right") }
-
+            case .services:
                 servicesTab
-                    .tabItem { Label("Services", systemImage: "puzzlepiece.extension") }
-
-                AgentsSettingsView()
-                    .tabItem { Label("Agents", systemImage: "person.2.wave.2") }
-
-                MCPsSettingsView()
-                    .tabItem { Label("MCPs", systemImage: "server.rack") }
-
-                SkillsSettingsView()
-                    .tabItem { Label("Skills", systemImage: "wand.and.stars") }
-
+            case .data:
                 dataTab
-                    .tabItem { Label("Data", systemImage: "externaldrive.fill") }
+            default:
+                EmptyView()
             }
         }
-        .frame(width: 620, height: 600)
         .onAppear {
             loadSettings()
             structuredUserContext = KeychainHelper.load(key: KeychainHelper.structuredUserContextKey) ?? ""
@@ -259,6 +249,11 @@ struct SettingsView: View {
         .padding(.horizontal)
         .onChange(of: assistantName) { _ in autoSave { savePersonaSection() } }
         .onChange(of: userName) { _ in autoSave { savePersonaSection() } }
+        .onChange(of: structuredUserContext) { newValue in
+            if !isEditingStructuredContext {
+                structuredContextDraft = newValue
+            }
+        }
     }
 
     // MARK: - Connection Tab
@@ -689,7 +684,14 @@ struct SettingsView: View {
         .onChange(of: vercelTimeout) { _ in autoSave { saveVercelSection() } }
         .onChange(of: instantApiToken) { _ in autoSave { saveInstantDatabaseSection() } }
         .onChange(of: instantCLICommand) { _ in autoSave { saveInstantDatabaseSection() } }
-        .onChange(of: voiceTranscriptionProvider) { _ in autoSave { saveVoiceTranscriptionSection() } }
+        .onChange(of: voiceTranscriptionProvider) { _ in
+            autoSave { saveVoiceTranscriptionSection() }
+            if voiceTranscriptionProvider == .local {
+                Task {
+                    await WhisperKitService.shared.checkModelStatus()
+                }
+            }
+        }
         .onChange(of: openAITranscriptionApiKey) { _ in autoSave { saveVoiceTranscriptionSection() } }
     }
 
@@ -1009,18 +1011,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.horizontal)
-        .onChange(of: structuredUserContext) { newValue in
-            if !isEditingStructuredContext {
-                structuredContextDraft = newValue
-            }
-        }
-        .onChange(of: voiceTranscriptionProvider) { newValue in
-            if newValue == .local {
-                Task {
-                    await WhisperKitService.shared.checkModelStatus()
-                }
-            }
-        }
         .onChange(of: conversationManager.isPrivacyModeEnabled) { _, isEnabled in
             if isEnabled {
                 showingContextViewer = false
@@ -2455,6 +2445,6 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(section: .connection)
         .environmentObject(ConversationManager())
 }

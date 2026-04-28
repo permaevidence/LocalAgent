@@ -21,6 +21,7 @@
 		GWSSERVC0012345678901234A /* GoogleWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */; };
 		A1000001282D4F0100000001 /* TelegramConciergeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002282D4F0100000001 /* TelegramConciergeApp.swift */; };
 		A1000003282D4F0100000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004282D4F0100000001 /* ContentView.swift */; };
+		MAINVIEW0123456789ABCD1A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINVIEW0123456789ABCD1B /* MainView.swift */; };
 		A1000005282D4F0100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000006282D4F0100000001 /* Assets.xcassets */; };
 		BUNDSKILLS0123456789AB01A /* BundledSkills in Resources */ = {isa = PBXBuildFile; fileRef = BUNDSKILLS0123456789AB01B /* BundledSkills */; };
 		A1000007282D4F0100000001 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000008282D4F0100000001 /* Message.swift */; };
@@ -96,6 +97,7 @@
 		A1000000282D4F0100000001 /* LocalAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000002282D4F0100000001 /* TelegramConciergeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramConciergeApp.swift; sourceTree = "<group>"; };
 		A1000004282D4F0100000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		MAINVIEW0123456789ABCD1B /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		A1000006282D4F0100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BUNDSKILLS0123456789AB01B /* BundledSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledSkills; sourceTree = "<group>"; };
 		A1000008282D4F0100000001 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
@@ -267,6 +269,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000004282D4F0100000001 /* ContentView.swift */,
+				MAINVIEW0123456789ABCD1B /* MainView.swift */,
 				A1000014282D4F0100000001 /* SettingsView.swift */,
 				A10000A1282D4F0100000001 /* OnboardingView.swift */,
 				A1000016282D4F0100000001 /* MessageBubbleView.swift */,
@@ -379,6 +382,7 @@
 			files = (
 				A1000001282D4F0100000001 /* TelegramConciergeApp.swift in Sources */,
 				A1000003282D4F0100000001 /* ContentView.swift in Sources */,
+				MAINVIEW0123456789ABCD1A /* MainView.swift in Sources */,
 				A1000007282D4F0100000001 /* Message.swift in Sources */,
 				A1000009282D4F0100000001 /* TelegramModels.swift in Sources */,
 				A100000B282D4F0100000001 /* TelegramBotService.swift in Sources */,
