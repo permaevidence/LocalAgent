@@ -76,8 +76,8 @@ struct AgentsSettingsView: View {
                 agentTilesSection
                 selectedAgentCard
                 if selectedAgent != "main" { modelCard }
-                maxTurnsCard
                 mcpCard
+                maxTurnsCard
                 if selectedAgent != "main" { sessionMemoryCard }
             }
             .padding(.horizontal, 16)
