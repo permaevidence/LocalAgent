@@ -46,17 +46,6 @@ struct SettingsView: View {
     @State private var voiceTranscriptionProvider: VoiceTranscriptionProvider = .defaultProvider
     @State private var openAITranscriptionApiKey: String = ""
     
-    // Vercel deployment settings
-    @State private var vercelApiToken: String = ""
-    @State private var vercelTeamScope: String = ""
-    @State private var vercelProjectName: String = ""
-    @State private var vercelCommand: String = KeychainHelper.defaultVercelCommand
-    @State private var vercelTimeout: String = KeychainHelper.defaultVercelTimeout
-    
-    // Instant database settings
-    @State private var instantApiToken: String = ""
-    @State private var instantCLICommand: String = KeychainHelper.defaultInstantCLICommand
-    
     // Persona settings
     @State private var assistantName: String = ""
     @State private var userName: String = ""
@@ -77,9 +66,7 @@ struct SettingsView: View {
     // Collapsible sections
     @State private var isSpendLimitsExpanded: Bool = false
     @State private var isImagePricingExpanded: Bool = false
-    @State private var isVercelAdvancedExpanded: Bool = false
-    @State private var isInstantAdvancedExpanded: Bool = false
-    
+
     // Context viewer
     @State private var showingContextViewer: Bool = false
     
@@ -636,57 +623,6 @@ struct SettingsView: View {
                 Label("Image Generation (Gemini)", systemImage: "photo.badge.plus")
             }
             
-            Section {
-                SecureField("Vercel API Token", text: $vercelApiToken)
-                    .textFieldStyle(.roundedBorder)
-                
-                Text("Create a token in Vercel Dashboard > Settings > Tokens.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                DisclosureGroup("Advanced", isExpanded: $isVercelAdvancedExpanded) {
-                    TextField("Default Team Scope", text: $vercelTeamScope)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Default Project Name", text: $vercelProjectName)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("CLI Command", text: $vercelCommand)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Default: \(KeychainHelper.defaultVercelCommand)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    TextField("Default Timeout (seconds)", text: $vercelTimeout)
-                        .textFieldStyle(.roundedBorder)
-                    Link("Install Vercel CLI", destination: URL(string: "https://vercel.com/docs/cli")!)
-                        .font(.caption)
-                }
-                
-            } header: {
-                Label("Vercel Deployment", systemImage: "icloud.and.arrow.up")
-            }
-            
-            Section {
-                SecureField("Instant CLI Auth Token", text: $instantApiToken)
-                    .textFieldStyle(.roundedBorder)
-                
-                Text("Used by provision/push database tools. Run `npx instant-cli login` to get your CLI auth token.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                DisclosureGroup("Advanced", isExpanded: $isInstantAdvancedExpanded) {
-                    TextField("Instant CLI Command", text: $instantCLICommand)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Default: \(KeychainHelper.defaultInstantCLICommand)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Link("Instant CLI Docs", destination: URL(string: "https://www.instantdb.com/docs/cli")!)
-                    .font(.caption)
-                
-            } header: {
-                Label("Instant Database", systemImage: "externaldrive.badge.icloud")
-            }
-            
         }
         .formStyle(.grouped)
         .padding(.horizontal)
@@ -697,13 +633,6 @@ struct SettingsView: View {
         .onChange(of: geminiImageInputCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputTextCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputImageCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
-        .onChange(of: vercelApiToken) { _ in autoSave { saveVercelSection() } }
-        .onChange(of: vercelTeamScope) { _ in autoSave { saveVercelSection() } }
-        .onChange(of: vercelProjectName) { _ in autoSave { saveVercelSection() } }
-        .onChange(of: vercelCommand) { _ in autoSave { saveVercelSection() } }
-        .onChange(of: vercelTimeout) { _ in autoSave { saveVercelSection() } }
-        .onChange(of: instantApiToken) { _ in autoSave { saveInstantDatabaseSection() } }
-        .onChange(of: instantCLICommand) { _ in autoSave { saveInstantDatabaseSection() } }
     }
 
     // MARK: - Data Tab
@@ -1471,17 +1400,6 @@ struct SettingsView: View {
         )
         openAITranscriptionApiKey = KeychainHelper.load(key: KeychainHelper.openAITranscriptionApiKeyKey) ?? ""
         
-        // Load Vercel deployment settings
-        vercelApiToken = KeychainHelper.load(key: KeychainHelper.vercelApiTokenKey) ?? ""
-        vercelTeamScope = KeychainHelper.load(key: KeychainHelper.vercelTeamScopeKey) ?? ""
-        vercelProjectName = KeychainHelper.load(key: KeychainHelper.vercelProjectNameKey) ?? ""
-        vercelCommand = KeychainHelper.load(key: KeychainHelper.vercelCommandKey) ?? KeychainHelper.defaultVercelCommand
-        vercelTimeout = KeychainHelper.load(key: KeychainHelper.vercelTimeoutKey) ?? KeychainHelper.defaultVercelTimeout
-        
-        // Load Instant database settings
-        instantApiToken = KeychainHelper.load(key: KeychainHelper.instantApiTokenKey) ?? ""
-        instantCLICommand = KeychainHelper.load(key: KeychainHelper.instantCLICommandKey) ?? KeychainHelper.defaultInstantCLICommand
-        
         // Load persona settings
         assistantName = KeychainHelper.load(key: KeychainHelper.assistantNameKey) ?? ""
         userName = KeychainHelper.load(key: KeychainHelper.userNameKey) ?? ""
@@ -1640,54 +1558,6 @@ struct SettingsView: View {
                 try KeychainHelper.save(key: KeychainHelper.openAITranscriptionApiKeyKey, value: normalizedOpenAIKey)
             }
             openAITranscriptionApiKey = normalizedOpenAIKey
-            
-            // Save Vercel deployment settings
-            let normalizedVercelToken = vercelApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedVercelToken.isEmpty {
-                try? KeychainHelper.delete(key: KeychainHelper.vercelApiTokenKey)
-            } else {
-                try KeychainHelper.save(key: KeychainHelper.vercelApiTokenKey, value: normalizedVercelToken)
-            }
-            
-            let normalizedVercelScope = vercelTeamScope.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedVercelScope.isEmpty {
-                try? KeychainHelper.delete(key: KeychainHelper.vercelTeamScopeKey)
-            } else {
-                try KeychainHelper.save(key: KeychainHelper.vercelTeamScopeKey, value: normalizedVercelScope)
-            }
-            
-            let normalizedVercelProject = vercelProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedVercelProject.isEmpty {
-                try? KeychainHelper.delete(key: KeychainHelper.vercelProjectNameKey)
-            } else {
-                try KeychainHelper.save(key: KeychainHelper.vercelProjectNameKey, value: normalizedVercelProject)
-            }
-            
-            let normalizedVercelCommand = vercelCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-            try KeychainHelper.save(
-                key: KeychainHelper.vercelCommandKey,
-                value: normalizedVercelCommand.isEmpty ? KeychainHelper.defaultVercelCommand : normalizedVercelCommand
-            )
-            
-            let vercelTimeoutValue = Int(vercelTimeout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1200
-            let clampedVercelTimeout = min(max(vercelTimeoutValue, 60), 3600)
-            try KeychainHelper.save(key: KeychainHelper.vercelTimeoutKey, value: "\(clampedVercelTimeout)")
-            vercelTimeout = "\(clampedVercelTimeout)"
-            
-            // Save Instant database settings
-            let normalizedInstantToken = instantApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalizedInstantToken.isEmpty {
-                try? KeychainHelper.delete(key: KeychainHelper.instantApiTokenKey)
-            } else {
-                try KeychainHelper.save(key: KeychainHelper.instantApiTokenKey, value: normalizedInstantToken)
-            }
-            
-            let normalizedInstantCommand = instantCLICommand.trimmingCharacters(in: .whitespacesAndNewlines)
-            try KeychainHelper.save(
-                key: KeychainHelper.instantCLICommandKey,
-                value: normalizedInstantCommand.isEmpty ? KeychainHelper.defaultInstantCLICommand : normalizedInstantCommand
-            )
-            instantCLICommand = normalizedInstantCommand.isEmpty ? KeychainHelper.defaultInstantCLICommand : normalizedInstantCommand
             
             // Save persona settings
             try KeychainHelper.save(key: KeychainHelper.assistantNameKey, value: assistantName)
@@ -1955,65 +1825,6 @@ struct SettingsView: View {
                 await WhisperKitService.shared.checkModelStatus()
             }
         }
-    }
-    
-    private func saveVercelSection() {
-        let normalizedToken = vercelApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedScope = vercelTeamScope.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedProject = vercelProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCommand = vercelCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if normalizedToken.isEmpty {
-            try? KeychainHelper.delete(key: KeychainHelper.vercelApiTokenKey)
-        } else {
-            try? KeychainHelper.save(key: KeychainHelper.vercelApiTokenKey, value: normalizedToken)
-        }
-        
-        if normalizedScope.isEmpty {
-            try? KeychainHelper.delete(key: KeychainHelper.vercelTeamScopeKey)
-        } else {
-            try? KeychainHelper.save(key: KeychainHelper.vercelTeamScopeKey, value: normalizedScope)
-        }
-        
-        if normalizedProject.isEmpty {
-            try? KeychainHelper.delete(key: KeychainHelper.vercelProjectNameKey)
-        } else {
-            try? KeychainHelper.save(key: KeychainHelper.vercelProjectNameKey, value: normalizedProject)
-        }
-        
-        let timeout = Int(vercelTimeout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1200
-        let clamped = min(max(timeout, 60), 3600)
-        
-        try? KeychainHelper.save(
-            key: KeychainHelper.vercelCommandKey,
-            value: normalizedCommand.isEmpty ? KeychainHelper.defaultVercelCommand : normalizedCommand
-        )
-        try? KeychainHelper.save(key: KeychainHelper.vercelTimeoutKey, value: "\(clamped)")
-        
-        vercelApiToken = normalizedToken
-        vercelTeamScope = normalizedScope
-        vercelProjectName = normalizedProject
-        vercelCommand = normalizedCommand.isEmpty ? KeychainHelper.defaultVercelCommand : normalizedCommand
-        vercelTimeout = "\(clamped)"
-    }
-    
-    private func saveInstantDatabaseSection() {
-        let normalizedToken = instantApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCommand = instantCLICommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if normalizedToken.isEmpty {
-            try? KeychainHelper.delete(key: KeychainHelper.instantApiTokenKey)
-        } else {
-            try? KeychainHelper.save(key: KeychainHelper.instantApiTokenKey, value: normalizedToken)
-        }
-        
-        try? KeychainHelper.save(
-            key: KeychainHelper.instantCLICommandKey,
-            value: normalizedCommand.isEmpty ? KeychainHelper.defaultInstantCLICommand : normalizedCommand
-        )
-        
-        instantApiToken = normalizedToken
-        instantCLICommand = normalizedCommand.isEmpty ? KeychainHelper.defaultInstantCLICommand : normalizedCommand
     }
     
     private func saveArchiveChunkSize() {

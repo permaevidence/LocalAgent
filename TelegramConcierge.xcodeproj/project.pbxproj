@@ -18,12 +18,10 @@
 		822F9BF6D5ABC15C17E38EC4 /* ReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DCD141150F4C77541F4982 /* ReminderService.swift */; };
 		872F4C787E9A3ED2E5384972 /* DocumentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADE3E4558F8DFD065AE6A26 /* DocumentModels.swift */; };
 		87DCAC7DFD7B3B3C02ECDBA3 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55871B59F1F9B733E94E96B7 /* CalendarService.swift */; };
-		GWSSERVC0012345678901234A /* GoogleWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */; };
 		A1000001282D4F0100000001 /* TelegramConciergeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002282D4F0100000001 /* TelegramConciergeApp.swift */; };
 		A1000003282D4F0100000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004282D4F0100000001 /* ContentView.swift */; };
 		MAINVIEW0123456789ABCD1A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINVIEW0123456789ABCD1B /* MainView.swift */; };
 		A1000005282D4F0100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000006282D4F0100000001 /* Assets.xcassets */; };
-		BUNDSKILLS0123456789AB01A /* BundledSkills in Resources */ = {isa = PBXBuildFile; fileRef = BUNDSKILLS0123456789AB01B /* BundledSkills */; };
 		A1000007282D4F0100000001 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000008282D4F0100000001 /* Message.swift */; };
 		A1000009282D4F0100000001 /* TelegramModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000A282D4F0100000001 /* TelegramModels.swift */; };
 		A100000B282D4F0100000001 /* TelegramBotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000C282D4F0100000001 /* TelegramBotService.swift */; };
@@ -35,54 +33,56 @@
 		A10000A0282D4F0100000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000A1282D4F0100000001 /* OnboardingView.swift */; };
 		A20FA62FAD25E07335060F6F /* WebOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0AE409F8E6598E75DFDF72 /* WebOrchestrator.swift */; };
 		A494EEEA1729398C6C50A56F /* ToolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC662244A7AAD92235CE193B /* ToolModels.swift */; };
+		AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */; };
+		AGMODOVR0123456789ABCD1A /* AgentModelOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */; };
+		AGTURNOVR0123456789ABCD1A /* AgentTurnOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGTURNOVR0123456789ABCD1B /* AgentTurnOverrides.swift */; };
 		APPLYPATCH0123456789AB1A /* ApplyPatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPLYPATCH0123456789AB1B /* ApplyPatch.swift */; };
 		BASHTOOLS0123456789AB1A /* BashTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BASHTOOLS0123456789AB1B /* BashTools.swift */; };
+		BUNDSKILLS0123456789AB01A /* Resources/BundledSkills in Resources */ = {isa = PBXBuildFile; fileRef = BUNDSKILLS0123456789AB01B /* Resources/BundledSkills */; };
 		C2B87AA65DC778516C459184 /* ConversationArchiveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788EABC6659EB6C669DBACA3 /* ConversationArchiveModels.swift */; };
 		CONTACT01234567890ABCDEF1 /* Contact.swift in Sources */ = {isa = PBXBuildFile; fileRef = CONTACT01234567890ABCDEF2 /* Contact.swift */; };
 		CONTEXTVIEW0123456789ABC1 /* ContextViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */; };
+		DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */; };
+		DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */; };
 		DEF123AB456CD789EFAB1234 /* DocumentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF123AB456CD789EFAB5678 /* DocumentService.swift */; };
 		DF3114E0259D2473CAE34DDF /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B883CAF85B587CFB8951D59 /* CalendarEvent.swift */; };
 		DIFFUTIL00123456789ABCD1A /* DiffUtil.swift in Sources */ = {isa = PBXBuildFile; fileRef = DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */; };
 		DISCOVERY0123456789AB1A /* DiscoveryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISCOVERY0123456789AB1B /* DiscoveryTools.swift */; };
 		F968F82FBFCB478DF1BD23F6 /* DocumentGeneratorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A93EA054D5A31889F2D4564 /* DocumentGeneratorService.swift */; };
 		FILELDGR012345678901234A /* FilesLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILELDGR012345678901234B /* FilesLedger.swift */; };
-		FLEDGDIFF012345678901234A /* FilesLedgerDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */; };
 		FILETIME012345678901234A /* FileTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FILETIME012345678901234B /* FileTimeTracker.swift */; };
+		FLEDGDIFF012345678901234A /* FilesLedgerDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */; };
 		FSTOOLS0012345678901234A /* FilesystemTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSTOOLS0012345678901234B /* FilesystemTools.swift */; };
 		GEMINIIMG012345678901234A /* GeminiImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GEMINIIMG012345678901234B /* GeminiImageService.swift */; };
+		GWSSERVC0012345678901234A /* GoogleWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */; };
 		LANDZONE012345678901234A /* LandingZone.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANDZONE012345678901234B /* LandingZone.swift */; };
-		SCRATCHMON0123456789AB1A /* ScratchDiskMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */; };
 		LSPCLIENT0123456789AB1A /* LSPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPCLIENT0123456789AB1B /* LSPClient.swift */; };
 		LSPDIAGRPT0123456789AB1A /* LSPDiagnosticsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */; };
 		LSPFRAME00123456789AB1A /* JSONRPCFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */; };
 		LSPLANG000123456789AB1A /* LSPLanguages.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPLANG000123456789AB1B /* LSPLanguages.swift */; };
 		LSPREGISTRY0123456789A1A /* LSPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPREGISTRY0123456789A1B /* LSPRegistry.swift */; };
 		LSPTYPES00123456789AB1A /* LSPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LSPTYPES00123456789AB1B /* LSPTypes.swift */; };
-		MCPTYPES00123456789AB1A /* MCPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPTYPES00123456789AB1B /* MCPTypes.swift */; };
-		MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPFRAME00123456789AB1B /* MCPFraming.swift */; };
 		MCPCLIENT0123456789AB1A /* MCPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPCLIENT0123456789AB1B /* MCPClient.swift */; };
+		MCPFRAME00123456789AB1A /* MCPFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPFRAME00123456789AB1B /* MCPFraming.swift */; };
 		MCPREGISTRY0123456789A1A /* MCPRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPREGISTRY0123456789A1B /* MCPRegistry.swift */; };
 		MCPROUTING0123456789AB1A /* MCPAgentRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */; };
-		AGMODOVR0123456789ABCD1A /* AgentModelOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */; };
-		AGTURNOVR0123456789ABCD1A /* AgentTurnOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGTURNOVR0123456789ABCD1B /* AgentTurnOverrides.swift */; };
+		MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */; };
+		MCPTYPES00123456789AB1A /* MCPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPTYPES00123456789AB1B /* MCPTypes.swift */; };
+		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
+		PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROFBUNDL0123456789AB01B /* ProfileBundle.swift */; };
+		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
+		SCRATCHMON0123456789AB1A /* ScratchDiskMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */; };
 		SKILLSREG0123456789ABCD1A /* SkillsRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SKILLSREG0123456789ABCD1B /* SkillsRegistry.swift */; };
 		SKILLSVW00123456789ABCD1A /* SkillsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SKILLSVW00123456789ABCD1B /* SkillsSettingsView.swift */; };
-		AGENTSETT0123456789AB01A /* AgentsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */; };
-		MCPSSETT00123456789AB01A /* MCPsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */; };
-		SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */; };
-		PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROFBUNDL0123456789AB01B /* ProfileBundle.swift */; };
 		SUBAGEDIT0123456789AB01A /* SubagentEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGEDIT0123456789AB01B /* SubagentEditorSheet.swift */; };
-		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
-		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
+		SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */; };
+		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
+		SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */; };
+		SUBSERIAL0123456789AB01A /* SubagentSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */; };
+		SUBSESSREG0123456789AB1A /* SubagentSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */; };
 		TODOSTORE0123456789ABCD1A /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = TODOSTORE0123456789ABCD1B /* TodoStore.swift */; };
 		TOOLEXECFS0123456789AB1A /* ToolExecutor+Filesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */; };
-		SUBAGNTTYP0123456789AB1A /* SubagentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */; };
-		SUBAGNTRUN0123456789AB1A /* SubagentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */; };
-		SUBAGNTBGR0123456789AB1A /* SubagentBackgroundRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */; };
-		SUBSESSREG0123456789AB1A /* SubagentSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */; };
 		USERAGNTL0123456789AB1A /* UserAgentLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = USERAGNTL0123456789AB1B /* UserAgentLoader.swift */; };
-		DBGTELEMSVC0123456789AB1A /* DebugTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */; };
-		DBGTELEMVW0123456789AB1A /* DebugTelemetryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -91,7 +91,6 @@
 		21DCD141150F4C77541F4982 /* ReminderService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReminderService.swift; sourceTree = "<group>"; };
 		2E12F15918DC9CEE64092A28 /* ToolExecutor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolExecutor.swift; sourceTree = "<group>"; };
 		55871B59F1F9B733E94E96B7 /* CalendarService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
-		GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleWorkspaceService.swift; sourceTree = "<group>"; };
 		5A93EA054D5A31889F2D4564 /* DocumentGeneratorService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentGeneratorService.swift; sourceTree = "<group>"; };
 		788EABC6659EB6C669DBACA3 /* ConversationArchiveModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConversationArchiveModels.swift; sourceTree = "<group>"; };
 		A1000000282D4F0100000001 /* LocalAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -99,7 +98,6 @@
 		A1000004282D4F0100000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		MAINVIEW0123456789ABCD1B /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		A1000006282D4F0100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		BUNDSKILLS0123456789AB01B /* BundledSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledSkills; sourceTree = "<group>"; };
 		A1000008282D4F0100000001 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		A100000A282D4F0100000001 /* TelegramModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramModels.swift; sourceTree = "<group>"; };
 		A100000C282D4F0100000001 /* TelegramBotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramBotService.swift; sourceTree = "<group>"; };
@@ -111,12 +109,18 @@
 		A1000017282D4F0100000001 /* TelegramConcierge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TelegramConcierge.entitlements; sourceTree = "<group>"; };
 		A10000A1282D4F0100000001 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		AD50E4C9FE60DE1DEB6071AF /* WebOrchestrator+Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "WebOrchestrator+Helpers.swift"; sourceTree = "<group>"; };
+		AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentsSettingsView.swift; sourceTree = "<group>"; };
+		AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelOverrides.swift; sourceTree = "<group>"; };
+		AGTURNOVR0123456789ABCD1B /* AgentTurnOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentTurnOverrides.swift; sourceTree = "<group>"; };
 		APPLYPATCH0123456789AB1B /* ApplyPatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApplyPatch.swift; sourceTree = "<group>"; };
 		BADE3E4558F8DFD065AE6A26 /* DocumentModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentModels.swift; sourceTree = "<group>"; };
 		BASHTOOLS0123456789AB1B /* BashTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BashTools.swift; sourceTree = "<group>"; };
+		BUNDSKILLS0123456789AB01B /* Resources/BundledSkills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledSkills; sourceTree = "<group>"; };
 		CONTACT01234567890ABCDEF2 /* Contact.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Contact.swift; sourceTree = "<group>"; };
 		CONTEXTVIEW0123456789ABC2 /* ContextViewerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextViewerView.swift; sourceTree = "<group>"; };
 		DA0AE409F8E6598E75DFDF72 /* WebOrchestrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebOrchestrator.swift; sourceTree = "<group>"; };
+		DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetry.swift; sourceTree = "<group>"; };
+		DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetryPanel.swift; sourceTree = "<group>"; };
 		DDB20D1783E9B2F00765A721 /* Reminder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Reminder.swift; sourceTree = "<group>"; };
 		DEF123AB456CD789EFAB5678 /* DocumentService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentService.swift; sourceTree = "<group>"; };
 		DIFFUTIL00123456789ABCD1B /* DiffUtil.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiffUtil.swift; sourceTree = "<group>"; };
@@ -125,43 +129,39 @@
 		F819F46CC6EAA2842A19FB51 /* ConversationArchiveService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConversationArchiveService.swift; sourceTree = "<group>"; };
 		FC662244A7AAD92235CE193B /* ToolModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolModels.swift; sourceTree = "<group>"; };
 		FILELDGR012345678901234B /* FilesLedger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesLedger.swift; sourceTree = "<group>"; };
-		FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesLedgerDiff.swift; sourceTree = "<group>"; };
 		FILETIME012345678901234B /* FileTimeTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileTimeTracker.swift; sourceTree = "<group>"; };
+		FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesLedgerDiff.swift; sourceTree = "<group>"; };
 		FSTOOLS0012345678901234B /* FilesystemTools.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilesystemTools.swift; sourceTree = "<group>"; };
 		GEMINIIMG012345678901234B /* GeminiImageService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiImageService.swift; sourceTree = "<group>"; };
+		GWSSERVC0012345678901234B /* GoogleWorkspaceService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleWorkspaceService.swift; sourceTree = "<group>"; };
 		LANDZONE012345678901234B /* LandingZone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandingZone.swift; sourceTree = "<group>"; };
-		SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScratchDiskMonitor.swift; sourceTree = "<group>"; };
 		LSPCLIENT0123456789AB1B /* LSPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPClient.swift; sourceTree = "<group>"; };
 		LSPDIAGRPT0123456789AB1B /* LSPDiagnosticsReporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPDiagnosticsReporter.swift; sourceTree = "<group>"; };
 		LSPFRAME00123456789AB1B /* JSONRPCFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONRPCFraming.swift; sourceTree = "<group>"; };
 		LSPLANG000123456789AB1B /* LSPLanguages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPLanguages.swift; sourceTree = "<group>"; };
 		LSPREGISTRY0123456789A1B /* LSPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPRegistry.swift; sourceTree = "<group>"; };
 		LSPTYPES00123456789AB1B /* LSPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LSPTypes.swift; sourceTree = "<group>"; };
-		MCPTYPES00123456789AB1B /* MCPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPTypes.swift; sourceTree = "<group>"; };
-		MCPFRAME00123456789AB1B /* MCPFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPFraming.swift; sourceTree = "<group>"; };
 		MCPCLIENT0123456789AB1B /* MCPClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPClient.swift; sourceTree = "<group>"; };
+		MCPFRAME00123456789AB1B /* MCPFraming.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPFraming.swift; sourceTree = "<group>"; };
 		MCPREGISTRY0123456789A1B /* MCPRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPRegistry.swift; sourceTree = "<group>"; };
 		MCPROUTING0123456789AB1B /* MCPAgentRouting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPAgentRouting.swift; sourceTree = "<group>"; };
-		AGMODOVR0123456789ABCD1B /* AgentModelOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelOverrides.swift; sourceTree = "<group>"; };
-		AGTURNOVR0123456789ABCD1B /* AgentTurnOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentTurnOverrides.swift; sourceTree = "<group>"; };
+		MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPsSettingsView.swift; sourceTree = "<group>"; };
+		MCPTYPES00123456789AB1B /* MCPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPTypes.swift; sourceTree = "<group>"; };
+		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
+		PROFBUNDL0123456789AB01B /* ProfileBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileBundle.swift; sourceTree = "<group>"; };
+		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
+		SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScratchDiskMonitor.swift; sourceTree = "<group>"; };
 		SKILLSREG0123456789ABCD1B /* SkillsRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SkillsRegistry.swift; sourceTree = "<group>"; };
 		SKILLSVW00123456789ABCD1B /* SkillsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SkillsSettingsView.swift; sourceTree = "<group>"; };
-		AGENTSETT0123456789AB01B /* AgentsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentsSettingsView.swift; sourceTree = "<group>"; };
-		MCPSSETT00123456789AB01B /* MCPsSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPsSettingsView.swift; sourceTree = "<group>"; };
-		SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSerializer.swift; sourceTree = "<group>"; };
-		PROFBUNDL0123456789AB01B /* ProfileBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileBundle.swift; sourceTree = "<group>"; };
 		SUBAGEDIT0123456789AB01B /* SubagentEditorSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentEditorSheet.swift; sourceTree = "<group>"; };
-		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
-		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
+		SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentBackgroundRegistry.swift; sourceTree = "<group>"; };
+		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
+		SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentTypes.swift; sourceTree = "<group>"; };
+		SUBSERIAL0123456789AB01B /* SubagentSerializer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSerializer.swift; sourceTree = "<group>"; };
+		SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSessionRegistry.swift; sourceTree = "<group>"; };
 		TODOSTORE0123456789ABCD1B /* TodoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		TOOLEXECFS0123456789AB1B /* ToolExecutor+Filesystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ToolExecutor+Filesystem.swift"; sourceTree = "<group>"; };
-		SUBAGNTTYP0123456789AB1B /* SubagentTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentTypes.swift; sourceTree = "<group>"; };
-		SUBAGNTRUN0123456789AB1B /* SubagentRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentRunner.swift; sourceTree = "<group>"; };
-		SUBAGNTBGR0123456789AB1B /* SubagentBackgroundRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentBackgroundRegistry.swift; sourceTree = "<group>"; };
-		SUBSESSREG0123456789AB1B /* SubagentSessionRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubagentSessionRegistry.swift; sourceTree = "<group>"; };
 		USERAGNTL0123456789AB1B /* UserAgentLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UserAgentLoader.swift; sourceTree = "<group>"; };
-		DBGTELEMSVC0123456789AB1B /* DebugTelemetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetry.swift; sourceTree = "<group>"; };
-		DBGTELEMVW0123456789AB1B /* DebugTelemetryPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugTelemetryPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -186,7 +186,7 @@
 				A1000023282D4F0100000001 /* Views */,
 				A1000024282D4F0100000001 /* Utilities */,
 				A1000006282D4F0100000001 /* Assets.xcassets */,
-				BUNDSKILLS0123456789AB01B /* BundledSkills */,
+				BUNDSKILLS0123456789AB01B /* Resources/BundledSkills */,
 				A1000017282D4F0100000001 /* TelegramConcierge.entitlements */,
 			);
 			path = TelegramConcierge;
@@ -369,7 +369,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000005282D4F0100000001 /* Assets.xcassets in Resources */,
-				BUNDSKILLS0123456789AB01A /* BundledSkills in Resources */,
+				BUNDSKILLS0123456789AB01A /* Resources/BundledSkills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

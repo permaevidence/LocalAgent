@@ -123,10 +123,7 @@ extension KeychainHelper {
     static let defaultGeminiImageInputCostPerMillionTokensUSD = "2"
     static let defaultGeminiImageOutputTextCostPerMillionTokensUSD = "12"
     static let defaultGeminiImageOutputImageCostPerMillionTokensUSD = "120"
-    static let defaultVercelCommand = "vercel"
-    static let defaultVercelTimeout = "1200"
-    static let defaultInstantCLICommand = "npx instant-cli@latest"
-    
+
     static let telegramBotTokenKey = "telegram_bot_token"
     static let telegramChatIdKey = "telegram_chat_id"
     static let openRouterApiKeyKey = "openrouter_api_key"
@@ -146,17 +143,6 @@ extension KeychainHelper {
     static let geminiImageInputCostPerMillionTokensUSDKey = "gemini_image_input_cost_per_million_tokens_usd"
     static let geminiImageOutputTextCostPerMillionTokensUSDKey = "gemini_image_output_text_cost_per_million_tokens_usd"
     static let geminiImageOutputImageCostPerMillionTokensUSDKey = "gemini_image_output_image_cost_per_million_tokens_usd"
-    
-    // Vercel Deployment Settings
-    static let vercelApiTokenKey = "vercel_api_token"
-    static let vercelTeamScopeKey = "vercel_team_scope"
-    static let vercelProjectNameKey = "vercel_project_name"
-    static let vercelCommandKey = "vercel_command"
-    static let vercelTimeoutKey = "vercel_timeout"
-    
-    // Instant Database Settings
-    static let instantApiTokenKey = "instant_api_token"
-    static let instantCLICommandKey = "instant_cli_command"
     
     // Persona Settings Keys
     static let assistantNameKey = "assistant_name"
