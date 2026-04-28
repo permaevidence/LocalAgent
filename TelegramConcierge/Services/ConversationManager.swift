@@ -3997,15 +3997,36 @@ class ConversationManager: ObservableObject {
         return files
     }
 
+    /// Tools whose output files deserve a persisted description. Everything
+    /// else (read_file, grep, etc.) is transient working data that doesn't
+    /// need a natural-language summary.
+    private static let describableToolNames: Set<String> = [
+        "generate_image", "edit_image", "run_shortcut", "send_document_to_chat"
+    ]
+
     private func collectToolAttachmentFilesForDescription(from message: Message) -> [(filename: String, data: Data, mimeType: String)] {
         var files: [(filename: String, data: Data, mimeType: String)] = []
 
         for interaction in message.toolInteractions {
+            let toolNames = Set(interaction.assistantMessage.toolCalls.map { $0.function.name })
+            guard !toolNames.isDisjoint(with: Self.describableToolNames) else { continue }
+
+            // Collect FileAttachmentReferences (generate_image, edit_image, run_shortcut)
             for result in interaction.results {
                 for reference in result.fileAttachmentReferences {
                     guard let data = dataForAttachmentReference(reference) else { continue }
                     files.append((filename: reference.filename, data: data, mimeType: reference.mimeType))
                 }
+            }
+
+            // send_document_to_chat doesn't produce FileAttachmentReferences —
+            // extract the filename from the tool arguments and load from disk.
+            for call in interaction.assistantMessage.toolCalls where call.function.name == "send_document_to_chat" {
+                guard let argsData = call.function.arguments.data(using: .utf8),
+                      let args = try? JSONDecoder().decode(SendDocumentToChatArguments.self, from: argsData) else { continue }
+                let url = documentsDirectory.appendingPathComponent(args.documentFilename)
+                guard let data = try? Data(contentsOf: url) else { continue }
+                files.append((filename: args.documentFilename, data: data, mimeType: mimeTypeForAttachmentFile(args.documentFilename)))
             }
         }
 
