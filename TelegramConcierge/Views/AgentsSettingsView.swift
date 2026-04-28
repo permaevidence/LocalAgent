@@ -75,8 +75,7 @@ struct AgentsSettingsView: View {
                 subagentsMasterSwitchCard
                 agentTilesSection
                 selectedAgentCard
-                capabilitiesCard
-                modelCard
+                if selectedAgent != "main" { modelCard }
                 maxTurnsCard
                 mcpCard
                 if selectedAgent != "main" { sessionMemoryCard }
@@ -310,21 +309,17 @@ struct AgentsSettingsView: View {
                         .font(.callout)
                         .foregroundColor(.primary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Built-in capabilities", systemImage: "hammer.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.secondary)
+                        nativeToolsView
+                    }
                 }
-            }
-        }
-    }
-
-    // MARK: - Capabilities (built-in tools)
-
-    private var capabilitiesCard: some View {
-        cardContainer {
-            VStack(alignment: .leading, spacing: 8) {
-                cardTitle("Built-in capabilities", systemImage: "hammer.fill",
-                          subtitle: selectedAgent == "main"
-                              ? "What this agent can do natively."
-                              : "Native tools this subagent inherits. Edit via the Edit button to change.")
-                nativeToolsView
             }
         }
     }
