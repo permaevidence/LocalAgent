@@ -821,9 +821,9 @@ struct AgentsSettingsView: View {
                     saveRouting()
                 }
             )) {
-                Text("None").tag("none")
-                Text("Always").tag("always")
-                Text("Deferred").tag("deferred")
+                Text("Disabled").tag("none")
+                Text("Heavy Enabled").tag("always")
+                Text("Light Enabled").tag("deferred")
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 250)
