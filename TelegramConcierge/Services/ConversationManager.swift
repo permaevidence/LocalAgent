@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import PDFKit
 import SwiftUI
 
 @MainActor
@@ -74,8 +76,13 @@ class ConversationManager: ObservableObject {
         /// Measured token cost of the user message that triggered this turn,
         /// derived from prompt_tokens delta between turns.
         let measuredUserTokens: Int?
-        /// Completion tokens for the assistant's final text response.
+        /// Stored-history token cost for the assistant message: final visible
+        /// text plus replayable tool interaction cost.
         let measuredAssistantTokens: Int?
+        /// Completion tokens for only the assistant's final visible text.
+        /// Unlike measuredAssistantTokens, this excludes replayed tool messages
+        /// and is used for next-turn prompt delta attribution.
+        let measuredAssistantCompletionTokens: Int?
         /// Absolute paths of pre-existing files modified during the turn (FilesLedger diff).
         let editedFilePaths: [String]
         /// Absolute paths of files newly created during the turn (FilesLedger diff).
@@ -802,9 +809,12 @@ class ConversationManager: ObservableObject {
                let idx = messages.lastIndex(where: { $0.id == userMessage.id }) {
                 messages[idx].measuredTokens = measuredUser
             }
-            // Update lastCompletionTokens for next turn's delta calculation
-            if let assistantTokens = response.measuredAssistantTokens {
-                lastCompletionTokens = assistantTokens
+            // Update final-text completion tokens for next-turn delta attribution.
+            // Tool replay is already included in the prior prompt; subtracting it
+            // here would undercount the next user message, especially after heavy
+            // tool/file turns.
+            if let assistantCompletionTokens = response.measuredAssistantCompletionTokens {
+                lastCompletionTokens = assistantCompletionTokens
             }
             let assistantMessage = Message(
                 role: .assistant,
@@ -1389,6 +1399,7 @@ class ConversationManager: ObservableObject {
             let archivedCount = messagesToArchive.count
             if messages.count >= archivedCount {
                 messages.removeFirst(archivedCount)
+                lastPromptTokens = nil
                 saveConversation()
                 print("[ConversationManager] Removed \(archivedCount) archived messages from active conversation")
             }
@@ -1397,6 +1408,7 @@ class ConversationManager: ObservableObject {
 
         // Prune stored tool interactions if full context exceeds budget
         let didPrune = pruneToolInteractionsIfNeeded(
+            currentUserMessageId: currentUserMessageId,
             calendarContext: calendarContext,
             emailContext: emailContext,
             chunkSummaries: chunkSummaries
@@ -1443,6 +1455,7 @@ class ConversationManager: ObservableObject {
                 measuredToolTokens: nil,
                 measuredUserTokens: nil,
                 measuredAssistantTokens: nil,
+                measuredAssistantCompletionTokens: nil,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: []
@@ -1525,7 +1538,7 @@ class ConversationManager: ObservableObject {
                     // Attribute delta to the last tool interaction if one exists
                     if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
                         let delta = tokens - prev
-                        toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
+                        applyMeasuredTokenDelta(delta, to: &toolInteractions[toolInteractions.count - 1])
                     }
                     // Compute user message tokens from first-round delta
                     if measuredUserTokens == nil, let start = turnStartPromptTokens {
@@ -1539,7 +1552,7 @@ class ConversationManager: ObservableObject {
                 }
                 finalCompletionTokens = completionTokens
                 // Sum measured costs across all tool interactions
-                let totalMeasured = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
+                let totalMeasured = toolInteractionTokens(toolInteractions)
                 let accessedProjects = extractAccessedProjects(from: toolInteractions)
                 let changed = await computeLedgerDiff()
                 return ToolAwareResponse(
@@ -1553,6 +1566,7 @@ class ConversationManager: ObservableObject {
                         let total = (finalCompletionTokens ?? 0) + totalMeasured
                         return total > 0 ? total : nil
                     }(),
+                    measuredAssistantCompletionTokens: finalCompletionTokens,
                     editedFilePaths: changed.edited,
                     generatedFilePaths: changed.generated,
                     subagentSessionEvents: sessionEvents
@@ -1567,7 +1581,7 @@ class ConversationManager: ObservableObject {
                     lastPromptTokens = tokens
                     if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
                         let delta = tokens - prev
-                        toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
+                        applyMeasuredTokenDelta(delta, to: &toolInteractions[toolInteractions.count - 1])
                     }
                     // Compute user message tokens from first-round delta
                     if measuredUserTokens == nil, let start = turnStartPromptTokens {
@@ -1592,7 +1606,7 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached during tool loop: \(exceededMessage)")
-                    let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
+                    let totalMeasuredSpend = toolInteractionTokens(toolInteractions)
                     let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
@@ -1602,6 +1616,7 @@ class ConversationManager: ObservableObject {
                         measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                         measuredUserTokens: measuredUserTokens,
                         measuredAssistantTokens: nil,
+                        measuredAssistantCompletionTokens: nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1735,7 +1750,7 @@ class ConversationManager: ObservableObject {
                     monthlyLimitUSD: toolSpendLimitMonthlyUSD
                 ) {
                     print("[ConversationManager] Daily/monthly spend limit reached after tool execution: \(exceededMessage)")
-                    let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
+                    let totalMeasuredSpend = toolInteractionTokens(toolInteractions)
                     let changed = await computeLedgerDiff()
                     return ToolAwareResponse(
                         finalText: exceededMessage,
@@ -1745,6 +1760,7 @@ class ConversationManager: ObservableObject {
                         measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                         measuredUserTokens: measuredUserTokens,
                         measuredAssistantTokens: nil,
+                        measuredAssistantCompletionTokens: nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1793,15 +1809,32 @@ class ConversationManager: ObservableObject {
             KeychainHelper.recordOpenRouterSpend(finalSpendUSD)
         }
         
-        let totalMeasuredSpend = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
+        let finalPromptTokens: Int?
+        let finalCompTokens: Int?
+        switch finalResponse {
+        case .text(_, let pt, let ct, _):
+            finalPromptTokens = pt
+            finalCompTokens = ct
+        case .toolCalls(_, _, let pt, let ct, _):
+            finalPromptTokens = pt
+            finalCompTokens = ct
+        }
+        if let tokens = finalPromptTokens {
+            lastPromptTokens = tokens
+            if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
+                applyMeasuredTokenDelta(tokens - prev, to: &toolInteractions[toolInteractions.count - 1])
+            }
+            if measuredUserTokens == nil, let start = turnStartPromptTokens {
+                let totalDelta = tokens - start
+                let prevAssistant = turnStartCompletionTokens ?? 0
+                measuredUserTokens = max(totalDelta - prevAssistant, 0)
+            }
+        }
+
+        let totalMeasuredSpend = toolInteractionTokens(toolInteractions)
         let accessedProjects = extractAccessedProjects(from: toolInteractions)
         let changed = await computeLedgerDiff()
 
-        let finalCompTokens: Int?
-        switch finalResponse {
-        case .text(_, _, let ct, _): finalCompTokens = ct
-        case .toolCalls(_, _, _, let ct, _): finalCompTokens = ct
-        }
         let assistantTokens: Int? = {
             let comp = finalCompTokens ?? 0
             let tools = totalMeasuredSpend
@@ -1819,6 +1852,7 @@ class ConversationManager: ObservableObject {
                 measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                 measuredUserTokens: measuredUserTokens,
                 measuredAssistantTokens: assistantTokens,
+                measuredAssistantCompletionTokens: finalCompTokens,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
@@ -1832,6 +1866,7 @@ class ConversationManager: ObservableObject {
                 measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
                 measuredUserTokens: measuredUserTokens,
                 measuredAssistantTokens: assistantTokens,
+                measuredAssistantCompletionTokens: finalCompTokens,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
@@ -1944,23 +1979,231 @@ class ConversationManager: ObservableObject {
         return defaultTargetContextTokens
     }
 
-    /// Token cost for tool interactions. Uses measured API delta when available,
-    /// falls back to character-based estimation otherwise.
+    private func normalizedMimeType(_ mimeType: String) -> String {
+        mimeType
+            .lowercased()
+            .split(separator: ";")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? mimeType.lowercased()
+    }
+
+    private func isVoiceMessage(_ fileName: String) -> Bool {
+        let ext = URL(fileURLWithPath: fileName).pathExtension.lowercased()
+        return ["ogg", "oga"].contains(ext)
+    }
+
+    private func isInlineMimeTypeSupportedForBudget(_ mimeType: String) -> Bool {
+        let normalized = normalizedMimeType(mimeType)
+        if normalized.hasPrefix("image/") { return true }
+        return [
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "application/json",
+            "text/csv",
+            "text/html",
+            "application/xml"
+        ].contains(normalized)
+    }
+
+    private func fileSize(at url: URL, fallback: Int? = nil) -> Int {
+        if let value = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            return value
+        }
+        return fallback ?? 0
+    }
+
+    private func mimeTypeForPrimaryImage(_ fileName: String) -> String {
+        fileName.lowercased().hasSuffix(".png") ? "image/png" : "image/jpeg"
+    }
+
+    private func mimeTypeForDocument(_ fileName: String) -> String {
+        switch URL(fileURLWithPath: fileName).pathExtension.lowercased() {
+        case "pdf": return "application/pdf"
+        case "txt": return "text/plain"
+        case "md": return "text/markdown"
+        case "json": return "application/json"
+        case "csv": return "text/csv"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private func estimatedImageTokens(data: Data?, url: URL?, fallbackBytes: Int) -> Int {
+        let image: NSImage? = {
+            if let data { return NSImage(data: data) }
+            if let url { return NSImage(contentsOf: url) }
+            return nil
+        }()
+        if let image {
+            let pixelWidth = image.representations.map(\.pixelsWide).filter { $0 > 0 }.max()
+                ?? max(Int(image.size.width), 1)
+            let pixelHeight = image.representations.map(\.pixelsHigh).filter { $0 > 0 }.max()
+                ?? max(Int(image.size.height), 1)
+            let tiles = max(1, Int(ceil(Double(pixelWidth) / 512.0)) * Int(ceil(Double(pixelHeight) / 512.0)))
+            return max(300, min(12_000, 85 + tiles * 170))
+        }
+        return max(300, min(8_000, fallbackBytes / 1024 + 300))
+    }
+
+    private func estimatedPDFTokens(data: Data?, url: URL?, fallbackBytes: Int) -> Int {
+        let document: PDFDocument? = {
+            if let data { return PDFDocument(data: data) }
+            if let url { return PDFDocument(url: url) }
+            return nil
+        }()
+        let pageCount = max(document?.pageCount ?? max(1, fallbackBytes / 100_000), 1)
+        if LLMProvider.fromStoredValue(KeychainHelper.load(key: KeychainHelper.llmProviderKey)) == .lmStudio {
+            return min(80_000, pageCount * 1_000)
+        }
+        let byteBased = max(300, fallbackBytes / 4)
+        return min(80_000, max(pageCount * 300, min(byteBased, pageCount * 1_800)))
+    }
+
+    private func estimatedInlineFileTokens(filename: String, data: Data? = nil, url: URL? = nil, mimeType: String, fallbackBytes: Int = 0) -> Int {
+        guard isInlineMimeTypeSupportedForBudget(mimeType) else {
+            return estimatedMediaHintTokens(filename: filename)
+        }
+
+        let normalized = normalizedMimeType(mimeType)
+        let bytes = data?.count ?? fileSize(at: url ?? URL(fileURLWithPath: filename), fallback: fallbackBytes)
+        if normalized.hasPrefix("image/") {
+            return estimatedImageTokens(data: data, url: url, fallbackBytes: bytes)
+        }
+        if normalized == "application/pdf" {
+            return estimatedPDFTokens(data: data, url: url, fallbackBytes: bytes)
+        }
+        return max(20, min(80_000, bytes / 4 + 20))
+    }
+
+    private func estimatedMediaHintTokens(filename: String) -> Int {
+        isVoiceMessage(filename) ? 10 : 50
+    }
+
+    private func estimatedMediaTokensForMessage(_ message: Message, inline: Bool) -> Int {
+        var tokens = 0
+
+        for fileName in message.referencedImageFileNames {
+            let url = imagesDirectory.appendingPathComponent(fileName)
+            tokens += inline
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName))
+                : estimatedMediaHintTokens(filename: fileName)
+        }
+        for fileName in message.referencedDocumentFileNames {
+            let url = documentsDirectory.appendingPathComponent(fileName)
+            let mime = mimeTypeForDocument(fileName)
+            tokens += inline
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime)
+                : estimatedMediaHintTokens(filename: fileName)
+        }
+        for (index, fileName) in message.imageFileNames.enumerated() {
+            let url = imagesDirectory.appendingPathComponent(fileName)
+            let fallback = index < message.imageFileSizes.count ? message.imageFileSizes[index] : 0
+            tokens += inline
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName), fallbackBytes: fallback)
+                : estimatedMediaHintTokens(filename: fileName)
+        }
+        for (index, fileName) in message.documentFileNames.enumerated() {
+            let url = documentsDirectory.appendingPathComponent(fileName)
+            let fallback = index < message.documentFileSizes.count ? message.documentFileSizes[index] : 0
+            let mime = mimeTypeForDocument(fileName)
+            tokens += inline
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime, fallbackBytes: fallback)
+                : estimatedMediaHintTokens(filename: fileName)
+        }
+
+        return tokens
+    }
+
+    private func estimatedPromptTokens(for message: Message) -> Int {
+        var tokens = max(message.content.count / 4 + 1, 1)
+        if message.hasUnprunedMedia || message.mediaFileCount > 0 {
+            tokens += estimatedMediaTokensForMessage(message, inline: !message.mediaPruned)
+        }
+        return tokens
+    }
+
+    private func estimatedStoredToolInteractionTokens(_ interaction: ToolInteraction) -> Int {
+        var tokens = (interaction.assistantMessage.content?.count ?? 0) / 4
+        for call in interaction.assistantMessage.toolCalls {
+            tokens += call.function.arguments.count / 4
+            tokens += call.function.name.count / 4 + 20
+        }
+        for result in interaction.results {
+            tokens += result.content.count / 4 + 20
+        }
+        return max(tokens, 1)
+    }
+
+    private func persistedAttachmentURL(for reference: FileAttachmentReference) -> URL? {
+        if let sourcePath = reference.sourcePath, FileManager.default.fileExists(atPath: sourcePath) {
+            return URL(fileURLWithPath: sourcePath)
+        }
+
+        let imageURL = imagesDirectory.appendingPathComponent(reference.filename)
+        if FileManager.default.fileExists(atPath: imageURL.path) {
+            return imageURL
+        }
+
+        let documentURL = documentsDirectory.appendingPathComponent(reference.filename)
+        if FileManager.default.fileExists(atPath: documentURL.path) {
+            return documentURL
+        }
+
+        return nil
+    }
+
+    private func estimatedPersistedAttachmentTokens(_ interaction: ToolInteraction) -> Int {
+        interaction.results.reduce(0) { total, result in
+            total + result.fileAttachmentReferences.reduce(0) { subtotal, reference in
+                let url = persistedAttachmentURL(for: reference)
+                return subtotal + estimatedInlineFileTokens(
+                    filename: reference.filename,
+                    url: url,
+                    mimeType: reference.mimeType
+                )
+            }
+        }
+    }
+
+    private func currentTurnInteractionTokens(_ interaction: ToolInteraction) -> Int {
+        if let measured = interaction.measuredTokenCost, measured > 0 {
+            return measured
+        }
+        return estimatedStoredToolInteractionTokens(interaction) + estimatedPersistedAttachmentTokens(interaction)
+    }
+
+    private func applyMeasuredTokenDelta(_ delta: Int, to interaction: inout ToolInteraction) {
+        let measured = max(delta, 0)
+        interaction.measuredTokenCost = measured
+
+        // Tool attachments are persisted by reference and replayed until
+        // pruning, so the measured current-turn delta is also the replay cost.
+        interaction.measuredReplayTokenCost = measured
+    }
+
+    private func estimatedTokensAddedSinceLastPrompt(currentUserMessageId: UUID?) -> Int {
+        var tokens = lastCompletionTokens ?? 0
+        if let currentUserMessageId,
+           let currentUser = messages.first(where: { $0.id == currentUserMessageId }) {
+            tokens += estimatedPromptTokens(for: currentUser)
+        }
+        return tokens
+    }
+
+    /// Token cost for persisted tool interactions. Uses replay-only measured
+    /// cost when available, falling back to the older measured delta and then
+    /// to character-based estimation.
     private func toolInteractionTokens(_ interactions: [ToolInteraction]) -> Int {
         var tokens = 0
         for interaction in interactions {
-            if let measured = interaction.measuredTokenCost {
+            if let measured = interaction.measuredReplayTokenCost, measured > 0 {
+                tokens += measured
+            } else if let measured = interaction.measuredTokenCost, measured > 0 {
                 tokens += measured
             } else {
-                // Fallback: rough estimate from content lengths
-                tokens += (interaction.assistantMessage.content?.count ?? 0) / 4
-                for call in interaction.assistantMessage.toolCalls {
-                    tokens += call.function.arguments.count / 4
-                    tokens += call.function.name.count / 4 + 20
-                }
-                for result in interaction.results {
-                    tokens += result.content.count / 4 + 20
-                }
+                tokens += estimatedStoredToolInteractionTokens(interaction)
+                tokens += estimatedPersistedAttachmentTokens(interaction)
             }
         }
         return tokens
@@ -1983,10 +2226,12 @@ class ConversationManager: ObservableObject {
             let textTokens = message.content.count / 4 + 1
             let toolTokens = message.measuredToolTokens ?? toolInteractionTokens(message.toolInteractions)
             let mediaCost = max(measured - textTokens - toolTokens, 0)
-            let hintCost = message.mediaFileCount * 50
+            let hintCost = estimatedMediaTokensForMessage(message, inline: false)
             return max(mediaCost - hintCost, 0)
         }
-        return message.mediaFileCount * (1500 - 50)
+        let inlineCost = estimatedMediaTokensForMessage(message, inline: true)
+        let hintCost = estimatedMediaTokensForMessage(message, inline: false)
+        return max(inlineCost - hintCost, 0)
     }
 
     /// Estimate system prompt size from its components
@@ -2015,6 +2260,7 @@ class ConversationManager: ObservableObject {
     /// The most recent turn with tools is always protected.
     /// Returns true if any pruning occurred (cache was broken).
     private func pruneToolInteractionsIfNeeded(
+        currentUserMessageId: UUID?,
         calendarContext: String?,
         emailContext: String?,
         chunkSummaries: [ArchivedSummaryItem]
@@ -2026,8 +2272,9 @@ class ConversationManager: ObservableObject {
         // Use real prompt_tokens from API when available, fall back to estimation
         var totalTokens: Int
         if let real = lastPromptTokens {
-            totalTokens = real
-            print("[ConversationManager] Using real prompt_tokens: \(real)")
+            let addedSinceLastPrompt = estimatedTokensAddedSinceLastPrompt(currentUserMessageId: currentUserMessageId)
+            totalTokens = real + addedSinceLastPrompt
+            print("[ConversationManager] Using real prompt_tokens: \(real) + ~\(addedSinceLastPrompt) new tokens")
         } else {
             totalTokens = estimateSystemPromptTokens(
                 calendarContext: calendarContext,
@@ -2035,9 +2282,7 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries
             )
             for message in messages {
-                totalTokens += message.content.count / 4 + 1
-                let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
-                totalTokens += message.mediaFileCount * mediaTokensPerFile
+                totalTokens += estimatedPromptTokens(for: message)
                 totalTokens += toolInteractionTokens(message.toolInteractions)
             }
             print("[ConversationManager] Using estimated tokens: \(totalTokens)")
@@ -2134,7 +2379,8 @@ class ConversationManager: ObservableObject {
         // Use real prompt_tokens when available, fall back to estimation
         var totalTokens: Int
         if let real = lastPromptTokens {
-            totalTokens = real
+            let unsentInteractionTokens = currentTurnInteractions.last.map { currentTurnInteractionTokens($0) } ?? 0
+            totalTokens = real + unsentInteractionTokens
         } else {
             totalTokens = estimateSystemPromptTokens(
                 calendarContext: calendarContext,
@@ -2142,12 +2388,10 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries
             )
             for message in messagesForLLM {
-                totalTokens += message.content.count / 4 + 1
-                let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
-                totalTokens += message.mediaFileCount * mediaTokensPerFile
+                totalTokens += estimatedPromptTokens(for: message)
                 totalTokens += toolInteractionTokens(message.toolInteractions)
             }
-            totalTokens += toolInteractionTokens(currentTurnInteractions)
+            totalTokens += currentTurnInteractions.reduce(0) { $0 + currentTurnInteractionTokens($1) }
         }
         var prunableToolTokens = 0
         var prunableMediaTokens = 0

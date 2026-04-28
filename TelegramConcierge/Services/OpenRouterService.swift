@@ -168,6 +168,142 @@ actor OpenRouterService {
         return fallbackDescriptionForUnsupportedFile(filename: filename, mimeType: mimeType)
     }
 
+    private func urlForAttachmentReference(
+        _ reference: FileAttachmentReference,
+        imagesDirectory: URL,
+        documentsDirectory: URL
+    ) -> URL? {
+        if let sourcePath = reference.sourcePath, FileManager.default.fileExists(atPath: sourcePath) {
+            return URL(fileURLWithPath: sourcePath)
+        }
+
+        let imageURL = imagesDirectory.appendingPathComponent(reference.filename)
+        if FileManager.default.fileExists(atPath: imageURL.path) {
+            return imageURL
+        }
+
+        let documentURL = documentsDirectory.appendingPathComponent(reference.filename)
+        if FileManager.default.fileExists(atPath: documentURL.path) {
+            return documentURL
+        }
+
+        return nil
+    }
+
+    private func appendInlineAttachment(
+        filename: String,
+        data: Data,
+        mimeType: String,
+        contentParts: inout [ContentPart],
+        visibleFiles: inout [String],
+        nonInlineFiles: inout [String]
+    ) {
+        guard isInlineMimeTypeSupported(mimeType) else {
+            nonInlineFiles.append(filename)
+            return
+        }
+
+        let normalized = normalizeMimeType(mimeType)
+        if normalized == "application/pdf" && requiresPDFToImageConversion {
+            let pageImages = renderPDFPagesToImages(data, filename: filename)
+            if !pageImages.isEmpty {
+                contentParts.append(contentsOf: pageImages)
+                visibleFiles.append("\(filename) (\(pageImages.count) pages)")
+            } else {
+                nonInlineFiles.append(filename)
+            }
+        } else {
+            let base64String = data.base64EncodedString()
+            let dataURL = "data:\(mimeType);base64,\(base64String)"
+            contentParts.append(.image(ImageURL(url: dataURL)))
+            visibleFiles.append(filename)
+        }
+    }
+
+    private func rehydrateAttachmentReferences(
+        _ references: [FileAttachmentReference],
+        imagesDirectory: URL,
+        documentsDirectory: URL
+    ) -> (contentParts: [ContentPart], visibleFiles: [String], missingFiles: [String], nonInlineFiles: [String]) {
+        var contentParts: [ContentPart] = []
+        var visibleFiles: [String] = []
+        var missingFiles: [String] = []
+        var nonInlineFiles: [String] = []
+
+        for reference in references {
+            guard let url = urlForAttachmentReference(reference, imagesDirectory: imagesDirectory, documentsDirectory: documentsDirectory),
+                  let data = dataForAttachmentReference(reference, url: url) else {
+                missingFiles.append(reference.filename)
+                continue
+            }
+            appendInlineAttachment(
+                filename: reference.filename,
+                data: data,
+                mimeType: reference.mimeType,
+                contentParts: &contentParts,
+                visibleFiles: &visibleFiles,
+                nonInlineFiles: &nonInlineFiles
+            )
+        }
+
+        return (contentParts, visibleFiles, missingFiles, nonInlineFiles)
+    }
+
+    private func dataForAttachmentReference(_ reference: FileAttachmentReference, url: URL) -> Data? {
+        guard normalizeMimeType(reference.mimeType) == "application/pdf",
+              let pageRange = reference.pageRange,
+              let doc = PDFDocument(url: url),
+              let requestedRange = Self.parsePersistedPageRange(pageRange, totalPages: doc.pageCount) else {
+            return try? Data(contentsOf: url)
+        }
+
+        let sliced = PDFDocument()
+        var idx = 0
+        for pageNum in requestedRange {
+            if let page = doc.page(at: pageNum - 1) {
+                sliced.insert(page, at: idx)
+                idx += 1
+            }
+        }
+        return sliced.dataRepresentation()
+    }
+
+    private static func parsePersistedPageRange(_ raw: String, totalPages: Int) -> ClosedRange<Int>? {
+        let parts = raw.split(separator: "-", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+        if parts.count == 1, let page = Int(parts[0]), page >= 1, page <= totalPages {
+            return page...page
+        }
+        guard parts.count == 2,
+              let lower = Int(parts[0]),
+              let upper = Int(parts[1]),
+              lower >= 1,
+              upper >= lower,
+              upper <= totalPages else {
+            return nil
+        }
+        return lower...upper
+    }
+
+    private func toolAttachmentText(visibleFiles: [String], nonInlineFiles: [String], missingFiles: [String] = []) -> String {
+        if !visibleFiles.isEmpty && !nonInlineFiles.isEmpty {
+            var text = "[The tool downloaded file(s). Visible inline: \(visibleFiles.joined(separator: ", ")). Not inline-viewable: \(nonInlineFiles.joined(separator: ", ")). Analyze visible content and use tool outputs/filenames for the rest."
+            if !missingFiles.isEmpty {
+                text += " Missing from disk: \(missingFiles.joined(separator: ", "))."
+            }
+            return text + "]"
+        }
+        if !visibleFiles.isEmpty {
+            var text = "[The tool downloaded the following file(s) which are now visible to you: \(visibleFiles.joined(separator: ", ")). Analyze the content above to answer the user's question."
+            if !missingFiles.isEmpty {
+                text += " Missing from disk: \(missingFiles.joined(separator: ", "))."
+            }
+            return text + "]"
+        }
+        var unavailable = nonInlineFiles
+        unavailable.append(contentsOf: missingFiles.map { "\($0) (missing from disk)" })
+        return "[The tool downloaded file(s) not viewable inline in this model: \(unavailable.joined(separator: ", ")). Use the filenames and tool outputs to continue (e.g., import ZIPs with project tools).]"
+    }
+
     /// Whether the current provider requires PDFs to be rendered as images.
     /// LM Studio (and other local inference servers) only accept image MIME types
     /// in the image_url content block — raw PDF bytes cause HTTP 400.
@@ -666,12 +802,32 @@ actor OpenRouterService {
                         reasoning: interaction.assistantMessage.reasoning,
                         reasoningDetails: interaction.assistantMessage.reasoningDetails
                     ))
+                    var currentInteractionReferences: [FileAttachmentReference] = []
                     for result in interaction.results {
                         apiMessages.append(OpenRouterAPIMessage(
                             role: "tool",
                             content: .text(result.content),
                             toolCallId: result.toolCallId
                         ))
+                        currentInteractionReferences.append(contentsOf: result.fileAttachmentReferences)
+                    }
+
+                    if !currentInteractionReferences.isEmpty {
+                        let rehydrated = rehydrateAttachmentReferences(
+                            currentInteractionReferences,
+                            imagesDirectory: imagesDirectory,
+                            documentsDirectory: documentsDirectory
+                        )
+
+                        if !rehydrated.contentParts.isEmpty || !rehydrated.missingFiles.isEmpty || !rehydrated.nonInlineFiles.isEmpty {
+                            var parts = rehydrated.contentParts
+                            parts.append(.text(toolAttachmentText(
+                                visibleFiles: rehydrated.visibleFiles,
+                                nonInlineFiles: rehydrated.nonInlineFiles,
+                                missingFiles: rehydrated.missingFiles
+                            )))
+                            apiMessages.append(OpenRouterAPIMessage(role: "user", content: .parts(parts)))
+                        }
                     }
                 }
             } else if message.role == .assistant && !isToolRunLog && message.toolInteractions.isEmpty,
@@ -915,42 +1071,17 @@ actor OpenRouterService {
                     var visibleFiles: [String] = []
                     var nonInlineFiles: [String] = []
                     for attachment in currentInteractionFiles {
-                        if isInlineMimeTypeSupported(attachment.mimeType) {
-                            let normalized = normalizeMimeType(attachment.mimeType)
-                            // PDF on local model: render pages to images
-                            if normalized == "application/pdf" && requiresPDFToImageConversion {
-                                let pageImages = renderPDFPagesToImages(attachment.data, filename: attachment.filename)
-                                if !pageImages.isEmpty {
-                                    print("[OpenRouterService] Rendered \(pageImages.count) page(s) from \(attachment.filename) as PNG for local model")
-                                    contentParts.append(contentsOf: pageImages)
-                                    visibleFiles.append("\(attachment.filename) (\(pageImages.count) pages)")
-                                } else {
-                                    print("[OpenRouterService] Failed to render PDF \(attachment.filename) to images")
-                                    nonInlineFiles.append(attachment.filename)
-                                }
-                            } else {
-                                let base64String = attachment.data.base64EncodedString()
-                                let dataURL = "data:\(attachment.mimeType);base64,\(base64String)"
-                                print("[OpenRouterService] Adding file to user message: \(attachment.filename) (\(attachment.mimeType), \(attachment.data.count) bytes)")
-                                contentParts.append(.image(ImageURL(url: dataURL)))
-                                visibleFiles.append(attachment.filename)
-                            }
-                        } else {
-                            print("[OpenRouterService] Skipping inline tool attachment \(attachment.filename) due to unsupported MIME type: \(attachment.mimeType)")
-                            nonInlineFiles.append(attachment.filename)
-                        }
+                        appendInlineAttachment(
+                            filename: attachment.filename,
+                            data: attachment.data,
+                            mimeType: attachment.mimeType,
+                            contentParts: &contentParts,
+                            visibleFiles: &visibleFiles,
+                            nonInlineFiles: &nonInlineFiles
+                        )
                     }
 
-                    // Add text explaining what these files are
-                    let filesText: String
-                    if !visibleFiles.isEmpty && !nonInlineFiles.isEmpty {
-                        filesText = "[The tool downloaded file(s). Visible inline: \(visibleFiles.joined(separator: ", ")). Not inline-viewable: \(nonInlineFiles.joined(separator: ", ")). Analyze visible content and use tool outputs/filenames for the rest.]"
-                    } else if !visibleFiles.isEmpty {
-                        filesText = "[The tool downloaded the following file(s) which are now visible to you: \(visibleFiles.joined(separator: ", ")). Analyze the content above to answer the user's question.]"
-                    } else {
-                        filesText = "[The tool downloaded file(s) not viewable inline in this model: \(nonInlineFiles.joined(separator: ", ")). Use the filenames and tool outputs to continue (e.g., import ZIPs with project tools).]"
-                    }
-                    contentParts.append(.text(filesText))
+                    contentParts.append(.text(toolAttachmentText(visibleFiles: visibleFiles, nonInlineFiles: nonInlineFiles)))
 
                     apiMessages.append(OpenRouterAPIMessage(
                         role: "user",
@@ -1340,6 +1471,10 @@ struct ToolInteraction: Codable {
     /// Actual token cost measured via prompt_tokens delta between API rounds.
     /// nil when the API didn't report tokens or for subagent interactions.
     var measuredTokenCost: Int?
+    /// Estimated/measured cost of replaying this interaction from persisted
+    /// history, including multimodal tool attachments while their persisted
+    /// references remain unpruned.
+    var measuredReplayTokenCost: Int? = nil
 }
 
 // MARK: - Request Models

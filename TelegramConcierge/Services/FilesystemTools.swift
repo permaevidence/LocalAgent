@@ -61,7 +61,7 @@ actor FilesystemTools {
                 let data = try Data(contentsOf: URL(fileURLWithPath: path))
                 let filename = (path as NSString).lastPathComponent
                 await FileTimeTracker.shared.recordRead(path: path)
-                let attachment = FileAttachment(data: data, mimeType: mime, filename: filename)
+                let attachment = FileAttachment(data: data, mimeType: mime, filename: filename, sourcePath: path)
                 let summary: [String: Any] = [
                     "success": true,
                     "path": path,
@@ -396,14 +396,15 @@ actor FilesystemTools {
 
         await FileTimeTracker.shared.recordRead(path: path)
         let filename = (path as NSString).lastPathComponent
-        let attachment = FileAttachment(data: slicedData, mimeType: "application/pdf", filename: filename)
+        let pageRange = "\(requestedRange.lowerBound)-\(requestedRange.upperBound)"
+        let attachment = FileAttachment(data: slicedData, mimeType: "application/pdf", filename: filename, sourcePath: path, pageRange: pageRange)
         let summary: [String: Any] = [
             "success": true,
             "path": path,
             "mime_type": "application/pdf",
             "total_pages": totalPages,
             "pages_returned": slicedPageCount,
-            "page_range": "\(requestedRange.lowerBound)-\(requestedRange.upperBound)",
+            "page_range": pageRange,
             "size_bytes": slicedData.count,
             "message": "PDF pages \(requestedRange.lowerBound)–\(requestedRange.upperBound) of \(totalPages) attached. They will be visible to you on the next turn as a user-role multimodal message."
         ]

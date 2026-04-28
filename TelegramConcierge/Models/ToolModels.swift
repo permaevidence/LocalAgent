@@ -198,6 +198,26 @@ struct FileAttachment {
     let data: Data
     let mimeType: String
     let filename: String
+    let sourcePath: String?
+    let pageRange: String?
+
+    init(data: Data, mimeType: String, filename: String, sourcePath: String? = nil, pageRange: String? = nil) {
+        self.data = data
+        self.mimeType = mimeType
+        self.filename = filename
+        self.sourcePath = sourcePath
+        self.pageRange = pageRange
+    }
+}
+
+/// Persisted reference to multimodal tool output. We store enough metadata to
+/// rehydrate the file bytes on later turns without putting base64 blobs into
+/// conversation.json.
+struct FileAttachmentReference: Codable {
+    let filename: String
+    let mimeType: String
+    let sourcePath: String?
+    let pageRange: String?
 }
 
 struct ToolResultMessage: Codable {
@@ -207,6 +227,10 @@ struct ToolResultMessage: Codable {
     
     /// Optional files to inject as multimodal content (not serialized to API directly)
     var fileAttachments: [FileAttachment]
+
+    /// Persisted references for fileAttachments. Historical tool replay uses
+    /// these to keep inline images/PDFs visible until pruning.
+    var fileAttachmentReferences: [FileAttachmentReference]
     
     /// Optional spend associated with tool-internal API calls (not serialized to API directly)
     var spendUSD: Double?
@@ -215,6 +239,7 @@ struct ToolResultMessage: Codable {
         case role
         case toolCallId = "tool_call_id"
         case content
+        case fileAttachmentReferences
     }
     
     init(
@@ -235,6 +260,9 @@ struct ToolResultMessage: Codable {
         } else {
             self.fileAttachments = []
         }
+        self.fileAttachmentReferences = self.fileAttachments.map {
+            FileAttachmentReference(filename: $0.filename, mimeType: $0.mimeType, sourcePath: $0.sourcePath, pageRange: $0.pageRange)
+        }
         self.spendUSD = spendUSD
     }
     
@@ -244,6 +272,7 @@ struct ToolResultMessage: Codable {
         self.role = try container.decode(String.self, forKey: .role)
         self.toolCallId = try container.decode(String.self, forKey: .toolCallId)
         self.content = try container.decode(String.self, forKey: .content)
+        self.fileAttachmentReferences = (try? container.decode([FileAttachmentReference].self, forKey: .fileAttachmentReferences)) ?? []
         self.fileAttachments = [] // Not decoded, only used transiently
         self.spendUSD = nil // Not decoded, only used transiently
     }

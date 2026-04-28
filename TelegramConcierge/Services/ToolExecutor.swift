@@ -1410,7 +1410,7 @@ extension ToolExecutor {
             let isEdit = sourceImageData != nil
             
             // Create file attachment for multimodal injection (LLM can see the generated image)
-            let attachment = FileAttachment(data: imageData, mimeType: mimeType, filename: fileName)
+            let attachment = FileAttachment(data: imageData, mimeType: mimeType, filename: fileName, sourcePath: documentsURL.path)
             print("[ToolExecutor] Created FileAttachment for generated image: \(fileName) (\(mimeType), \(imageData.count) bytes)")
             
             // Result text (image will be injected as multimodal content)
@@ -1793,7 +1793,7 @@ extension ToolExecutor {
                 try? finalOutputData.write(to: savedPath)
                 try? finalOutputData.write(to: imagePath)
                 
-                fileAttachment = FileAttachment(data: finalOutputData, mimeType: mimeType, filename: savedFilename)
+                fileAttachment = FileAttachment(data: finalOutputData, mimeType: mimeType, filename: savedFilename, sourcePath: savedPath.path)
                 outputInfo = ", \"output_file\": {\"filename\": \"\(savedFilename)\", \"mimeType\": \"\(mimeType)\", \"sizeBytes\": \(finalOutputData.count), \"message\": \"Image output saved and visible for analysis\"}"
                 
                 print("[ToolExecutor] Shortcut produced image output: \(savedFilename) (\(finalOutputData.count) bytes)")
