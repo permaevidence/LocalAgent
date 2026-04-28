@@ -504,7 +504,11 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.horizontal)
-        .onChange(of: llmProvider) { _ in autoSave { saveOpenRouterSection() } }
+        .onChange(of: llmProvider) { _ in
+            autoSave { saveOpenRouterSection() }
+            // Auto-toggle subagents: off for local inference, on for cloud
+            UserDefaults.standard.set(llmProvider != "lmstudio", forKey: "localagent.subagentsEnabled")
+        }
         .onChange(of: lmStudioBaseURL) { _ in autoSave { saveOpenRouterSection() } }
         .onChange(of: lmStudioModel) { _ in autoSave { saveOpenRouterSection() } }
         .onChange(of: lmStudioDescriptionModel) { _ in autoSave { saveOpenRouterSection() } }

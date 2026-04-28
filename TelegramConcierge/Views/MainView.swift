@@ -6,8 +6,8 @@ enum AppSection: String, CaseIterable, Identifiable {
     case telegram
     case llmProvider
     case services
-    case agents
     case mcps
+    case agents
     case skills
     case data
 
