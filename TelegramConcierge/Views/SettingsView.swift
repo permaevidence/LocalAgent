@@ -417,10 +417,10 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    TextField("Preferred Providers", text: $openRouterProviders)
+                    TextField("Allowed Providers", text: $openRouterProviders)
                         .textFieldStyle(.roundedBorder)
 
-                    Text("Comma-separated list (e.g., google, anthropic). Leave empty to allow all.")
+                    Text("Comma-separated list (e.g., google, anthropic). Only these providers will be used. Leave empty to allow all.")
                         .font(.caption)
                         .foregroundColor(.secondary)
 

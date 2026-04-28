@@ -985,9 +985,9 @@ actor OpenRouterService {
         var providerPrefs: ProviderPreferences? = nil
         if !usingLMStudio {
             if let order = providerOverride, !order.isEmpty {
-                providerPrefs = ProviderPreferences(order: order)
+                providerPrefs = ProviderPreferences(order: nil, only: order, allow_fallbacks: false, sort: nil)
             } else if let providerOrder = providers, !providerOrder.isEmpty {
-                providerPrefs = ProviderPreferences(order: providerOrder)
+                providerPrefs = ProviderPreferences(order: nil, only: providerOrder, allow_fallbacks: false, sort: nil)
             }
         }
 
@@ -1264,7 +1264,7 @@ actor OpenRouterService {
             model: descriptionModel,
             messages: apiMessages,
             tools: nil,
-            provider: usingLMStudioForDescriptions ? nil : providers.map { ProviderPreferences(order: $0) },
+            provider: usingLMStudioForDescriptions ? nil : providers.map { ProviderPreferences(order: nil, only: $0, allow_fallbacks: false, sort: nil) },
             reasoning: usingLMStudioForDescriptions ? nil : reasoningEffort.map { ReasoningConfig(effort: $0) }
         )
 
@@ -1344,7 +1344,10 @@ struct ToolInteraction: Codable {
 // MARK: - Request Models
 
 struct ProviderPreferences: Codable {
-    let order: [String]
+    let order: [String]?
+    let only: [String]?
+    let allow_fallbacks: Bool?
+    let sort: String?
 }
 
 struct ReasoningConfig: Codable {
