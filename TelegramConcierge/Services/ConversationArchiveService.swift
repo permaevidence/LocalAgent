@@ -157,7 +157,10 @@ actor ConversationArchiveService {
                     // Load the raw messages
                     let fileURL = archiveFolder.appendingPathComponent(pending.rawContentFileName)
                     let data = try Data(contentsOf: fileURL)
-                    let messages = try JSONDecoder().decode([Message].self, from: data)
+                    let messages = sanitizeMessagesForArchive(try JSONDecoder().decode([Message].self, from: data))
+                    let sanitizedData = try JSONEncoder().encode(messages)
+                    try sanitizedData.write(to: fileURL)
+                    let tokenCount = messages.reduce(0) { $0 + estimateTokens(for: $1) }
 
                     let summariesBeforePending = chunkIndex.orderedChunks
                         .filter { $0.endDate < pending.startDate }
@@ -196,7 +199,7 @@ actor ConversationArchiveService {
                         type: .temporary,
                         startDate: pending.startDate,
                         endDate: pending.endDate,
-                        tokenCount: pending.tokenCount,
+                        tokenCount: tokenCount,
                         messageCount: pending.messageCount,
                         summary: summary!,
                         rawContentFileName: pending.rawContentFileName
@@ -223,6 +226,7 @@ actor ConversationArchiveService {
     
     func configure(apiKey: String) {
         self.apiKey = apiKey
+        sanitizeExistingArchiveFiles()
     }
     
     /// Reload chunk index and pending index from disk
@@ -231,6 +235,7 @@ actor ConversationArchiveService {
         loadIndex()
         loadPendingIndex()
         loadPendingMetaIndex()
+        sanitizeExistingArchiveFiles()
         print("[ArchiveService] Reloaded index from disk (\(chunkIndex.chunks.count) chunks)")
     }
     
@@ -277,9 +282,10 @@ actor ConversationArchiveService {
         }
         
         let chunkId = UUID()
-        let startDate = messages.first!.timestamp
-        let endDate = messages.last!.timestamp
-        let tokenCount = messages.reduce(0) { $0 + estimateTokens(for: $1) }
+        let archivedMessages = sanitizeMessagesForArchive(messages)
+        let startDate = archivedMessages.first!.timestamp
+        let endDate = archivedMessages.last!.timestamp
+        let tokenCount = archivedMessages.reduce(0) { $0 + estimateTokens(for: $1) }
         
         // Cache live context for potential consolidation
         cachedLiveContext = context.currentConversationContext
@@ -287,7 +293,7 @@ actor ConversationArchiveService {
         // Save raw messages to file FIRST (crash safety)
         let fileName = "\(chunkId.uuidString).json"
         let fileURL = archiveFolder.appendingPathComponent(fileName)
-        let data = try JSONEncoder().encode(messages)
+        let data = try JSONEncoder().encode(archivedMessages)
         try data.write(to: fileURL)
         
         // Create pending chunk record (so we can recover if app crashes during summarization)
@@ -304,8 +310,8 @@ actor ConversationArchiveService {
         savePendingIndex()
         
         // Generate summary and extract user context facts in parallel
-        async let summaryTask = generateSummary(for: messages, startDate: startDate, endDate: endDate, context: context)
-        async let userContextTask: Void = extractAndAppendUserContext(messages: messages, startDate: startDate, endDate: endDate)
+        async let summaryTask = generateSummary(for: archivedMessages, startDate: startDate, endDate: endDate, context: context)
+        async let userContextTask: Void = extractAndAppendUserContext(messages: archivedMessages, startDate: startDate, endDate: endDate)
 
         let summary = try await summaryTask
         _ = await userContextTask
@@ -585,7 +591,7 @@ actor ConversationArchiveService {
         for chunk in chunks {
             let fileURL = archiveFolder.appendingPathComponent(chunk.rawContentFileName)
             let data = try Data(contentsOf: fileURL)
-            let messages = try JSONDecoder().decode([Message].self, from: data)
+            let messages = sanitizeMessagesForArchive(try JSONDecoder().decode([Message].self, from: data))
             allMessages.append(contentsOf: messages)
         }
         
@@ -1473,6 +1479,121 @@ actor ConversationArchiveService {
         }
         
         return max(tokens, 1)
+    }
+
+    /// Long-term archive chunks intentionally keep the same lightweight shape as
+    /// pruned active history: message text plus durable breadcrumbs, never full
+    /// tool replay payloads or inline media references.
+    private func sanitizeMessagesForArchive(_ messages: [Message]) -> [Message] {
+        messages.map(sanitizeMessageForArchive)
+    }
+
+    private func sanitizeExistingArchiveFiles() {
+        var updatedChunkIndex = false
+        var updatedPendingIndex = false
+        var sanitizedFileCount = 0
+
+        for index in chunkIndex.chunks.indices {
+            let chunk = chunkIndex.chunks[index]
+            guard let result = sanitizeArchiveFile(named: chunk.rawContentFileName) else { continue }
+            if result.didWrite { sanitizedFileCount += 1 }
+            if result.tokenCount != chunk.tokenCount {
+                chunkIndex.chunks[index] = ConversationChunk(
+                    id: chunk.id,
+                    type: chunk.type,
+                    startDate: chunk.startDate,
+                    endDate: chunk.endDate,
+                    tokenCount: result.tokenCount,
+                    messageCount: chunk.messageCount,
+                    summary: chunk.summary,
+                    rawContentFileName: chunk.rawContentFileName
+                )
+                updatedChunkIndex = true
+            }
+        }
+
+        for index in pendingIndex.pendingChunks.indices {
+            let pending = pendingIndex.pendingChunks[index]
+            guard let result = sanitizeArchiveFile(named: pending.rawContentFileName) else { continue }
+            if result.didWrite { sanitizedFileCount += 1 }
+            if result.tokenCount != pending.tokenCount {
+                pendingIndex.pendingChunks[index] = PendingChunk(
+                    id: pending.id,
+                    startDate: pending.startDate,
+                    endDate: pending.endDate,
+                    tokenCount: result.tokenCount,
+                    messageCount: pending.messageCount,
+                    rawContentFileName: pending.rawContentFileName,
+                    createdAt: pending.createdAt
+                )
+                updatedPendingIndex = true
+            }
+        }
+
+        if updatedChunkIndex {
+            saveIndex()
+        }
+        if updatedPendingIndex {
+            savePendingIndex()
+        }
+        if sanitizedFileCount > 0 {
+            print("[ArchiveService] Sanitized \(sanitizedFileCount) archived chunk file(s)")
+        }
+    }
+
+    private func sanitizeArchiveFile(named fileName: String) -> (tokenCount: Int, didWrite: Bool)? {
+        let fileURL = archiveFolder.appendingPathComponent(fileName)
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let messages = try JSONDecoder().decode([Message].self, from: data)
+            let sanitizedMessages = sanitizeMessagesForArchive(messages)
+            let tokenCount = sanitizedMessages.reduce(0) { $0 + estimateTokens(for: $1) }
+
+            guard messages.contains(where: messageNeedsArchiveSanitization) else {
+                return (tokenCount, false)
+            }
+
+            let sanitizedData = try JSONEncoder().encode(sanitizedMessages)
+            try sanitizedData.write(to: fileURL)
+            return (tokenCount, true)
+        } catch {
+            print("[ArchiveService] Failed to sanitize archived chunk \(fileName): \(error)")
+            return nil
+        }
+    }
+
+    private func messageNeedsArchiveSanitization(_ message: Message) -> Bool {
+        !message.toolInteractions.isEmpty
+            || message.measuredToolTokens != nil
+            || message.measuredTokens != nil
+            || (!message.mediaPruned && message.mediaFileCount > 0)
+    }
+
+    private func sanitizeMessageForArchive(_ message: Message) -> Message {
+        Message(
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp,
+            imageFileNames: message.imageFileNames,
+            documentFileNames: message.documentFileNames,
+            imageFileSizes: message.imageFileSizes,
+            documentFileSizes: message.documentFileSizes,
+            referencedImageFileNames: message.referencedImageFileNames,
+            referencedDocumentFileNames: message.referencedDocumentFileNames,
+            referencedDocumentFileSizes: message.referencedDocumentFileSizes,
+            downloadedDocumentFileNames: message.downloadedDocumentFileNames,
+            editedFilePaths: message.editedFilePaths,
+            generatedFilePaths: message.generatedFilePaths,
+            accessedProjectIds: message.accessedProjectIds,
+            subagentSessionEvents: message.subagentSessionEvents,
+            toolInteractions: [],
+            compactToolLog: message.compactToolLog,
+            mediaPruned: message.mediaPruned || message.mediaFileCount > 0,
+            measuredToolTokens: nil,
+            measuredTokens: nil,
+            kind: message.kind
+        )
     }
     
     private func formatMessagesForSummary(_ messages: [Message]) async -> String {

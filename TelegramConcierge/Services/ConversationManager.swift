@@ -1113,6 +1113,7 @@ class ConversationManager: ObservableObject {
         }
         if prunedToolCount > 0 || prunedMediaCount > 0 {
             saveConversation()
+            cleanupOrphanedToolAttachmentSnapshots()
             refreshSystemPromptTimestamp()
         }
 
@@ -1405,6 +1406,7 @@ class ConversationManager: ObservableObject {
                 messages.removeFirst(archivedCount)
                 lastPromptTokens = nil
                 saveConversation()
+                cleanupOrphanedToolAttachmentSnapshots()
                 print("[ConversationManager] Removed \(archivedCount) archived messages from active conversation")
             }
             print("[TIMING] Archive took: \(String(format: "%.2f", Date().timeIntervalSince(archiveStartTime)))s")
@@ -2383,6 +2385,7 @@ class ConversationManager: ObservableObject {
         let anyPruned = prunedToolCount > 0 || prunedMediaCount > 0 || compressedCount > 0
         if anyPruned {
             saveConversation()
+            cleanupOrphanedToolAttachmentSnapshots()
             print("[ConversationManager] Pruned tools from \(prunedToolCount) turn(s), media from \(prunedMediaCount) message(s), compressed \(compressedCount) synthetic message(s). New estimate: ~\(totalTokens) tokens")
         }
 
@@ -2512,10 +2515,84 @@ class ConversationManager: ObservableObject {
         let anyPruned = prunedToolCount > 0 || prunedMediaCount > 0 || compressedCount > 0
         if anyPruned {
             saveConversation()
+            cleanupOrphanedToolAttachmentSnapshots(additionalLiveInteractions: currentTurnInteractions)
             print("[ConversationManager] Mid-loop pruned tools from \(prunedToolCount) turn(s), media from \(prunedMediaCount) message(s), compressed \(compressedCount) synthetic message(s). New estimate: ~\(totalTokens) tokens")
         }
 
         return anyPruned
+    }
+
+    /// Deletes snapshotted tool-output bytes that are no longer referenced by the
+    /// active conversation. This never follows `sourcePath` and never removes
+    /// anything outside LocalAgent's managed `tool_attachments` cache directory.
+    private func cleanupOrphanedToolAttachmentSnapshots(additionalLiveInteractions: [ToolInteraction] = []) {
+        let fm = FileManager.default
+        let dir = toolAttachmentsDirectory
+        guard let snapshotFiles = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let liveSnapshotPaths = liveToolAttachmentSnapshotPaths(additionalLiveInteractions: additionalLiveInteractions)
+        var removedCount = 0
+
+        for url in snapshotFiles {
+            guard isManagedToolAttachmentSnapshot(url) else { continue }
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            if values?.isDirectory == true {
+                continue
+            }
+
+            let path = url.standardizedFileURL.path
+            guard !liveSnapshotPaths.contains(path) else { continue }
+
+            do {
+                try fm.removeItem(at: url)
+                removedCount += 1
+            } catch {
+                print("[ConversationManager] Failed to remove orphaned tool attachment snapshot \(url.path): \(error)")
+            }
+        }
+
+        if removedCount > 0 {
+            print("[ConversationManager] Removed \(removedCount) orphaned tool attachment snapshot(s)")
+        }
+    }
+
+    private func liveToolAttachmentSnapshotPaths(additionalLiveInteractions: [ToolInteraction] = []) -> Set<String> {
+        var paths = Set<String>()
+
+        for message in messages {
+            for interaction in message.toolInteractions {
+                collectLiveSnapshotPaths(from: interaction, into: &paths)
+            }
+        }
+
+        for interaction in additionalLiveInteractions {
+            collectLiveSnapshotPaths(from: interaction, into: &paths)
+        }
+
+        return paths
+    }
+
+    private func collectLiveSnapshotPaths(from interaction: ToolInteraction, into paths: inout Set<String>) {
+        for result in interaction.results {
+            for reference in result.fileAttachmentReferences {
+                guard let snapshotPath = reference.snapshotPath else { continue }
+                let url = URL(fileURLWithPath: snapshotPath)
+                guard isManagedToolAttachmentSnapshot(url) else { continue }
+                paths.insert(url.standardizedFileURL.path)
+            }
+        }
+    }
+
+    private func isManagedToolAttachmentSnapshot(_ url: URL) -> Bool {
+        let directoryPath = toolAttachmentsDirectory.standardizedFileURL.path
+        let snapshotPath = url.standardizedFileURL.path
+        return snapshotPath.hasPrefix(directoryPath + "/")
     }
 
     // MARK: - Compressible synthetic-user-message pruning
