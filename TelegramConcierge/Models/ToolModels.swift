@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import PDFKit
 
 enum JSONValue: Codable {
     case string(String)
@@ -216,8 +218,75 @@ struct FileAttachment {
 struct FileAttachmentReference: Codable {
     let filename: String
     let mimeType: String
+    let snapshotPath: String?
     let sourcePath: String?
     let pageRange: String?
+    let byteSize: Int?
+    let imageWidth: Int?
+    let imageHeight: Int?
+    let pdfPageCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case filename, mimeType, snapshotPath, sourcePath, pageRange
+        case byteSize, imageWidth, imageHeight, pdfPageCount
+    }
+
+    init(
+        filename: String,
+        mimeType: String,
+        snapshotPath: String? = nil,
+        sourcePath: String? = nil,
+        pageRange: String? = nil,
+        byteSize: Int? = nil,
+        imageWidth: Int? = nil,
+        imageHeight: Int? = nil,
+        pdfPageCount: Int? = nil
+    ) {
+        self.filename = filename
+        self.mimeType = mimeType
+        self.snapshotPath = snapshotPath
+        self.sourcePath = sourcePath
+        self.pageRange = pageRange
+        self.byteSize = byteSize
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.pdfPageCount = pdfPageCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        filename = try c.decode(String.self, forKey: .filename)
+        mimeType = try c.decode(String.self, forKey: .mimeType)
+        snapshotPath = try c.decodeIfPresent(String.self, forKey: .snapshotPath)
+        sourcePath = try c.decodeIfPresent(String.self, forKey: .sourcePath)
+        pageRange = try c.decodeIfPresent(String.self, forKey: .pageRange)
+        byteSize = try c.decodeIfPresent(Int.self, forKey: .byteSize)
+        imageWidth = try c.decodeIfPresent(Int.self, forKey: .imageWidth)
+        imageHeight = try c.decodeIfPresent(Int.self, forKey: .imageHeight)
+        pdfPageCount = try c.decodeIfPresent(Int.self, forKey: .pdfPageCount)
+    }
+
+    func resolvedURL(imagesDirectory: URL, documentsDirectory: URL) -> URL? {
+        let fm = FileManager.default
+        if let snapshotPath, fm.fileExists(atPath: snapshotPath) {
+            return URL(fileURLWithPath: snapshotPath)
+        }
+        if let sourcePath, fm.fileExists(atPath: sourcePath) {
+            return URL(fileURLWithPath: sourcePath)
+        }
+
+        let imageURL = imagesDirectory.appendingPathComponent(filename)
+        if fm.fileExists(atPath: imageURL.path) {
+            return imageURL
+        }
+
+        let documentURL = documentsDirectory.appendingPathComponent(filename)
+        if fm.fileExists(atPath: documentURL.path) {
+            return documentURL
+        }
+
+        return nil
+    }
 }
 
 struct ToolResultMessage: Codable {
@@ -261,7 +330,7 @@ struct ToolResultMessage: Codable {
             self.fileAttachments = []
         }
         self.fileAttachmentReferences = self.fileAttachments.map {
-            FileAttachmentReference(filename: $0.filename, mimeType: $0.mimeType, sourcePath: $0.sourcePath, pageRange: $0.pageRange)
+            Self.persistAttachmentReference(for: $0)
         }
         self.spendUSD = spendUSD
     }
@@ -275,6 +344,87 @@ struct ToolResultMessage: Codable {
         self.fileAttachmentReferences = (try? container.decode([FileAttachmentReference].self, forKey: .fileAttachmentReferences)) ?? []
         self.fileAttachments = [] // Not decoded, only used transiently
         self.spendUSD = nil // Not decoded, only used transiently
+    }
+
+    private static func persistAttachmentReference(for attachment: FileAttachment) -> FileAttachmentReference {
+        let snapshotPath = snapshotAttachmentData(attachment.data, filename: attachment.filename)
+        let imageDimensions = imageDimensions(for: attachment.data, mimeType: attachment.mimeType)
+        let pdfPageCount = pdfPageCount(for: attachment.data, mimeType: attachment.mimeType)
+
+        return FileAttachmentReference(
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            snapshotPath: snapshotPath,
+            sourcePath: attachment.sourcePath,
+            pageRange: attachment.pageRange,
+            byteSize: attachment.data.count,
+            imageWidth: imageDimensions?.width,
+            imageHeight: imageDimensions?.height,
+            pdfPageCount: pdfPageCount
+        )
+    }
+
+    private static func snapshotAttachmentData(_ data: Data, filename: String) -> String? {
+        guard !data.isEmpty else { return nil }
+
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = appSupport
+            .appendingPathComponent("LocalAgent", isDirectory: true)
+            .appendingPathComponent("tool_attachments", isDirectory: true)
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let safeName = sanitizedSnapshotFilename(filename)
+            let url = dir.appendingPathComponent("\(UUID().uuidString)-\(safeName)")
+            try data.write(to: url, options: .atomic)
+            return url.path
+        } catch {
+            print("[ToolResultMessage] Failed to snapshot attachment \(filename): \(error)")
+            return nil
+        }
+    }
+
+    private static func sanitizedSnapshotFilename(_ filename: String) -> String {
+        let last = URL(fileURLWithPath: filename).lastPathComponent
+        let cleaned = last.map { char -> Character in
+            if char.isLetter || char.isNumber || char == "." || char == "-" || char == "_" {
+                return char
+            }
+            return "_"
+        }
+        let result = String(cleaned)
+        return result.isEmpty ? "attachment.bin" : result
+    }
+
+    private static func normalizedMimeType(_ mimeType: String) -> String {
+        mimeType
+            .lowercased()
+            .split(separator: ";")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? mimeType.lowercased()
+    }
+
+    private static func imageDimensions(for data: Data, mimeType: String) -> (width: Int, height: Int)? {
+        guard normalizedMimeType(mimeType).hasPrefix("image/"),
+              let image = NSImage(data: data) else {
+            return nil
+        }
+        let width = image.representations.map(\.pixelsWide).filter { $0 > 0 }.max()
+            ?? max(Int(image.size.width), 1)
+        let height = image.representations.map(\.pixelsHigh).filter { $0 > 0 }.max()
+            ?? max(Int(image.size.height), 1)
+        return (width, height)
+    }
+
+    private static func pdfPageCount(for data: Data, mimeType: String) -> Int? {
+        guard normalizedMimeType(mimeType) == "application/pdf",
+              let doc = PDFDocument(data: data) else {
+            return nil
+        }
+        return doc.pageCount
     }
 }
 

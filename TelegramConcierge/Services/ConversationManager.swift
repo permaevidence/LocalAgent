@@ -138,6 +138,12 @@ class ConversationManager: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
+
+    private var toolAttachmentsDirectory: URL {
+        let dir = appFolder.appendingPathComponent("tool_attachments", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
     
     init() {
         isPrivacyModeEnabled = UserDefaults.standard.bool(forKey: privacyModeDefaultsKey)
@@ -1052,6 +1058,7 @@ class ConversationManager: ObservableObject {
     private func manualPruneToolInteractions() async {
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messages)
+        let providerIsLMStudio = currentProviderIsLMStudio()
 
         // Estimate current context with a rough system prompt estimate
         var totalTokens = 3000 // System prompt overhead estimate
@@ -1060,11 +1067,8 @@ class ConversationManager: ObservableObject {
 
         var prunableToolTokens = 0
         for (i, message) in messages.enumerated() {
-            totalTokens += message.content.count / 4 + 1
-            // Inline media costs ~1500 tokens/file; pruned media costs ~50 (text hint)
-            let mediaTokensPerFile = message.mediaPruned ? 50 : 1500
-            totalTokens += message.mediaFileCount * mediaTokensPerFile
-            let msgToolTokens = toolInteractionTokens(message.toolInteractions)
+            totalTokens += estimatedPromptTokens(for: message, isLMStudio: providerIsLMStudio)
+            let msgToolTokens = toolInteractionTokens(message.toolInteractions, isLMStudio: providerIsLMStudio)
             totalTokens += msgToolTokens
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
                 prunableToolTokens += msgToolTokens
@@ -1088,7 +1092,7 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
-                let savedTokens = toolInteractionTokens(messages[i].toolInteractions)
+                let savedTokens = toolInteractionTokens(messages[i].toolInteractions, isLMStudio: providerIsLMStudio)
                 messages[i].toolInteractions = []
                 totalTokens -= savedTokens
                 prunedToolCount += 1
@@ -1097,7 +1101,7 @@ class ConversationManager: ObservableObject {
             guard totalTokens > targetTokens else { break }
 
             if messages[i].hasUnprunedMedia {
-                let savedTokens = messages[i].mediaFileCount * (1500 - 50)
+                let savedTokens = mediaSavingsForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].mediaPruned = true
                 totalTokens -= savedTokens
                 prunedMediaCount += 1
@@ -2046,21 +2050,35 @@ class ConversationManager: ObservableObject {
         return max(300, min(8_000, fallbackBytes / 1024 + 300))
     }
 
-    private func estimatedPDFTokens(data: Data?, url: URL?, fallbackBytes: Int) -> Int {
+    private func estimatedPDFTokens(data: Data?, url: URL?, fallbackBytes: Int, isLMStudio: Bool? = nil) -> Int {
         let document: PDFDocument? = {
             if let data { return PDFDocument(data: data) }
             if let url { return PDFDocument(url: url) }
             return nil
         }()
         let pageCount = max(document?.pageCount ?? max(1, fallbackBytes / 100_000), 1)
-        if LLMProvider.fromStoredValue(KeychainHelper.load(key: KeychainHelper.llmProviderKey)) == .lmStudio {
+        if isLMStudio ?? currentProviderIsLMStudio() {
             return min(80_000, pageCount * 1_000)
         }
         let byteBased = max(300, fallbackBytes / 4)
         return min(80_000, max(pageCount * 300, min(byteBased, pageCount * 1_800)))
     }
 
-    private func estimatedInlineFileTokens(filename: String, data: Data? = nil, url: URL? = nil, mimeType: String, fallbackBytes: Int = 0) -> Int {
+    private func estimatedImageTokens(width: Int, height: Int) -> Int {
+        let tiles = max(1, Int(ceil(Double(width) / 512.0)) * Int(ceil(Double(height) / 512.0)))
+        return max(300, min(12_000, 85 + tiles * 170))
+    }
+
+    private func estimatedPDFTokens(pageCount: Int, byteSize: Int, isLMStudio: Bool) -> Int {
+        let pages = max(pageCount, 1)
+        if isLMStudio {
+            return min(80_000, pages * 1_000)
+        }
+        let byteBased = max(300, byteSize / 4)
+        return min(80_000, max(pages * 300, min(byteBased, pages * 1_800)))
+    }
+
+    private func estimatedInlineFileTokens(filename: String, data: Data? = nil, url: URL? = nil, mimeType: String, fallbackBytes: Int = 0, isLMStudio: Bool? = nil) -> Int {
         guard isInlineMimeTypeSupportedForBudget(mimeType) else {
             return estimatedMediaHintTokens(filename: filename)
         }
@@ -2071,36 +2089,67 @@ class ConversationManager: ObservableObject {
             return estimatedImageTokens(data: data, url: url, fallbackBytes: bytes)
         }
         if normalized == "application/pdf" {
-            return estimatedPDFTokens(data: data, url: url, fallbackBytes: bytes)
+            return estimatedPDFTokens(data: data, url: url, fallbackBytes: bytes, isLMStudio: isLMStudio)
         }
         return max(20, min(80_000, bytes / 4 + 20))
+    }
+
+    private func estimatedInlineFileTokens(reference: FileAttachmentReference, isLMStudio: Bool) -> Int {
+        guard isInlineMimeTypeSupportedForBudget(reference.mimeType) else {
+            return estimatedMediaHintTokens(filename: reference.filename)
+        }
+
+        let normalized = normalizedMimeType(reference.mimeType)
+        let bytes = reference.byteSize ?? 0
+        if normalized.hasPrefix("image/"),
+           let width = reference.imageWidth,
+           let height = reference.imageHeight {
+            return estimatedImageTokens(width: width, height: height)
+        }
+        if normalized == "application/pdf", let pageCount = reference.pdfPageCount {
+            return estimatedPDFTokens(pageCount: pageCount, byteSize: bytes, isLMStudio: isLMStudio)
+        }
+
+        if bytes > 0 {
+            if normalized.hasPrefix("image/") {
+                return max(300, min(8_000, bytes / 1024 + 300))
+            }
+            return max(20, min(80_000, bytes / 4 + 20))
+        }
+
+        let url = reference.resolvedURL(imagesDirectory: imagesDirectory, documentsDirectory: documentsDirectory)
+        return estimatedInlineFileTokens(filename: reference.filename, url: url, mimeType: reference.mimeType, isLMStudio: isLMStudio)
+    }
+
+    private func currentProviderIsLMStudio() -> Bool {
+        LLMProvider.fromStoredValue(KeychainHelper.load(key: KeychainHelper.llmProviderKey)) == .lmStudio
     }
 
     private func estimatedMediaHintTokens(filename: String) -> Int {
         isVoiceMessage(filename) ? 10 : 50
     }
 
-    private func estimatedMediaTokensForMessage(_ message: Message, inline: Bool) -> Int {
+    private func estimatedMediaTokensForMessage(_ message: Message, inline: Bool, isLMStudio: Bool? = nil) -> Int {
         var tokens = 0
 
         for fileName in message.referencedImageFileNames {
             let url = imagesDirectory.appendingPathComponent(fileName)
             tokens += inline
-                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName))
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName), isLMStudio: isLMStudio)
                 : estimatedMediaHintTokens(filename: fileName)
         }
         for fileName in message.referencedDocumentFileNames {
             let url = documentsDirectory.appendingPathComponent(fileName)
             let mime = mimeTypeForDocument(fileName)
             tokens += inline
-                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime)
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime, isLMStudio: isLMStudio)
                 : estimatedMediaHintTokens(filename: fileName)
         }
         for (index, fileName) in message.imageFileNames.enumerated() {
             let url = imagesDirectory.appendingPathComponent(fileName)
             let fallback = index < message.imageFileSizes.count ? message.imageFileSizes[index] : 0
             tokens += inline
-                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName), fallbackBytes: fallback)
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mimeTypeForPrimaryImage(fileName), fallbackBytes: fallback, isLMStudio: isLMStudio)
                 : estimatedMediaHintTokens(filename: fileName)
         }
         for (index, fileName) in message.documentFileNames.enumerated() {
@@ -2108,17 +2157,17 @@ class ConversationManager: ObservableObject {
             let fallback = index < message.documentFileSizes.count ? message.documentFileSizes[index] : 0
             let mime = mimeTypeForDocument(fileName)
             tokens += inline
-                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime, fallbackBytes: fallback)
+                ? estimatedInlineFileTokens(filename: fileName, url: url, mimeType: mime, fallbackBytes: fallback, isLMStudio: isLMStudio)
                 : estimatedMediaHintTokens(filename: fileName)
         }
 
         return tokens
     }
 
-    private func estimatedPromptTokens(for message: Message) -> Int {
+    private func estimatedPromptTokens(for message: Message, isLMStudio: Bool? = nil) -> Int {
         var tokens = max(message.content.count / 4 + 1, 1)
         if message.hasUnprunedMedia || message.mediaFileCount > 0 {
-            tokens += estimatedMediaTokensForMessage(message, inline: !message.mediaPruned)
+            tokens += estimatedMediaTokensForMessage(message, inline: !message.mediaPruned, isLMStudio: isLMStudio)
         }
         return tokens
     }
@@ -2135,42 +2184,19 @@ class ConversationManager: ObservableObject {
         return max(tokens, 1)
     }
 
-    private func persistedAttachmentURL(for reference: FileAttachmentReference) -> URL? {
-        if let sourcePath = reference.sourcePath, FileManager.default.fileExists(atPath: sourcePath) {
-            return URL(fileURLWithPath: sourcePath)
-        }
-
-        let imageURL = imagesDirectory.appendingPathComponent(reference.filename)
-        if FileManager.default.fileExists(atPath: imageURL.path) {
-            return imageURL
-        }
-
-        let documentURL = documentsDirectory.appendingPathComponent(reference.filename)
-        if FileManager.default.fileExists(atPath: documentURL.path) {
-            return documentURL
-        }
-
-        return nil
-    }
-
-    private func estimatedPersistedAttachmentTokens(_ interaction: ToolInteraction) -> Int {
+    private func estimatedPersistedAttachmentTokens(_ interaction: ToolInteraction, isLMStudio: Bool) -> Int {
         interaction.results.reduce(0) { total, result in
             total + result.fileAttachmentReferences.reduce(0) { subtotal, reference in
-                let url = persistedAttachmentURL(for: reference)
-                return subtotal + estimatedInlineFileTokens(
-                    filename: reference.filename,
-                    url: url,
-                    mimeType: reference.mimeType
-                )
+                subtotal + estimatedInlineFileTokens(reference: reference, isLMStudio: isLMStudio)
             }
         }
     }
 
-    private func currentTurnInteractionTokens(_ interaction: ToolInteraction) -> Int {
+    private func currentTurnInteractionTokens(_ interaction: ToolInteraction, isLMStudio: Bool) -> Int {
         if let measured = interaction.measuredTokenCost, measured > 0 {
             return measured
         }
-        return estimatedStoredToolInteractionTokens(interaction) + estimatedPersistedAttachmentTokens(interaction)
+        return estimatedStoredToolInteractionTokens(interaction) + estimatedPersistedAttachmentTokens(interaction, isLMStudio: isLMStudio)
     }
 
     private func applyMeasuredTokenDelta(_ delta: Int, to interaction: inout ToolInteraction) {
@@ -2182,11 +2208,11 @@ class ConversationManager: ObservableObject {
         interaction.measuredReplayTokenCost = measured
     }
 
-    private func estimatedTokensAddedSinceLastPrompt(currentUserMessageId: UUID?) -> Int {
+    private func estimatedTokensAddedSinceLastPrompt(currentUserMessageId: UUID?, isLMStudio: Bool) -> Int {
         var tokens = lastCompletionTokens ?? 0
         if let currentUserMessageId,
            let currentUser = messages.first(where: { $0.id == currentUserMessageId }) {
-            tokens += estimatedPromptTokens(for: currentUser)
+            tokens += estimatedPromptTokens(for: currentUser, isLMStudio: isLMStudio)
         }
         return tokens
     }
@@ -2194,7 +2220,8 @@ class ConversationManager: ObservableObject {
     /// Token cost for persisted tool interactions. Uses replay-only measured
     /// cost when available, falling back to the older measured delta and then
     /// to character-based estimation.
-    private func toolInteractionTokens(_ interactions: [ToolInteraction]) -> Int {
+    private func toolInteractionTokens(_ interactions: [ToolInteraction], isLMStudio: Bool? = nil) -> Int {
+        let providerIsLMStudio = isLMStudio ?? currentProviderIsLMStudio()
         var tokens = 0
         for interaction in interactions {
             if let measured = interaction.measuredReplayTokenCost, measured > 0 {
@@ -2203,7 +2230,7 @@ class ConversationManager: ObservableObject {
                 tokens += measured
             } else {
                 tokens += estimatedStoredToolInteractionTokens(interaction)
-                tokens += estimatedPersistedAttachmentTokens(interaction)
+                tokens += estimatedPersistedAttachmentTokens(interaction, isLMStudio: providerIsLMStudio)
             }
         }
         return tokens
@@ -2211,26 +2238,26 @@ class ConversationManager: ObservableObject {
 
     /// Token cost for a message's tool interactions. Prefers the per-message
     /// measured total (sum of all round deltas), falls back to per-interaction.
-    private func toolTokensForMessage(_ message: Message) -> Int {
+    private func toolTokensForMessage(_ message: Message, isLMStudio: Bool? = nil) -> Int {
         if let measured = message.measuredToolTokens, measured > 0 {
             return measured
         }
-        return toolInteractionTokens(message.toolInteractions)
+        return toolInteractionTokens(message.toolInteractions, isLMStudio: isLMStudio)
     }
 
     /// Estimated token savings from pruning a message's inline media to text hints.
     /// Uses measured total tokens when available to derive actual media cost;
     /// falls back to 1450 tokens/file estimate.
-    private func mediaSavingsForMessage(_ message: Message) -> Int {
+    private func mediaSavingsForMessage(_ message: Message, isLMStudio: Bool? = nil) -> Int {
         if let measured = message.measuredTokens {
             let textTokens = message.content.count / 4 + 1
-            let toolTokens = message.measuredToolTokens ?? toolInteractionTokens(message.toolInteractions)
+            let toolTokens = message.measuredToolTokens ?? toolInteractionTokens(message.toolInteractions, isLMStudio: isLMStudio)
             let mediaCost = max(measured - textTokens - toolTokens, 0)
-            let hintCost = estimatedMediaTokensForMessage(message, inline: false)
+            let hintCost = estimatedMediaTokensForMessage(message, inline: false, isLMStudio: isLMStudio)
             return max(mediaCost - hintCost, 0)
         }
-        let inlineCost = estimatedMediaTokensForMessage(message, inline: true)
-        let hintCost = estimatedMediaTokensForMessage(message, inline: false)
+        let inlineCost = estimatedMediaTokensForMessage(message, inline: true, isLMStudio: isLMStudio)
+        let hintCost = estimatedMediaTokensForMessage(message, inline: false, isLMStudio: isLMStudio)
         return max(inlineCost - hintCost, 0)
     }
 
@@ -2268,11 +2295,12 @@ class ConversationManager: ObservableObject {
         let maxTokens = configuredMaxContextTokens()
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messages)
+        let providerIsLMStudio = currentProviderIsLMStudio()
 
         // Use real prompt_tokens from API when available, fall back to estimation
         var totalTokens: Int
         if let real = lastPromptTokens {
-            let addedSinceLastPrompt = estimatedTokensAddedSinceLastPrompt(currentUserMessageId: currentUserMessageId)
+            let addedSinceLastPrompt = estimatedTokensAddedSinceLastPrompt(currentUserMessageId: currentUserMessageId, isLMStudio: providerIsLMStudio)
             totalTokens = real + addedSinceLastPrompt
             print("[ConversationManager] Using real prompt_tokens: \(real) + ~\(addedSinceLastPrompt) new tokens")
         } else {
@@ -2282,8 +2310,8 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries
             )
             for message in messages {
-                totalTokens += estimatedPromptTokens(for: message)
-                totalTokens += toolInteractionTokens(message.toolInteractions)
+                totalTokens += estimatedPromptTokens(for: message, isLMStudio: providerIsLMStudio)
+                totalTokens += toolInteractionTokens(message.toolInteractions, isLMStudio: providerIsLMStudio)
             }
             print("[ConversationManager] Using estimated tokens: \(totalTokens)")
         }
@@ -2293,10 +2321,10 @@ class ConversationManager: ObservableObject {
         var prunableMediaTokens = 0
         for (i, message) in messages.enumerated() {
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
-                prunableToolTokens += toolTokensForMessage(message)
+                prunableToolTokens += toolTokensForMessage(message, isLMStudio: providerIsLMStudio)
             }
             if i != protectedIndex && message.hasUnprunedMedia {
-                prunableMediaTokens += mediaSavingsForMessage(message)
+                prunableMediaTokens += mediaSavingsForMessage(message, isLMStudio: providerIsLMStudio)
             }
         }
 
@@ -2323,7 +2351,7 @@ class ConversationManager: ObservableObject {
 
             // Prune tool interactions on this message
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
-                let savedTokens = toolTokensForMessage(messages[i])
+                let savedTokens = toolTokensForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].toolInteractions = []
                 messages[i].measuredToolTokens = nil
                 if let m = messages[i].measuredTokens { messages[i].measuredTokens = max(m - savedTokens, 0) }
@@ -2335,7 +2363,7 @@ class ConversationManager: ObservableObject {
 
             // Prune inline media on this message
             if messages[i].hasUnprunedMedia {
-                let savedTokens = mediaSavingsForMessage(messages[i])
+                let savedTokens = mediaSavingsForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].mediaPruned = true
                 if let m = messages[i].measuredTokens { messages[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
@@ -2375,11 +2403,12 @@ class ConversationManager: ObservableObject {
         let maxTokens = configuredMaxContextTokens()
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messagesForLLM)
+        let providerIsLMStudio = currentProviderIsLMStudio()
 
         // Use real prompt_tokens when available, fall back to estimation
         var totalTokens: Int
         if let real = lastPromptTokens {
-            let unsentInteractionTokens = currentTurnInteractions.last.map { currentTurnInteractionTokens($0) } ?? 0
+            let unsentInteractionTokens = currentTurnInteractions.last.map { currentTurnInteractionTokens($0, isLMStudio: providerIsLMStudio) } ?? 0
             totalTokens = real + unsentInteractionTokens
         } else {
             totalTokens = estimateSystemPromptTokens(
@@ -2388,19 +2417,19 @@ class ConversationManager: ObservableObject {
                 chunkSummaries: chunkSummaries
             )
             for message in messagesForLLM {
-                totalTokens += estimatedPromptTokens(for: message)
-                totalTokens += toolInteractionTokens(message.toolInteractions)
+                totalTokens += estimatedPromptTokens(for: message, isLMStudio: providerIsLMStudio)
+                totalTokens += toolInteractionTokens(message.toolInteractions, isLMStudio: providerIsLMStudio)
             }
-            totalTokens += currentTurnInteractions.reduce(0) { $0 + currentTurnInteractionTokens($1) }
+            totalTokens += currentTurnInteractions.reduce(0) { $0 + currentTurnInteractionTokens($1, isLMStudio: providerIsLMStudio) }
         }
         var prunableToolTokens = 0
         var prunableMediaTokens = 0
         for (i, message) in messagesForLLM.enumerated() {
             if i != protectedIndex && message.role == .assistant && !message.toolInteractions.isEmpty {
-                prunableToolTokens += toolTokensForMessage(message)
+                prunableToolTokens += toolTokensForMessage(message, isLMStudio: providerIsLMStudio)
             }
             if i != protectedIndex && message.hasUnprunedMedia {
-                prunableMediaTokens += mediaSavingsForMessage(message)
+                prunableMediaTokens += mediaSavingsForMessage(message, isLMStudio: providerIsLMStudio)
             }
         }
 
@@ -2416,7 +2445,7 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
-                let savedTokens = toolTokensForMessage(messagesForLLM[i])
+                let savedTokens = toolTokensForMessage(messagesForLLM[i], isLMStudio: providerIsLMStudio)
                 messagesForLLM[i].toolInteractions = []
                 messagesForLLM[i].measuredToolTokens = nil
                 if let m = messagesForLLM[i].measuredTokens { messagesForLLM[i].measuredTokens = max(m - savedTokens, 0) }
@@ -2427,7 +2456,7 @@ class ConversationManager: ObservableObject {
             guard totalTokens > targetTokens else { break }
 
             if messagesForLLM[i].hasUnprunedMedia {
-                let savedTokens = mediaSavingsForMessage(messagesForLLM[i])
+                let savedTokens = mediaSavingsForMessage(messagesForLLM[i], isLMStudio: providerIsLMStudio)
                 messagesForLLM[i].mediaPruned = true
                 if let m = messagesForLLM[i].measuredTokens { messagesForLLM[i].measuredTokens = max(m - savedTokens, 0) }
                 totalTokens -= savedTokens
@@ -3586,6 +3615,8 @@ class ConversationManager: ObservableObject {
         // Also clear images
         try? FileManager.default.removeItem(at: imagesDirectory)
         try? FileManager.default.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: toolAttachmentsDirectory)
+        try? FileManager.default.createDirectory(at: toolAttachmentsDirectory, withIntermediateDirectories: true)
     }
     
     /// Delete all memory: conversation, chunks, summaries, user context, reminders

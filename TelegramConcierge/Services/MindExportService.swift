@@ -57,26 +57,32 @@ actor MindExportService {
         if fm.fileExists(atPath: documentsSource.path) {
             try fm.copyItem(at: documentsSource, to: tempDir.appendingPathComponent("documents", isDirectory: true))
         }
+
+        // 5. Copy snapshotted tool attachments used for stable historical replay
+        let toolAttachmentsSource = appFolder.appendingPathComponent("tool_attachments", isDirectory: true)
+        if fm.fileExists(atPath: toolAttachmentsSource.path) {
+            try fm.copyItem(at: toolAttachmentsSource, to: tempDir.appendingPathComponent("tool_attachments", isDirectory: true))
+        }
         
-        // 5. Copy contacts.json
+        // 6. Copy contacts.json
         let contactsSource = appFolder.appendingPathComponent("contacts.json")
         if fm.fileExists(atPath: contactsSource.path) {
             try fm.copyItem(at: contactsSource, to: tempDir.appendingPathComponent("contacts.json"))
         }
         
-        // 6. Copy reminders.json
+        // 7. Copy reminders.json
         let remindersSource = appFolder.appendingPathComponent("reminders.json")
         if fm.fileExists(atPath: remindersSource.path) {
             try fm.copyItem(at: remindersSource, to: tempDir.appendingPathComponent("reminders.json"))
         }
         
-        // 7. Copy calendar.json
+        // 8. Copy calendar.json
         let calendarSource = appFolder.appendingPathComponent("calendar.json")
         if fm.fileExists(atPath: calendarSource.path) {
             try fm.copyItem(at: calendarSource, to: tempDir.appendingPathComponent("calendar.json"))
         }
         
-        // 8. Create mind_config.json with Keychain and UserDefaults data
+        // 9. Create mind_config.json with Keychain and UserDefaults data
         let config = buildMindConfig()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -84,7 +90,7 @@ actor MindExportService {
         let configData = try encoder.encode(config)
         try configData.write(to: tempDir.appendingPathComponent("mind_config.json"))
         
-        // 8. Create ZIP archive using native macOS zip command
+        // 10. Create ZIP archive using native macOS zip command
         // Remove existing file if present
         if fm.fileExists(atPath: destination.path) {
             try fm.removeItem(at: destination)
@@ -141,8 +147,16 @@ actor MindExportService {
             try? fm.removeItem(at: documentsDest)
             try fm.copyItem(at: documentsSource, to: documentsDest)
         }
+
+        // 5. Restore snapshotted tool attachments
+        let toolAttachmentsSource = tempDir.appendingPathComponent("tool_attachments", isDirectory: true)
+        let toolAttachmentsDest = appFolder.appendingPathComponent("tool_attachments", isDirectory: true)
+        if fm.fileExists(atPath: toolAttachmentsSource.path) {
+            try? fm.removeItem(at: toolAttachmentsDest)
+            try fm.copyItem(at: toolAttachmentsSource, to: toolAttachmentsDest)
+        }
         
-        // 5. Restore contacts.json
+        // 6. Restore contacts.json
         let contactsSource = tempDir.appendingPathComponent("contacts.json")
         let contactsDest = appFolder.appendingPathComponent("contacts.json")
         if fm.fileExists(atPath: contactsSource.path) {
@@ -150,7 +164,7 @@ actor MindExportService {
             try fm.copyItem(at: contactsSource, to: contactsDest)
         }
         
-        // 6. Restore reminders.json
+        // 7. Restore reminders.json
         let remindersSource = tempDir.appendingPathComponent("reminders.json")
         let remindersDest = appFolder.appendingPathComponent("reminders.json")
         if fm.fileExists(atPath: remindersSource.path) {
@@ -158,7 +172,7 @@ actor MindExportService {
             try fm.copyItem(at: remindersSource, to: remindersDest)
         }
         
-        // 7. Restore calendar.json
+        // 8. Restore calendar.json
         let calendarSource = tempDir.appendingPathComponent("calendar.json")
         let calendarDest = appFolder.appendingPathComponent("calendar.json")
         if fm.fileExists(atPath: calendarSource.path) {
@@ -166,7 +180,7 @@ actor MindExportService {
             try fm.copyItem(at: calendarSource, to: calendarDest)
         }
         
-        // 8. Restore mind_config.json settings
+        // 9. Restore mind_config.json settings
         // Fallback to any *_config.json for backward/forward compatibility.
         let preferredConfigSource = tempDir.appendingPathComponent("mind_config.json")
         let configSource: URL?

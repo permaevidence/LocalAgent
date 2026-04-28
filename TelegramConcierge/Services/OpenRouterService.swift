@@ -168,28 +168,6 @@ actor OpenRouterService {
         return fallbackDescriptionForUnsupportedFile(filename: filename, mimeType: mimeType)
     }
 
-    private func urlForAttachmentReference(
-        _ reference: FileAttachmentReference,
-        imagesDirectory: URL,
-        documentsDirectory: URL
-    ) -> URL? {
-        if let sourcePath = reference.sourcePath, FileManager.default.fileExists(atPath: sourcePath) {
-            return URL(fileURLWithPath: sourcePath)
-        }
-
-        let imageURL = imagesDirectory.appendingPathComponent(reference.filename)
-        if FileManager.default.fileExists(atPath: imageURL.path) {
-            return imageURL
-        }
-
-        let documentURL = documentsDirectory.appendingPathComponent(reference.filename)
-        if FileManager.default.fileExists(atPath: documentURL.path) {
-            return documentURL
-        }
-
-        return nil
-    }
-
     private func appendInlineAttachment(
         filename: String,
         data: Data,
@@ -231,7 +209,7 @@ actor OpenRouterService {
         var nonInlineFiles: [String] = []
 
         for reference in references {
-            guard let url = urlForAttachmentReference(reference, imagesDirectory: imagesDirectory, documentsDirectory: documentsDirectory),
+            guard let url = reference.resolvedURL(imagesDirectory: imagesDirectory, documentsDirectory: documentsDirectory),
                   let data = dataForAttachmentReference(reference, url: url) else {
                 missingFiles.append(reference.filename)
                 continue
@@ -250,6 +228,10 @@ actor OpenRouterService {
     }
 
     private func dataForAttachmentReference(_ reference: FileAttachmentReference, url: URL) -> Data? {
+        if let snapshotPath = reference.snapshotPath, url.path == snapshotPath {
+            return try? Data(contentsOf: url)
+        }
+
         guard normalizeMimeType(reference.mimeType) == "application/pdf",
               let pageRange = reference.pageRange,
               let doc = PDFDocument(url: url),
