@@ -41,25 +41,57 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct MainView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @State private var selectedSection: AppSection? = .chat
+    @State private var selectedSection: AppSection = .chat
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selectedSection) {
+        HStack(spacing: 0) {
+            sidebarView
+            Divider()
+            detailView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 700, minHeight: 500)
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebarView: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 2) {
                 ForEach(AppSection.allCases) { section in
-                    Label(section.label, systemImage: section.icon)
-                        .tag(section as AppSection?)
+                    Button {
+                        selectedSection = section
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: section.icon)
+                                .font(.system(size: 13))
+                                .frame(width: 20)
+                            Text(section.label)
+                                .font(.system(size: 13))
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selectedSection == section
+                                      ? Color.accentColor.opacity(0.15)
+                                      : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selectedSection == section ? .primary : .secondary)
                 }
             }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            .safeAreaInset(edge: .bottom) {
-                sidebarFooter
-            }
-        } detail: {
-            detailView
+            .padding(8)
+
+            Spacer()
+
+            sidebarFooter
         }
-        .navigationSplitViewStyle(.balanced)
+        .frame(width: 200)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Sidebar Footer
@@ -102,21 +134,17 @@ struct MainView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        if let section = selectedSection {
-            switch section {
-            case .chat:
-                ContentView()
-            case .agents:
-                AgentsSettingsView()
-            case .mcps:
-                MCPsSettingsView()
-            case .skills:
-                SkillsSettingsView()
-            case .identity, .connection, .services, .data:
-                SettingsView(section: section)
-            }
-        } else {
+        switch selectedSection {
+        case .chat:
             ContentView()
+        case .agents:
+            AgentsSettingsView()
+        case .mcps:
+            MCPsSettingsView()
+        case .skills:
+            SkillsSettingsView()
+        case .identity, .connection, .services, .data:
+            SettingsView(section: selectedSection)
         }
     }
 }
