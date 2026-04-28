@@ -76,6 +76,11 @@ struct Message: Identifiable, Codable, Equatable {
     // of rough estimates. nil when no real data is available.
     var measuredToolTokens: Int?
 
+    // Measured total token cost of this entire message (text + media + tools),
+    // derived from API prompt_tokens deltas between turns. nil until the API
+    // has processed a turn that includes this message.
+    var measuredTokens: Int?
+
     // Origin classification for synthetic user messages — drives Watermark-time compression.
     // Default `.userText` means the user actually typed this and it must NEVER be compressed.
     var kind: MessageKind
@@ -98,6 +103,41 @@ struct Message: Identifiable, Codable, Equatable {
         imageFileNames.count + documentFileNames.count
             + referencedImageFileNames.count + referencedDocumentFileNames.count
     }
+
+    // MARK: - Token display
+
+    /// Best available token count for this message: measured (from API) if available,
+    /// otherwise a rough estimate (~4 chars/token + media + tool costs).
+    var displayTokenCount: Int {
+        if let measured = measuredTokens { return measured }
+        var tokens = max(content.count / 4, 1)
+        let mediaTokensPerFile = mediaPruned ? 50 : 1500
+        tokens += mediaFileCount * mediaTokensPerFile
+        if let measuredTools = measuredToolTokens {
+            tokens += measuredTools
+        } else {
+            for interaction in toolInteractions {
+                if let cost = interaction.measuredTokenCost {
+                    tokens += cost
+                } else {
+                    tokens += (interaction.assistantMessage.content?.count ?? 0) / 4
+                    for call in interaction.assistantMessage.toolCalls {
+                        tokens += call.function.name.count / 4 + call.function.arguments.count / 4
+                    }
+                    for result in interaction.results {
+                        tokens += result.content.count / 4
+                    }
+                }
+            }
+            if let compactLog = compactToolLog, toolInteractions.isEmpty {
+                tokens += compactLog.count / 4
+            }
+        }
+        return tokens
+    }
+
+    /// Whether the token count is measured (from API) or estimated.
+    var isTokenCountMeasured: Bool { measuredTokens != nil }
 
     // MARK: - Convenience accessors for single-attachment cases
 
@@ -133,6 +173,7 @@ struct Message: Identifiable, Codable, Equatable {
         compactToolLog: String? = nil,
         mediaPruned: Bool = false,
         measuredToolTokens: Int? = nil,
+        measuredTokens: Int? = nil,
         kind: MessageKind = .userText
     ) {
         self.id = id
@@ -155,6 +196,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.compactToolLog = compactToolLog
         self.mediaPruned = mediaPruned
         self.measuredToolTokens = measuredToolTokens
+        self.measuredTokens = measuredTokens
         self.kind = kind
     }
     
@@ -166,7 +208,7 @@ struct Message: Identifiable, Codable, Equatable {
         case imageFileNames, documentFileNames, imageFileSizes, documentFileSizes
         case referencedImageFileNames, referencedDocumentFileNames
         case referencedDocumentFileSizes
-        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, mediaPruned, measuredToolTokens, kind
+        case downloadedDocumentFileNames, editedFilePaths, generatedFilePaths, accessedProjectIds, subagentSessionEvents, toolInteractions, compactToolLog, mediaPruned, measuredToolTokens, measuredTokens, kind
         // Legacy single-value fields (for decoding old data)
         case imageFileName, documentFileName, imageFileSize, documentFileSize
         case referencedImageFileName, referencedDocumentFileName
@@ -264,6 +306,9 @@ struct Message: Identifiable, Codable, Equatable {
         // Measured tool tokens (new field, default nil for old messages)
         measuredToolTokens = try? container.decodeIfPresent(Int.self, forKey: .measuredToolTokens)
 
+        // Measured total tokens for this message (new field, default nil)
+        measuredTokens = try? container.decodeIfPresent(Int.self, forKey: .measuredTokens)
+
         // Message kind (new field, default to `.userText` for old stored messages so
         // legacy data is never accidentally treated as compressible).
         kind = (try? container.decodeIfPresent(MessageKind.self, forKey: .kind)) ?? .userText
@@ -305,6 +350,7 @@ struct Message: Identifiable, Codable, Equatable {
             try container.encode(mediaPruned, forKey: .mediaPruned)
         }
         try container.encodeIfPresent(measuredToolTokens, forKey: .measuredToolTokens)
+        try container.encodeIfPresent(measuredTokens, forKey: .measuredTokens)
         // Only encode kind when non-default, mirroring the conditional-encode pattern above.
         if kind != .userText {
             try container.encode(kind, forKey: .kind)

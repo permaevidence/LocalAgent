@@ -215,12 +215,12 @@ actor SubagentRunner {
                 )
 
                 switch response {
-                case .text(let content, _, let spend):
+                case .text(let content, _, _, let spend):
                     if let spend { totalSpendUSD += spend }
                     finalText = content
                     break loop
 
-                case .toolCalls(let assistantMessage, let calls, _, let spend):
+                case .toolCalls(let assistantMessage, let calls, _, _, let spend):
                     if let spend { totalSpendUSD += spend }
 
                     // Filter out any tool calls the subagent is not allowed to make.

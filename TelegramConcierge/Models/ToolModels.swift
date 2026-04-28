@@ -271,8 +271,8 @@ struct WebSearchResult: Codable {
 // MARK: - LLM Response Types
 
 enum LLMResponse {
-    case text(String, promptTokens: Int?, spendUSD: Double?)
-    case toolCalls(assistantMessage: AssistantToolCallMessage, calls: [ToolCall], promptTokens: Int?, spendUSD: Double?)
+    case text(String, promptTokens: Int?, completionTokens: Int?, spendUSD: Double?)
+    case toolCalls(assistantMessage: AssistantToolCallMessage, calls: [ToolCall], promptTokens: Int?, completionTokens: Int?, spendUSD: Double?)
 }
 
 /// The assistant's message when it decides to call tools (must be preserved for the follow-up)

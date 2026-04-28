@@ -73,9 +73,14 @@ struct MessageBubbleView: View {
                     accessedProjectsView
                 }
                 
-                Text(formattedTime)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Text(formattedTime)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(message.isTokenCountMeasured ? "\(formatTokenCount(message.displayTokenCount)) tokens" : "~\(formatTokenCount(message.displayTokenCount)) tokens")
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
             }
             
             if !isUser {
@@ -403,7 +408,17 @@ struct MessageBubbleView: View {
         formatter.timeStyle = .short
         return formatter.string(from: message.timestamp)
     }
-    
+
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1000 {
+            let k = Double(count) / 1000.0
+            return k.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(k))k"
+                : String(format: "%.1fk", k)
+        }
+        return "\(count)"
+    }
+
     /// Extract just the filename from the path
     private func shortFilename(_ filename: String) -> String {
         URL(fileURLWithPath: filename).lastPathComponent

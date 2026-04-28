@@ -60,6 +60,9 @@ class ConversationManager: ObservableObject {
     /// Actual prompt_tokens from the most recent API response. Used as the
     /// real HIGH watermark trigger for pruning instead of rough estimates.
     private var lastPromptTokens: Int?
+    /// Completion tokens from the most recent turn's final API response.
+    /// Used to compute per-message measured tokens via delta arithmetic.
+    private var lastCompletionTokens: Int?
 
     private struct ToolAwareResponse {
         let finalText: String
@@ -68,6 +71,11 @@ class ConversationManager: ObservableObject {
         let accessedProjects: [String]?
         /// Sum of measured token costs across all tool interactions in this turn.
         let measuredToolTokens: Int?
+        /// Measured token cost of the user message that triggered this turn,
+        /// derived from prompt_tokens delta between turns.
+        let measuredUserTokens: Int?
+        /// Completion tokens for the assistant's final text response.
+        let measuredAssistantTokens: Int?
         /// Absolute paths of pre-existing files modified during the turn (FilesLedger diff).
         let editedFilePaths: [String]
         /// Absolute paths of files newly created during the turn (FilesLedger diff).
@@ -789,6 +797,15 @@ class ConversationManager: ObservableObject {
             }
             let finalResponse = capAssistantMessageForHistoryAndTelegram(finalResponseRaw)
             let downloadedFilenames = ToolExecutor.getPendingDownloadedFilenames()
+            // Store measured token count on the user message that triggered this turn
+            if let measuredUser = response.measuredUserTokens,
+               let idx = messages.lastIndex(where: { $0.id == userMessage.id }) {
+                messages[idx].measuredTokens = measuredUser
+            }
+            // Update lastCompletionTokens for next turn's delta calculation
+            if let assistantTokens = response.measuredAssistantTokens {
+                lastCompletionTokens = assistantTokens
+            }
             let assistantMessage = Message(
                 role: .assistant,
                 content: finalResponse,
@@ -799,7 +816,8 @@ class ConversationManager: ObservableObject {
                 subagentSessionEvents: response.subagentSessionEvents,
                 toolInteractions: response.toolInteractions,
                 compactToolLog: response.compactToolLog,
-                measuredToolTokens: response.measuredToolTokens
+                measuredToolTokens: response.measuredToolTokens,
+                measuredTokens: response.measuredAssistantTokens
             )
             messages.append(assistantMessage)
             didMutateHistory = true
@@ -1423,6 +1441,8 @@ class ConversationManager: ObservableObject {
                 toolInteractions: [],
                 accessedProjects: [],
                 measuredToolTokens: nil,
+                measuredUserTokens: nil,
+                measuredAssistantTokens: nil,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: []
@@ -1433,6 +1453,10 @@ class ConversationManager: ObservableObject {
 
         // Track prompt_tokens across rounds to compute per-interaction deltas
         var prevRoundPromptTokens: Int? = lastPromptTokens
+        let turnStartPromptTokens = lastPromptTokens
+        let turnStartCompletionTokens = lastCompletionTokens
+        var measuredUserTokens: Int?
+        var finalCompletionTokens: Int?
 
         toolLoop: for round in 1...maxToolRoundsSafetyLimit {
             try Task.checkCancellation()
@@ -1494,7 +1518,7 @@ class ConversationManager: ObservableObject {
             }
             
             switch response {
-            case .text(let content, let promptTokens, _):
+            case .text(let content, let promptTokens, let completionTokens, _):
                 // LLM decided to respond with text - we're done
                 if let tokens = promptTokens {
                     lastPromptTokens = tokens
@@ -1503,10 +1527,17 @@ class ConversationManager: ObservableObject {
                         let delta = tokens - prev
                         toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
                     }
+                    // Compute user message tokens from first-round delta
+                    if measuredUserTokens == nil, let start = turnStartPromptTokens {
+                        let totalDelta = tokens - start
+                        let prevAssistant = turnStartCompletionTokens ?? 0
+                        measuredUserTokens = max(totalDelta - prevAssistant, 0)
+                    }
                     print("[ConversationManager] LLM returned text response after \(round) round(s) (\(tokens) prompt tokens)")
                 } else {
                     print("[ConversationManager] LLM returned text response after \(round) round(s)")
                 }
+                finalCompletionTokens = completionTokens
                 // Sum measured costs across all tool interactions
                 let totalMeasured = toolInteractions.compactMap(\.measuredTokenCost).reduce(0, +)
                 let accessedProjects = extractAccessedProjects(from: toolInteractions)
@@ -1517,12 +1548,17 @@ class ConversationManager: ObservableObject {
                     toolInteractions: toolInteractions,
                     accessedProjects: accessedProjects,
                     measuredToolTokens: totalMeasured > 0 ? totalMeasured : nil,
+                    measuredUserTokens: measuredUserTokens,
+                    measuredAssistantTokens: {
+                        let total = (finalCompletionTokens ?? 0) + totalMeasured
+                        return total > 0 ? total : nil
+                    }(),
                     editedFilePaths: changed.edited,
                     generatedFilePaths: changed.generated,
                     subagentSessionEvents: sessionEvents
                 )
 
-            case .toolCalls(let assistantMessage, let calls, let roundPromptTokens, _):
+            case .toolCalls(let assistantMessage, let calls, let roundPromptTokens, _, _):
                 // Model wants to use more tools
                 print("[ConversationManager] Round \(round): LLM requested \(calls.count) tool(s): \(calls.map { $0.function.name })")
 
@@ -1532,6 +1568,12 @@ class ConversationManager: ObservableObject {
                     if let prev = prevRoundPromptTokens, !toolInteractions.isEmpty {
                         let delta = tokens - prev
                         toolInteractions[toolInteractions.count - 1].measuredTokenCost = delta
+                    }
+                    // Compute user message tokens from first-round delta
+                    if measuredUserTokens == nil, let start = turnStartPromptTokens {
+                        let totalDelta = tokens - start
+                        let prevAssistant = turnStartCompletionTokens ?? 0
+                        measuredUserTokens = max(totalDelta - prevAssistant, 0)
                     }
                     prevRoundPromptTokens = tokens
                 }
@@ -1558,6 +1600,8 @@ class ConversationManager: ObservableObject {
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
                         measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
+                        measuredUserTokens: measuredUserTokens,
+                        measuredAssistantTokens: nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1699,6 +1743,8 @@ class ConversationManager: ObservableObject {
                         toolInteractions: toolInteractions,
                         accessedProjects: extractAccessedProjects(from: toolInteractions),
                         measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
+                        measuredUserTokens: measuredUserTokens,
+                        measuredAssistantTokens: nil,
                         editedFilePaths: changed.edited,
                         generatedFilePaths: changed.generated,
                         subagentSessionEvents: sessionEvents
@@ -1751,25 +1797,41 @@ class ConversationManager: ObservableObject {
         let accessedProjects = extractAccessedProjects(from: toolInteractions)
         let changed = await computeLedgerDiff()
 
+        let finalCompTokens: Int?
         switch finalResponse {
-        case .text(let content, _, _):
+        case .text(_, _, let ct, _): finalCompTokens = ct
+        case .toolCalls(_, _, _, let ct, _): finalCompTokens = ct
+        }
+        let assistantTokens: Int? = {
+            let comp = finalCompTokens ?? 0
+            let tools = totalMeasuredSpend
+            let total = comp + tools
+            return total > 0 ? total : nil
+        }()
+
+        switch finalResponse {
+        case .text(let content, _, _, _):
             return ToolAwareResponse(
                 finalText: content,
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
                 measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
+                measuredUserTokens: measuredUserTokens,
+                measuredAssistantTokens: assistantTokens,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
             )
-        case .toolCalls(_, _, _, _):
+        case .toolCalls(_, _, _, _, _):
             return ToolAwareResponse(
                 finalText: "I completed the requested actions but had trouble summarizing the results.",
                 compactToolLog: buildCompactToolExecutionLog(from: toolInteractions),
                 toolInteractions: toolInteractions,
                 accessedProjects: accessedProjects,
                 measuredToolTokens: totalMeasuredSpend > 0 ? totalMeasuredSpend : nil,
+                measuredUserTokens: measuredUserTokens,
+                measuredAssistantTokens: assistantTokens,
                 editedFilePaths: changed.edited,
                 generatedFilePaths: changed.generated,
                 subagentSessionEvents: sessionEvents
@@ -1850,9 +1912,9 @@ class ConversationManager: ObservableObject {
     
     private func spendUSD(from response: LLMResponse) -> Double? {
         switch response {
-        case .text(_, _, let spendUSD):
+        case .text(_, _, _, let spendUSD):
             return spendUSD
-        case .toolCalls(_, _, _, let spendUSD):
+        case .toolCalls(_, _, _, _, let spendUSD):
             return spendUSD
         }
     }

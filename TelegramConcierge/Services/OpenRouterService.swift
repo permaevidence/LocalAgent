@@ -1131,16 +1131,17 @@ actor OpenRouterService {
                 ),
                 calls: toolCalls,
                 promptTokens: promptTokens,
+                completionTokens: completionTokens,
                 spendUSD: callSpendUSD
             )
         }
-        
+
         // Regular text response
         guard let content = choice.message.content else {
             throw OpenRouterError.noContent
         }
-        
-        return .text(content, promptTokens: promptTokens, spendUSD: callSpendUSD)
+
+        return .text(content, promptTokens: promptTokens, completionTokens: completionTokens, spendUSD: callSpendUSD)
     }
     
     // MARK: - File Description Generation
