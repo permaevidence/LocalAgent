@@ -205,28 +205,55 @@ struct ContentView: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-            
+
             Text(conversationManager.statusMessage)
                 .font(.caption)
                 .foregroundColor(.secondary)
-            
+
             Spacer()
-            
-            // Clear conversation button
-            Button(action: {
-                conversationManager.clearConversation()
-            }) {
-                Image(systemName: "trash")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.secondary)
-            .help("Clear conversation")
-            .disabled(conversationManager.isPrivacyModeEnabled)
+
+            // Context token gauge
+            Text(contextGaugeText)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(contextGaugeColor)
+                .help("Current context tokens / max context budget")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var contextGaugeText: String {
+        let current = conversationManager.lastPromptTokens
+        let max = conversationManager.maxContextTokens
+        let currentStr = current.map { formatTokenCount($0) } ?? "—"
+        let maxStr = formatTokenCount(max)
+        return "\(currentStr)/\(maxStr)"
+    }
+
+    private var contextGaugeColor: Color {
+        guard let current = conversationManager.lastPromptTokens else { return .secondary }
+        let max = conversationManager.maxContextTokens
+        let ratio = Double(current) / Double(max)
+        if ratio >= 0.9 { return .red }
+        if ratio >= 0.7 { return .orange }
+        return .secondary
+    }
+
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            let value = Double(count) / 1_000_000.0
+            return value.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(value))M"
+                : String(format: "%.1fM", value)
+        }
+        if count >= 1_000 {
+            let value = Double(count) / 1_000.0
+            return value.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(value))k"
+                : String(format: "%.1fk", value)
+        }
+        return "\(count)"
     }
     
     private var statusColor: Color {

@@ -61,7 +61,8 @@ class ConversationManager: ObservableObject {
 
     /// Actual prompt_tokens from the most recent API response. Used as the
     /// real HIGH watermark trigger for pruning instead of rough estimates.
-    private var lastPromptTokens: Int?
+    /// Also exposed (read-only) to the UI for the context gauge.
+    @Published private(set) var lastPromptTokens: Int?
     /// Completion tokens from the most recent turn's final API response.
     /// Used to compute per-message measured tokens via delta arithmetic.
     private var lastCompletionTokens: Int?
@@ -1003,10 +1004,13 @@ class ConversationManager: ObservableObject {
     private func sendTurnStatus() async {
         guard let chatId = pairedChatId else { return }
         let log = currentTurnToolLog
+
+        let contextLine = formatContextGaugeLine()
+
         if log.isEmpty {
             let msg = activeRunId != nil
-                ? "⏳ Working on it — no tool calls yet."
-                : "💤 Idle. No tool activity to report."
+                ? "⏳ Working on it — no tool calls yet.\n\(contextLine)"
+                : "💤 Idle. No tool activity to report.\n\(contextLine)"
             try? await telegramService.sendMessage(chatId: chatId, text: msg)
             return
         }
@@ -1024,8 +1028,38 @@ class ConversationManager: ObservableObject {
             let time = formatter.string(from: entry.startedAt)
             lines.append("  [\(time)] \(emoji) \(entry.name)")
         }
+        lines.append("")
+        lines.append(contextLine)
 
         try? await telegramService.sendMessage(chatId: chatId, text: lines.joined(separator: "\n"))
+    }
+
+    private func formatContextGaugeLine() -> String {
+        let max = configuredMaxContextTokens()
+        if let current = lastPromptTokens {
+            let currentStr = Self.formatTokenCountCompact(current)
+            let maxStr = Self.formatTokenCountCompact(max)
+            let pct = Int(round(Double(current) / Double(max) * 100))
+            return "📊 Context: \(currentStr)/\(maxStr) (\(pct)%)"
+        }
+        let maxStr = Self.formatTokenCountCompact(max)
+        return "📊 Context: —/\(maxStr)"
+    }
+
+    private static func formatTokenCountCompact(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            let value = Double(count) / 1_000_000.0
+            return value.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(value))M"
+                : String(format: "%.1fM", value)
+        }
+        if count >= 1_000 {
+            let value = Double(count) / 1_000.0
+            return value.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(value))k"
+                : String(format: "%.1fk", value)
+        }
+        return "\(count)"
     }
 
     /// Emoji for a single tool name — used by /status to render each row.
@@ -1968,6 +2002,9 @@ class ConversationManager: ObservableObject {
     }
 
     // MARK: - Context Budget & Tool Interaction Pruning
+
+    /// Max context tokens exposed for the UI context gauge.
+    var maxContextTokens: Int { configuredMaxContextTokens() }
 
     private func configuredMaxContextTokens() -> Int {
         if let raw = KeychainHelper.load(key: KeychainHelper.maxContextTokensKey),
