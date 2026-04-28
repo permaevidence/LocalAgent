@@ -883,22 +883,10 @@ class ConversationManager: ObservableObject {
                 }
             }
             
-            // Generate descriptions for files in the user message (synchronous to ensure availability)
-            // This happens while context is still fresh, so descriptions will be available for future prompts
-            var filesToDescribe = collectFilesForDescription(from: userMessage)
-            
-            // Also collect files downloaded via tools (email attachments, etc.)
-            let toolDownloadedFiles = ToolExecutor.getPendingFilesForDescription()
-            filesToDescribe.append(contentsOf: toolDownloadedFiles)
-            
-            if !filesToDescribe.isEmpty {
-                do {
-                    let descriptions = try await openRouterService.generateFileDescriptions(files: filesToDescribe, conversationContext: messages)
-                    await FileDescriptionService.shared.saveMultiple(descriptions)
-                } catch {
-                    print("[ConversationManager] Failed to generate file descriptions: \(error)")
-                }
-            }
+            // Descriptions are generated lazily at Watermark prune time, just
+            // before inline media/tool attachments leave prompt context. Drain the
+            // legacy pending-data queue so large blobs do not leak across turns.
+            _ = ToolExecutor.getPendingFilesForDescription()
             
             guard activeRunId == runId else { return }
             let turnMs = Int(Date().timeIntervalSince(turnStartedAt) * 1000)
@@ -1126,6 +1114,12 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: false,
+                    includeToolAttachments: true,
+                    sourceMessages: messages
+                )
                 let savedTokens = toolInteractionTokens(messages[i].toolInteractions, isLMStudio: providerIsLMStudio)
                 messages[i].toolInteractions = []
                 totalTokens -= savedTokens
@@ -1135,6 +1129,12 @@ class ConversationManager: ObservableObject {
             guard totalTokens > targetTokens else { break }
 
             if messages[i].hasUnprunedMedia {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: true,
+                    includeToolAttachments: false,
+                    sourceMessages: messages
+                )
                 let savedTokens = mediaSavingsForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].mediaPruned = true
                 totalTokens -= savedTokens
@@ -1341,6 +1341,11 @@ class ConversationManager: ObservableObject {
     
     private func generateResponseWithTools(currentUserMessageId: UUID, turnStartDate: Date) async throws -> ToolAwareResponse {
         try Task.checkCancellation()
+        defer {
+            // File descriptions are now created at prune time from persisted
+            // message/tool attachment state, not from this transient byte queue.
+            _ = ToolExecutor.getPendingFilesForDescription()
+        }
 
         // Snapshot FilesLedger up-front so we can report the set of files that were
         // edited/generated during the turn on the resulting assistant Message. This
@@ -1447,7 +1452,7 @@ class ConversationManager: ObservableObject {
         }
 
         // Prune stored tool interactions if full context exceeds budget
-        let didPrune = pruneToolInteractionsIfNeeded(
+        let didPrune = await pruneToolInteractionsIfNeeded(
             currentUserMessageId: currentUserMessageId,
             calendarContext: calendarContext,
             emailContext: emailContext,
@@ -1761,7 +1766,7 @@ class ConversationManager: ObservableObject {
                 toolInteractions.append(interaction)
 
                 // Mid-loop: prune stored tool interactions from older turns if context is growing too large
-                let midLoopDidPrune = pruneStoredToolInteractionsMidLoop(
+                let midLoopDidPrune = await pruneStoredToolInteractionsMidLoop(
                     messagesForLLM: &messagesForLLM,
                     currentTurnInteractions: toolInteractions,
                     calendarContext: calendarContext,
@@ -2330,7 +2335,7 @@ class ConversationManager: ObservableObject {
         calendarContext: String?,
         emailContext: String?,
         chunkSummaries: [ArchivedSummaryItem]
-    ) -> Bool {
+    ) async -> Bool {
         let maxTokens = configuredMaxContextTokens()
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messages)
@@ -2390,6 +2395,12 @@ class ConversationManager: ObservableObject {
 
             // Prune tool interactions on this message
             if messages[i].role == .assistant && !messages[i].toolInteractions.isEmpty {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: false,
+                    includeToolAttachments: true,
+                    sourceMessages: messages
+                )
                 let savedTokens = toolTokensForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].toolInteractions = []
                 messages[i].measuredToolTokens = nil
@@ -2402,6 +2413,12 @@ class ConversationManager: ObservableObject {
 
             // Prune inline media on this message
             if messages[i].hasUnprunedMedia {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: true,
+                    includeToolAttachments: false,
+                    sourceMessages: messages
+                )
                 let savedTokens = mediaSavingsForMessage(messages[i], isLMStudio: providerIsLMStudio)
                 messages[i].mediaPruned = true
                 if let m = messages[i].measuredTokens { messages[i].measuredTokens = max(m - savedTokens, 0) }
@@ -2439,7 +2456,7 @@ class ConversationManager: ObservableObject {
         calendarContext: String?,
         emailContext: String?,
         chunkSummaries: [ArchivedSummaryItem]
-    ) -> Bool {
+    ) async -> Bool {
         let maxTokens = configuredMaxContextTokens()
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messagesForLLM)
@@ -2485,6 +2502,12 @@ class ConversationManager: ObservableObject {
             guard i != protectedIndex else { continue }
 
             if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: false,
+                    includeToolAttachments: true,
+                    sourceMessages: messagesForLLM
+                )
                 let savedTokens = toolTokensForMessage(messagesForLLM[i], isLMStudio: providerIsLMStudio)
                 messagesForLLM[i].toolInteractions = []
                 messagesForLLM[i].measuredToolTokens = nil
@@ -2496,6 +2519,12 @@ class ConversationManager: ObservableObject {
             guard totalTokens > targetTokens else { break }
 
             if messagesForLLM[i].hasUnprunedMedia {
+                await generateDescriptionsBeforePruning(
+                    messageIndex: i,
+                    includeInlineMedia: true,
+                    includeToolAttachments: false,
+                    sourceMessages: messagesForLLM
+                )
                 let savedTokens = mediaSavingsForMessage(messagesForLLM[i], isLMStudio: providerIsLMStudio)
                 messagesForLLM[i].mediaPruned = true
                 if let m = messagesForLLM[i].measuredTokens { messagesForLLM[i].measuredTokens = max(m - savedTokens, 0) }
@@ -3879,56 +3908,179 @@ class ConversationManager: ObservableObject {
     
     // MARK: - File Description Helpers
     
-    /// Collect files from a message for description generation
-    private func collectFilesForDescription(from message: Message) -> [(filename: String, data: Data, mimeType: String)] {
+    /// Generate file descriptions at the exact pruning event that removes the
+    /// original bytes from prompt replay. Context is anchored to the file's own
+    /// turn: up to 8 previous messages plus the file-bearing message itself, and
+    /// never later conversation.
+    private func generateDescriptionsBeforePruning(
+        messageIndex: Int,
+        includeInlineMedia: Bool,
+        includeToolAttachments: Bool,
+        sourceMessages: [Message]
+    ) async {
+        guard sourceMessages.indices.contains(messageIndex) else { return }
+
+        let message = sourceMessages[messageIndex]
+        var files: [(filename: String, data: Data, mimeType: String)] = []
+
+        if includeInlineMedia {
+            files.append(contentsOf: collectInlineMediaFilesForDescription(from: message))
+        }
+        if includeToolAttachments {
+            files.append(contentsOf: collectToolAttachmentFilesForDescription(from: message))
+        }
+
+        files = await filesWithoutStoredDescriptions(files)
+        guard !files.isEmpty else { return }
+
+        let context = descriptionContextMessages(
+            forMessageAt: messageIndex,
+            in: sourceMessages,
+            previousLimit: 8
+        )
+
+        do {
+            let descriptions = try await openRouterService.generateFileDescriptions(
+                files: files,
+                conversationContext: context
+            )
+            await FileDescriptionService.shared.saveMultiple(descriptions)
+        } catch {
+            print("[ConversationManager] Failed to generate prune-time file descriptions: \(error)")
+        }
+    }
+
+    private func descriptionContextMessages(
+        forMessageAt index: Int,
+        in sourceMessages: [Message],
+        previousLimit: Int
+    ) -> [Message] {
+        guard sourceMessages.indices.contains(index) else { return [] }
+        let start = max(0, index - previousLimit)
+        return Array(sourceMessages[start...index])
+    }
+
+    private func filesWithoutStoredDescriptions(
+        _ files: [(filename: String, data: Data, mimeType: String)]
+    ) async -> [(filename: String, data: Data, mimeType: String)] {
+        var seen = Set<String>()
+        var filtered: [(filename: String, data: Data, mimeType: String)] = []
+
+        for file in files {
+            guard seen.insert(file.filename).inserted else { continue }
+            if await FileDescriptionService.shared.get(filename: file.filename) == nil {
+                filtered.append(file)
+            }
+        }
+
+        return filtered
+    }
+
+    /// Collect inline user/referenced media from a message for description generation.
+    private func collectInlineMediaFilesForDescription(from message: Message) -> [(filename: String, data: Data, mimeType: String)] {
         var files: [(filename: String, data: Data, mimeType: String)] = []
         
-        // Collect images
-        for imageFileName in message.imageFileNames {
+        for imageFileName in message.imageFileNames + message.referencedImageFileNames {
             let imageURL = imagesDirectory.appendingPathComponent(imageFileName)
             if let imageData = try? Data(contentsOf: imageURL) {
-                let ext = imageURL.pathExtension.lowercased()
-                let mimeType: String
-                switch ext {
-                case "png": mimeType = "image/png"
-                case "gif": mimeType = "image/gif"
-                case "webp": mimeType = "image/webp"
-                case "heic": mimeType = "image/heic"
-                default: mimeType = "image/jpeg"
-                }
-                files.append((filename: imageFileName, data: imageData, mimeType: mimeType))
+                files.append((filename: imageFileName, data: imageData, mimeType: mimeTypeForAttachmentFile(imageFileName)))
             }
         }
         
-        // Collect documents
-        for documentFileName in message.documentFileNames {
+        for documentFileName in message.documentFileNames + message.referencedDocumentFileNames {
             let documentURL = documentsDirectory.appendingPathComponent(documentFileName)
             if let documentData = try? Data(contentsOf: documentURL) {
-                let ext = documentURL.pathExtension.lowercased()
-                let mimeType: String
-                switch ext {
-                case "pdf": mimeType = "application/pdf"
-                case "txt": mimeType = "text/plain"
-                case "md": mimeType = "text/markdown"
-                case "json": mimeType = "application/json"
-                case "csv": mimeType = "text/csv"
-                case "mp3": mimeType = "audio/mpeg"
-                case "m4a": mimeType = "audio/mp4"
-                case "wav": mimeType = "audio/wav"
-                case "ogg", "oga": mimeType = "audio/ogg"
-                case "aac": mimeType = "audio/aac"
-                case "flac": mimeType = "audio/flac"
-                case "jpg", "jpeg": mimeType = "image/jpeg"
-                case "png": mimeType = "image/png"
-                case "gif": mimeType = "image/gif"
-                case "webp": mimeType = "image/webp"
-                case "heic": mimeType = "image/heic"
-                default: mimeType = "application/octet-stream"
-                }
-                files.append((filename: documentFileName, data: documentData, mimeType: mimeType))
+                files.append((filename: documentFileName, data: documentData, mimeType: mimeTypeForAttachmentFile(documentFileName)))
             }
         }
         
         return files
+    }
+
+    private func collectToolAttachmentFilesForDescription(from message: Message) -> [(filename: String, data: Data, mimeType: String)] {
+        var files: [(filename: String, data: Data, mimeType: String)] = []
+
+        for interaction in message.toolInteractions {
+            for result in interaction.results {
+                for reference in result.fileAttachmentReferences {
+                    guard let data = dataForAttachmentReference(reference) else { continue }
+                    files.append((filename: reference.filename, data: data, mimeType: reference.mimeType))
+                }
+            }
+        }
+
+        return files
+    }
+
+    private func dataForAttachmentReference(_ reference: FileAttachmentReference) -> Data? {
+        guard let url = reference.resolvedURL(
+            imagesDirectory: imagesDirectory,
+            documentsDirectory: documentsDirectory
+        ) else {
+            return nil
+        }
+
+        if let snapshotPath = reference.snapshotPath, url.path == snapshotPath {
+            return try? Data(contentsOf: url)
+        }
+
+        guard normalizedMimeType(reference.mimeType) == "application/pdf",
+              let pageRange = reference.pageRange,
+              let doc = PDFDocument(url: url),
+              let requestedRange = parsePersistedPageRange(pageRange, totalPages: doc.pageCount) else {
+            return try? Data(contentsOf: url)
+        }
+
+        let sliced = PDFDocument()
+        var insertIndex = 0
+        for pageNumber in requestedRange {
+            if let page = doc.page(at: pageNumber - 1) {
+                sliced.insert(page, at: insertIndex)
+                insertIndex += 1
+            }
+        }
+        return sliced.dataRepresentation()
+    }
+
+    private func parsePersistedPageRange(_ raw: String, totalPages: Int) -> ClosedRange<Int>? {
+        let parts = raw.split(separator: "-", maxSplits: 1)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+        if parts.count == 1, let page = Int(parts[0]), page >= 1, page <= totalPages {
+            return page...page
+        }
+        guard parts.count == 2,
+              let lower = Int(parts[0]),
+              let upper = Int(parts[1]),
+              lower >= 1,
+              upper >= lower,
+              upper <= totalPages else {
+            return nil
+        }
+        return lower...upper
+    }
+
+    private func mimeTypeForAttachmentFile(_ fileName: String) -> String {
+        switch URL(fileURLWithPath: fileName).pathExtension.lowercased() {
+        case "pdf": return "application/pdf"
+        case "txt": return "text/plain"
+        case "md": return "text/markdown"
+        case "json": return "application/json"
+        case "csv": return "text/csv"
+        case "html", "htm": return "text/html"
+        case "xml": return "application/xml"
+        case "mp3": return "audio/mpeg"
+        case "m4a": return "audio/mp4"
+        case "wav": return "audio/wav"
+        case "ogg", "oga": return "audio/ogg"
+        case "aac": return "audio/aac"
+        case "flac": return "audio/flac"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "heic": return "image/heic"
+        case "zip": return "application/zip"
+        default: return "application/octet-stream"
+        }
     }
 }

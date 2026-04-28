@@ -1259,7 +1259,7 @@ actor OpenRouterService {
     
     // MARK: - File Description Generation
 
-    /// Generate brief descriptions for files while context is still available
+    /// Generate brief descriptions for files while their original bytes are still available.
     /// Returns a dictionary mapping filename to description
     func generateFileDescriptions(
         files: [(filename: String, data: Data, mimeType: String)],
@@ -1275,21 +1275,21 @@ actor OpenRouterService {
         
         print("[OpenRouterService] Generating descriptions for \(files.count) file(s) with \(conversationContext.count) context messages")
         
-        // Build conversation context as API messages (text only, recent messages)
+        // Build conversation context as API messages (text only, anchored by caller)
         var apiMessages: [OpenRouterAPIMessage] = []
         
         // System message with context awareness
         let systemPrompt = """
         You are a helpful assistant that provides brief, accurate file descriptions.
         
-        You have access to the recent conversation context. Use this to provide more meaningful descriptions \
-        that reference relevant context. For example, if the user mentioned "the quarterly report" earlier, \
-        and they send a PDF, your description should reference that context.
+        You have access to the prior conversation context from when each file appeared. Use this to provide \
+        meaningful descriptions that reference relevant context. Do not infer from later conversation.
         """
         apiMessages.append(OpenRouterAPIMessage(role: "system", content: .text(systemPrompt)))
         
-        // Add recent conversation messages (last 10 for context, text only to save tokens)
-        let recentMessages = conversationContext.suffix(10)
+        // Add caller-selected prior context (last 8 plus the file-bearing message,
+        // text only to save tokens). The caller intentionally excludes future turns.
+        let recentMessages = conversationContext.suffix(9)
         for message in recentMessages {
             let role = message.role == .user ? "user" : "assistant"
             var text = message.content
@@ -1332,8 +1332,8 @@ actor OpenRouterService {
         // Build the prompt listing all filenames
         let fileList = describableFiles.map { $0.filename }.joined(separator: ", ")
         let prompt = """
-        The user just sent these file(s). Based on the conversation context above, provide a brief description \
-        (20-50 words) for each file that summarizes its content and relevance.
+        These file(s) are about to be represented by text only. Based on the prior conversation context above, \
+        provide a brief description (20-50 words) for each file that summarizes its content and relevance.
         
         This description will help you remember what the file contains in future conversations.
         

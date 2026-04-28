@@ -1268,7 +1268,8 @@ extension ToolExecutor {
     /// Store for documents to be sent after tool execution
     private static var pendingDocuments: [(data: Data, filename: String, mimeType: String, caption: String?)] = []
     
-    /// Store for downloaded attachments that need description generation
+    /// Legacy transient store for downloaded attachment bytes. ConversationManager
+    /// drains this after each turn; durable descriptions are generated at prune time.
     private static var pendingFilesForDescription: [(filename: String, data: Data, mimeType: String)] = []
     
     /// Store for downloaded filenames to add to Message history
@@ -1288,7 +1289,7 @@ extension ToolExecutor {
         return documents
     }
     
-    /// Get and clear files that need description generation
+    /// Get and clear transient downloaded attachment bytes
     static func getPendingFilesForDescription() -> [(filename: String, data: Data, mimeType: String)] {
         let files = pendingFilesForDescription
         pendingFilesForDescription = []
@@ -1310,7 +1311,7 @@ extension ToolExecutor {
         pendingDownloadedFilenames = []
     }
     
-    /// Queue a file for description generation after the agentic loop completes
+    /// Queue a downloaded/generated filename for history and drainable transient bytes
     static func queueFileForDescription(filename: String, data: Data, mimeType: String) {
         pendingFilesForDescription.append((filename: filename, data: data, mimeType: mimeType))
         // Also track filename for Message history
