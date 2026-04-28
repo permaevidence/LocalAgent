@@ -79,7 +79,6 @@ struct AgentsSettingsView: View {
                 maxTurnsCard
                 mcpCard
                 if selectedAgent != "main" { sessionMemoryCard }
-                footerActions
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
@@ -809,7 +808,7 @@ struct AgentsSettingsView: View {
                 get: { mode },
                 set: { newValue in
                     serverModeSet[server] = newValue
-                    isDirty = true
+                    saveRouting()
                 }
             )) {
                 Text("None").tag("none")
