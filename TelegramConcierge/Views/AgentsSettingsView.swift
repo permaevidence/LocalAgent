@@ -178,7 +178,13 @@ struct AgentsSettingsView: View {
 
             Text(subagentsEnabled
                 ? "The main agent can delegate work to subagents via the Agent tool. Subagents run in isolated contexts with their own token budgets."
-                : "Subagents are disabled. The main agent will handle all work inline, with no Agent tool exposed. Useful for fully-local setups to avoid cloud API calls from delegated agents. Configurations below remain editable and will reactivate when you flip the switch back on.")
+                : "Subagents are disabled. The main agent will handle all work inline, with no Agent tool exposed. Useful for fully-local setups to avoid cloud API calls from delegated agents.")
+                .onChange(of: subagentsEnabled) { enabled in
+                    if !enabled && selectedAgent != "main" {
+                        selectedAgent = "main"
+                        loadWorkingSet(for: "main")
+                    }
+                }
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -216,6 +222,8 @@ struct AgentsSettingsView: View {
     @ViewBuilder
     private func agentTile(_ agent: AgentRow) -> some View {
         let isSelected = agent.name == selectedAgent
+        let isSubagent = agent.name != "main"
+        let isDisabled = isSubagent && !subagentsEnabled
         Button {
             if selectedAgent != agent.name {
                 isDirty = false
@@ -250,6 +258,8 @@ struct AgentsSettingsView: View {
             )
         }
         .buttonStyle(.plain)
+        .opacity(isDisabled ? 0.4 : 1)
+        .disabled(isDisabled)
     }
 
     private func iconFor(agent: AgentRow) -> String {
