@@ -70,7 +70,6 @@
 		MCPTYPES00123456789AB1A /* MCPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPTYPES00123456789AB1B /* MCPTypes.swift */; };
 		MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MINDEXP0123456789ABCDEF2 /* MindExportService.swift */; };
 		PROFBUNDL0123456789AB01A /* ProfileBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROFBUNDL0123456789AB01B /* ProfileBundle.swift */; };
-		PROJINST0123456789AB1A /* ProjectInstructionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJINST0123456789AB1B /* ProjectInstructionManager.swift */; };
 		PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */; };
 		SCRATCHMON0123456789AB1A /* ScratchDiskMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */; };
 		SKILLSREG0123456789ABCD1A /* SkillsRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SKILLSREG0123456789ABCD1B /* SkillsRegistry.swift */; };
@@ -150,7 +149,6 @@
 		MCPTYPES00123456789AB1B /* MCPTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPTypes.swift; sourceTree = "<group>"; };
 		MINDEXP0123456789ABCDEF2 /* MindExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MindExportService.swift; sourceTree = "<group>"; };
 		PROFBUNDL0123456789AB01B /* ProfileBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileBundle.swift; sourceTree = "<group>"; };
-		PROJINST0123456789AB1B /* ProjectInstructionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectInstructionManager.swift; sourceTree = "<group>"; };
 		PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectsZipAutoExtractor.swift; sourceTree = "<group>"; };
 		SCRATCHMON0123456789AB1B /* ScratchDiskMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScratchDiskMonitor.swift; sourceTree = "<group>"; };
 		SKILLSREG0123456789ABCD1B /* SkillsRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SkillsRegistry.swift; sourceTree = "<group>"; };
@@ -229,7 +227,6 @@
 				F6F41BFCEF3C81A6A0A64255 /* FileDescriptionService.swift */,
 				MINDEXP0123456789ABCDEF2 /* MindExportService.swift */,
 				PROJECTZIP0123456789ABCD2 /* ProjectsZipAutoExtractor.swift */,
-				PROJINST0123456789AB1B /* ProjectInstructionManager.swift */,
 				FILETIME012345678901234B /* FileTimeTracker.swift */,
 				FILELDGR012345678901234B /* FilesLedger.swift */,
 				FLEDGDIFF012345678901234B /* FilesLedgerDiff.swift */,
@@ -416,7 +413,6 @@
 				31B7CF7E140CC51F1318A043 /* FileDescriptionService.swift in Sources */,
 				MINDEXP0123456789ABCDEF1 /* MindExportService.swift in Sources */,
 				PROJECTZIP0123456789ABCD1 /* ProjectsZipAutoExtractor.swift in Sources */,
-				PROJINST0123456789AB1A /* ProjectInstructionManager.swift in Sources */,
 				FILETIME012345678901234A /* FileTimeTracker.swift in Sources */,
 				FILELDGR012345678901234A /* FilesLedger.swift in Sources */,
 				FLEDGDIFF012345678901234A /* FilesLedgerDiff.swift in Sources */,
