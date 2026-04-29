@@ -280,6 +280,9 @@ actor FilesystemTools {
                 if let diff = DiffUtil.unifiedDiff(old: original, new: updated, path: path) {
                     result["diff"] = diff
                 }
+                if strategy != "literal" {
+                    result["match_strategy_warning"] = "Applied using \(strategy) matching. Inspect the diff carefully and prefer apply_patch for future code edits."
+                }
                 await LSPDiagnosticsReporter.attach(to: &result, path: path, updatedText: updated)
                 return OpResult(content: jsonString(result))
             } catch {

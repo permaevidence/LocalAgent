@@ -123,6 +123,21 @@ enum ApplyPatch {
         return OpResult(content: jsonString(result))
     }
 
+    static func affectedPaths(patchText: String) -> [String] {
+        guard let operations = try? parse(patchText: patchText) else { return [] }
+        var paths: [String] = []
+        for op in operations {
+            switch op {
+            case .update(let path, _, let moveTo):
+                paths.append(path)
+                if let moveTo { paths.append(moveTo) }
+            case .add(let path, _), .delete(let path):
+                paths.append(path)
+            }
+        }
+        return paths
+    }
+
     // MARK: - Parser
 
     struct PatchError: Error { let message: String }

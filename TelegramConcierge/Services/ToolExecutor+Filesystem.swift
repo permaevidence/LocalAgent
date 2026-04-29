@@ -20,7 +20,8 @@ extension ToolExecutor {
         let limit = args.int("limit")
         let pages = args.string("pages")
         let result = await FilesystemTools.shared.readFile(path: path, offset: offset, limit: limit, pages: pages)
-        return ToolResultMessage(toolCallId: call.id, content: result.content, fileAttachments: result.attachments)
+        let content = await annotateProjectContext(result.content, paths: [path])
+        return ToolResultMessage(toolCallId: call.id, content: content, fileAttachments: result.attachments)
     }
 
     // MARK: - write_file
@@ -35,7 +36,7 @@ extension ToolExecutor {
         }
         let description = args.string("description")
         let result = await FilesystemTools.shared.writeFile(path: path, content: content, description: description)
-        return result.content
+        return await annotateProjectContext(result.content, paths: [path])
     }
 
     // MARK: - edit_file
@@ -49,7 +50,7 @@ extension ToolExecutor {
         }
         let replaceAll = args.bool("replace_all") ?? false
         let result = await FilesystemTools.shared.editFile(path: path, oldString: oldString, newString: newString, replaceAll: replaceAll)
-        return result.content
+        return await annotateProjectContext(result.content, paths: [path])
     }
 
     // MARK: - apply_patch
@@ -60,7 +61,7 @@ extension ToolExecutor {
             return "{\"error\": \"apply_patch requires 'patch_text'\"}"
         }
         let result = await ApplyPatch.run(patchText: patchText)
-        return result.content
+        return await annotateProjectContext(result.content, paths: ApplyPatch.affectedPaths(patchText: patchText))
     }
 
     // MARK: - grep
@@ -95,7 +96,7 @@ extension ToolExecutor {
             contextAfter: contextAfter,
             maxResults: maxResults
         )
-        return result.content
+        return await annotateProjectContext(result.content, paths: [path])
     }
 
     // MARK: - glob
@@ -108,6 +109,9 @@ extension ToolExecutor {
         let path = args.string("path")
         let maxResults = args.int("max_results") ?? DiscoveryTools.maxResults
         let result = await DiscoveryTools.glob(pattern: pattern, searchPath: path, maxResults: maxResults)
+        if let path {
+            return await annotateProjectContext(result.content, paths: [path])
+        }
         return result.content
     }
 
@@ -120,7 +124,7 @@ extension ToolExecutor {
         }
         let extraIgnores = args.stringArray("ignore")
         let result = await DiscoveryTools.listDir(path: path, ignore: extraIgnores)
-        return result.content
+        return await annotateProjectContext(result.content, paths: [path])
     }
 
     // MARK: - list_recent_files
@@ -146,10 +150,16 @@ extension ToolExecutor {
         let runInBackground = args.bool("run_in_background") ?? false
         if runInBackground {
             let result = await BashTools.runBackground(command: command, workdir: workdir, description: description)
+            if let workdir {
+                return await annotateProjectContext(result.content, paths: [workdir])
+            }
             return result.content
         } else {
             let timeoutMs = args.int("timeout_ms")
             let result = await BashTools.runForeground(command: command, timeoutMs: timeoutMs, workdir: workdir, description: description)
+            if let workdir {
+                return await annotateProjectContext(result.content, paths: [workdir])
+            }
             return result.content
         }
     }
@@ -292,6 +302,27 @@ extension ToolExecutor {
         s.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private func annotateProjectContext(_ content: String, paths: [String]) async -> String {
+        let contexts = await ProjectInstructionManager.shared.contexts(forPaths: paths)
+        guard !contexts.isEmpty,
+              let data = content.data(using: .utf8),
+              var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return content
+        }
+
+        if contexts.count == 1, let context = contexts.first {
+            payload["project_context"] = context.payload()
+        } else {
+            payload["project_contexts"] = contexts.map { $0.payload() }
+        }
+
+        if let encoded = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+           let string = String(data: encoded, encoding: .utf8) {
+            return string
+        }
+        return content
     }
 
     // MARK: - Argument parsing helper
