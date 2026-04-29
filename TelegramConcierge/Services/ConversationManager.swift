@@ -4058,8 +4058,16 @@ class ConversationManager: ObservableObject {
             let toolNames = Set(interaction.assistantMessage.toolCalls.map { $0.function.name })
             guard !toolNames.isDisjoint(with: Self.describableToolNames) else { continue }
 
-            // Collect FileAttachmentReferences (generate_image, edit_image, run_shortcut)
+            // Map toolCallId → tool name so we only collect attachments from allowed tools
+            let callIdToName = Dictionary(
+                interaction.assistantMessage.toolCalls.map { ($0.id, $0.function.name) },
+                uniquingKeysWith: { first, _ in first }
+            )
+
+            // Collect FileAttachmentReferences only from allowed tool results
             for result in interaction.results {
+                guard let name = callIdToName[result.toolCallId],
+                      Self.describableToolNames.contains(name) else { continue }
                 for reference in result.fileAttachmentReferences {
                     guard let data = dataForAttachmentReference(reference) else { continue }
                     files.append((filename: reference.filename, data: data, mimeType: reference.mimeType))
