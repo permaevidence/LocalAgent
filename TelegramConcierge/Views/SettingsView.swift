@@ -65,6 +65,7 @@ struct SettingsView: View {
 
     // Collapsible sections
     @State private var isSpendLimitsExpanded: Bool = false
+    @State private var isDescriptionModelExpanded: Bool = false
     @State private var isImagePricingExpanded: Bool = false
 
     // Context viewer
@@ -388,19 +389,21 @@ struct SettingsView: View {
 
                     Divider()
 
-                    TextField("Description Model (recommended)", text: $lmStudioDescriptionModel)
-                        .textFieldStyle(.roundedBorder)
+                    DisclosureGroup("Description Model", isExpanded: $isDescriptionModelExpanded) {
+                        TextField("Description Model", text: $lmStudioDescriptionModel)
+                            .textFieldStyle(.roundedBorder)
 
-                    Text("A separate multimodal model for file descriptions (it needs to see images/PDFs), so the main model's KV cache isn't evicted. Highly recommended.")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                        Text("A separate multimodal model for file descriptions (it needs to see images/PDFs), so the main model's KV cache isn't evicted.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
 
-                    TextField("Description Base URL (optional)", text: $lmStudioDescriptionBaseURL)
-                        .textFieldStyle(.roundedBorder)
+                        TextField("Description Base URL (optional)", text: $lmStudioDescriptionBaseURL)
+                            .textFieldStyle(.roundedBorder)
 
-                    Text("If the description model runs on a different port. Leave empty to use the same server.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        Text("If the description model runs on a different port. Leave empty to use the same server.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 SecureField("OpenRouter API Key", text: $openRouterApiKey)

@@ -5,6 +5,7 @@ struct OnboardingView: View {
     @Binding var isComplete: Bool
 
     @State private var step = 0
+    @State private var isDescriptionModelExpanded: Bool = false
     private let totalRequiredSteps = 4 // 0=welcome, 1=LLM, 2=persona, 3=telegram
     private let totalOptionalSteps = 4 // 4=voice, 5=websearch, 6=email, 7=imagegen
 
@@ -214,17 +215,19 @@ struct OnboardingView: View {
 
                         Divider()
 
-                        TextField("Description Model (recommended)", text: $lmStudioDescriptionModel)
-                            .textFieldStyle(.roundedBorder)
-                        Text("A separate multimodal model for file descriptions (it needs to see images/PDFs), so the main model's KV cache isn't evicted. Highly recommended.")
-                            .font(.caption)
-                            .foregroundColor(.orange)
+                        DisclosureGroup("Description Model", isExpanded: $isDescriptionModelExpanded) {
+                            TextField("Description Model", text: $lmStudioDescriptionModel)
+                                .textFieldStyle(.roundedBorder)
+                            Text("A separate multimodal model for file descriptions (it needs to see images/PDFs), so the main model's KV cache isn't evicted.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
 
-                        TextField("Description Base URL (optional)", text: $lmStudioDescriptionBaseURL)
-                            .textFieldStyle(.roundedBorder)
-                        Text("If the description model runs on a different port.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            TextField("Description Base URL (optional)", text: $lmStudioDescriptionBaseURL)
+                                .textFieldStyle(.roundedBorder)
+                            Text("If the description model runs on a different port.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
