@@ -8,7 +8,7 @@ struct SettingsView: View {
     
     @State private var telegramToken: String = ""
     @State private var chatId: String = ""
-    @State private var llmProvider: String = "openrouter"
+    @State private var llmProvider: String = "lmstudio"
     @State private var lmStudioBaseURL: String = ""
     @State private var lmStudioModel: String = ""
     @State private var lmStudioDescriptionModel: String = ""
@@ -335,8 +335,8 @@ struct SettingsView: View {
         Form {
             Section {
                 Picker("LLM Provider", selection: $llmProvider) {
-                    Text("OpenRouter").tag("openrouter")
                     Text("Local Inference").tag("lmstudio")
+                    Text("OpenRouter").tag("openrouter")
                 }
                 .pickerStyle(.segmented)
 
@@ -1348,7 +1348,7 @@ struct SettingsView: View {
     private func loadSettings() {
         telegramToken = KeychainHelper.load(key: KeychainHelper.telegramBotTokenKey) ?? ""
         chatId = KeychainHelper.load(key: KeychainHelper.telegramChatIdKey) ?? ""
-        llmProvider = KeychainHelper.load(key: KeychainHelper.llmProviderKey) ?? "openrouter"
+        llmProvider = KeychainHelper.load(key: KeychainHelper.llmProviderKey) ?? "lmstudio"
         lmStudioBaseURL = KeychainHelper.load(key: KeychainHelper.lmStudioBaseURLKey) ?? ""
         lmStudioModel = KeychainHelper.load(key: KeychainHelper.lmStudioModelKey) ?? ""
         lmStudioDescriptionModel = KeychainHelper.load(key: KeychainHelper.lmStudioDescriptionModelKey) ?? ""

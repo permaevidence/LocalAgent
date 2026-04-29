@@ -9,7 +9,7 @@ struct OnboardingView: View {
     private let totalOptionalSteps = 4 // 4=voice, 5=websearch, 6=email, 7=imagegen
 
     // LLM Provider
-    @State private var llmProvider: String = "openrouter"
+    @State private var llmProvider: String = "lmstudio"
     @State private var openRouterApiKey: String = ""
     @State private var openRouterModel: String = ""
     @State private var lmStudioBaseURL: String = ""
@@ -160,8 +160,8 @@ struct OnboardingView: View {
                 .foregroundColor(.secondary)
 
             Picker("Provider", selection: $llmProvider) {
-                Text("OpenRouter (Cloud)").tag("openrouter")
                 Text("Local Inference").tag("lmstudio")
+                Text("OpenRouter (Cloud)").tag("openrouter")
             }
             .pickerStyle(.segmented)
 
@@ -666,7 +666,7 @@ struct OnboardingView: View {
     // MARK: - Load existing settings (for restart onboarding)
 
     private func loadExistingSettings() {
-        llmProvider = KeychainHelper.load(key: KeychainHelper.llmProviderKey) ?? "openrouter"
+        llmProvider = KeychainHelper.load(key: KeychainHelper.llmProviderKey) ?? "lmstudio"
         openRouterApiKey = KeychainHelper.load(key: KeychainHelper.openRouterApiKeyKey) ?? ""
         openRouterModel = KeychainHelper.load(key: KeychainHelper.openRouterModelKey) ?? ""
         lmStudioBaseURL = KeychainHelper.load(key: KeychainHelper.lmStudioBaseURLKey) ?? ""
