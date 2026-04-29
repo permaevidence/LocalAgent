@@ -218,9 +218,9 @@ struct OnboardingView: View {
                         DisclosureGroup("Description Model", isExpanded: $isDescriptionModelExpanded) {
                             TextField("Description Model", text: $lmStudioDescriptionModel)
                                 .textFieldStyle(.roundedBorder)
-                            Text("A separate multimodal model for file descriptions (it needs to see images/PDFs), so the main model's KV cache isn't evicted.")
+                            Text("A separate multimodal model for generating file descriptions at pruning time. Use a faster model here to speed up the process.")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(.secondary)
 
                             TextField("Description Base URL (optional)", text: $lmStudioDescriptionBaseURL)
                                 .textFieldStyle(.roundedBorder)
