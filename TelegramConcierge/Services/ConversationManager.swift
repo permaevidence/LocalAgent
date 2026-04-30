@@ -1481,6 +1481,7 @@ class ConversationManager: ObservableObject {
         var cumulativeToolSpendUSD: Double = 0
         var toolInteractions: [ToolInteraction] = []
         var didHitToolSpendLimit = false
+        var didHitContextLimit = false
         var todaySpentUSD = spendLimitStatus.todaySpentUSD
         var monthSpentUSD = spendLimitStatus.monthSpentUSD
 
@@ -1766,19 +1767,25 @@ class ConversationManager: ObservableObject {
                 toolInteractions.append(interaction)
 
                 // Mid-loop: prune stored tool interactions from older turns if context is growing too large
-                let midLoopDidPrune = await pruneStoredToolInteractionsMidLoop(
+                let midLoopResult = await pruneStoredToolInteractionsMidLoop(
                     messagesForLLM: &messagesForLLM,
                     currentTurnInteractions: toolInteractions,
                     calendarContext: calendarContext,
                     emailContext: emailContext,
                     chunkSummaries: chunkSummaries
                 )
-                if midLoopDidPrune {
+                if midLoopResult == .pruned {
                     // Cache is already invalidated by the prune — take the opportunity
                     // to refresh stale calendar/email context with current data for free.
                     let refreshed = await getFrozenSystemContext(forceRefresh: true)
                     calendarContext = refreshed.calendar
                     emailContext = refreshed.email
+                }
+                if midLoopResult == .exhausted {
+                    didHitContextLimit = true
+                    statusMessage = "Context budget exhausted, preparing response..."
+                    print("[ConversationManager] Context budget exhausted after pruning — all historical content already pruned. Forcing final response.")
+                    break toolLoop
                 }
 
                 if cumulativeToolSpendUSD >= toolSpendLimitPerTurnUSD {
@@ -1816,14 +1823,21 @@ class ConversationManager: ObservableObject {
             }
         }
         
-        let didHitSafetyLimit = !didHitToolSpendLimit
+        let didHitSafetyLimit = !didHitToolSpendLimit && !didHitContextLimit
         if didHitSafetyLimit {
             print("[ConversationManager] Safety tool round limit (\(maxToolRoundsSafetyLimit)) reached, forcing final response")
         }
 
         // Force one final call WITHOUT tools to produce a user-facing response
         let finalResponseInstruction: String
-        if didHitToolSpendLimit {
+        if didHitContextLimit {
+            finalResponseInstruction = """
+            The context budget for this turn has been exhausted. All prunable historical content has already been removed, \
+            but the current turn's tool interactions have grown beyond the context limit. \
+            Summarize your progress so far and provide the best possible response to the user. \
+            If the task is incomplete, clearly state what remains so the user can continue in a follow-up message.
+            """
+        } else if didHitToolSpendLimit {
             finalResponseInstruction = """
             The tool spend limit for this turn has been reached (spent approximately $\(formatUSD(cumulativeToolSpendUSD)), limit $\(formatUSD(toolSpendLimitPerTurnUSD))).
             Provide the best possible final response to the user using the information you already have. Do not call additional tools.
@@ -2450,6 +2464,16 @@ class ConversationManager: ObservableObject {
         return anyPruned
     }
 
+    /// Result of a mid-loop pruning attempt.
+    enum MidLoopPruneResult {
+        /// Context is within budget — no pruning needed.
+        case underBudget
+        /// Pruning occurred and freed some space.
+        case pruned
+        /// Context exceeds the budget but nothing is left to prune.
+        case exhausted
+    }
+
     /// Mid-loop variant: prunes stored tool interactions from historical turns when the
     /// current turn's growing context would exceed the budget. Only touches historical
     /// messages (messagesForLLM), never the current turn's in-memory toolInteractions.
@@ -2460,7 +2484,7 @@ class ConversationManager: ObservableObject {
         calendarContext: String?,
         emailContext: String?,
         chunkSummaries: [ArchivedSummaryItem]
-    ) async -> Bool {
+    ) async -> MidLoopPruneResult {
         let maxTokens = configuredMaxContextTokens()
         let targetTokens = configuredTargetContextTokens()
         let protectedIndex = lastAssistantIndexWithTools(in: messagesForLLM)
@@ -2494,7 +2518,11 @@ class ConversationManager: ObservableObject {
             }
         }
 
-        guard totalTokens > maxTokens, (prunableToolTokens > 0 || prunableMediaTokens > 0) else { return false }
+        guard totalTokens > maxTokens else { return .underBudget }
+        guard prunableToolTokens > 0 || prunableMediaTokens > 0 else {
+            print("[ConversationManager] Mid-loop context exceeded (~\(totalTokens) > \(maxTokens)) but nothing prunable — exhausted")
+            return .exhausted
+        }
 
         print("[ConversationManager] Mid-loop context exceeded: ~\(totalTokens) > \(maxTokens). Pruning...")
 
@@ -2593,7 +2621,14 @@ class ConversationManager: ObservableObject {
             print("[ConversationManager] Mid-loop pruned tools from \(prunedToolCount) turn(s), media from \(prunedMediaCount) message(s), compressed \(compressedCount) synthetic message(s). New estimate: ~\(totalTokens) tokens")
         }
 
-        return anyPruned
+        // If we pruned but context is STILL over budget, report exhausted so the
+        // caller can force a response rather than looping indefinitely.
+        if totalTokens > maxTokens {
+            print("[ConversationManager] Mid-loop pruning insufficient: ~\(totalTokens) still > \(maxTokens) — exhausted")
+            return .exhausted
+        }
+
+        return anyPruned ? .pruned : .underBudget
     }
 
     /// Deletes snapshotted tool-output bytes that are no longer referenced by the
