@@ -2387,10 +2387,14 @@ class ConversationManager: ObservableObject {
 
         // Single chronological pass: prune oldest content first (tools + media),
         // regardless of type, so a turn-2 file is pruned before turn-5 tools.
+        // Track how far the loop reaches so synthetic compression matches the
+        // same boundary — no arbitrary tail protection needed.
         var prunedToolCount = 0
         var prunedMediaCount = 0
+        var pruningBoundary = 0
         for i in 0..<messages.count {
             guard totalTokens > targetTokens else { break }
+            pruningBoundary = i + 1
             guard i != protectedIndex else { continue }
 
             // Prune tool interactions on this message
@@ -2427,11 +2431,9 @@ class ConversationManager: ObservableObject {
             }
         }
 
-        // Parallel pass: collapse stale synthetic user messages (emails, subagent
-        // completions, reminders, bash completions) into one-line metadata stubs.
-        // This is the same cache-invalidation event as the tool-interaction collapse,
-        // so piggy-backing avoids extra cache misses. Only `.userText` is skipped.
-        let compressedCount = pruneCompressibleUserMessages(upToIndex: messages.count)
+        // Compress synthetic messages up to the same boundary the pruning loop
+        // reached. Messages beyond that point are still "hot" and stay inflated.
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: pruningBoundary)
 
         if prunedToolCount > 0 {
             pruneOldCompactToolLogs()
@@ -2497,8 +2499,10 @@ class ConversationManager: ObservableObject {
         // Single chronological pass: prune oldest content first (tools + media)
         var prunedToolCount = 0
         var prunedMediaCount = 0
+        var pruningBoundary = 0
         for i in 0..<messagesForLLM.count {
             guard totalTokens > targetTokens else { break }
+            pruningBoundary = i + 1
             guard i != protectedIndex else { continue }
 
             if messagesForLLM[i].role == .assistant && !messagesForLLM[i].toolInteractions.isEmpty {
@@ -2565,9 +2569,9 @@ class ConversationManager: ObservableObject {
             }
         }
 
-        // Parallel pass on the compressible synthetic user messages. Runs in the
-        // same cache-invalidation event as the tool-interaction collapse.
-        let compressedCount = pruneCompressibleUserMessages(upToIndex: messages.count)
+        // Compress synthetic messages up to the same boundary the pruning loop
+        // reached. Messages beyond that point are still "hot" and stay inflated.
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: pruningBoundary)
         if compressedCount > 0 {
             // Mirror the compressed content into the in-flight messagesForLLM slice so
             // the current turn sees the stubbed form too.
@@ -2663,12 +2667,6 @@ class ConversationManager: ObservableObject {
 
     // MARK: - Compressible synthetic-user-message pruning
 
-    /// Stable-history cutoff for compression. We don't touch the tail of the
-    /// conversation — compressing a message the model just reacted to is wasted
-    /// risk, and keeping a tail uncompressed matches the spirit of the "Low
-    /// Watermark" (hot region stays fully inflated).
-    private static let compressibleSyntheticTailProtection = 4
-
     /// The set of message kinds that the Watermark pruner is allowed to collapse
     /// into a one-line stub. Hard constraint: `.userText` is deliberately NOT in
     /// this set — everything else is synthetic and safe to compact.
@@ -2681,8 +2679,9 @@ class ConversationManager: ObservableObject {
     /// the Watermark pruners so it piggy-backs on the same cache-invalidation
     /// event as the tool-interaction collapse.
     ///
-    /// - `upToIndex` is exclusive — messages at indices `[0, upToIndex - tailProtection)`
-    ///   are considered stable history. The last few messages stay fully inflated.
+    /// - `upToIndex` is exclusive — matches the pruning loop's break-point index,
+    ///   so only messages in the "cold zone" (where tools/media were already
+    ///   stripped) get compressed. Messages beyond the boundary stay fully inflated.
     /// - Already-compressed messages are skipped via the `[... archived]` prefix check.
     /// - Only touches indices into `self.messages`; callers that also hold an
     ///   `inout [Message]` mirror should sync afterwards.
@@ -2690,9 +2689,7 @@ class ConversationManager: ObservableObject {
     /// Returns the number of messages actually rewritten.
     @discardableResult
     private func pruneCompressibleUserMessages(upToIndex: Int) -> Int {
-        let tail = Self.compressibleSyntheticTailProtection
-        let end = min(upToIndex, messages.count)
-        let stableEnd = max(0, end - tail)
+        let stableEnd = min(upToIndex, messages.count)
         guard stableEnd > 0 else { return 0 }
 
         var count = 0
