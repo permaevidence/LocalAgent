@@ -34,7 +34,7 @@ A native macOS application that turns any LLM into an autonomous personal agent.
 
 ### Precision Token Management
 - **API-measured token counts** — per-message costs derived from real API response data (prompt_tokens / completion_tokens deltas), not heuristic estimates
-- **Two-threshold pruning** — when context exceeds the high watermark, tool interactions, reasoning, and media are pruned chronologically from oldest messages until the low watermark is reached
+- **Two-threshold pruning** — when context exceeds the high watermark (default 200k), tool interactions, reasoning, and media are pruned chronologically from oldest messages until the low watermark (default 70k) is reached
 - **Lazy file descriptions** — files are described by the LLM only at prune time (not eagerly), so the compact summary replaces the heavy media payload with zero wasted API calls
 - **Tool attachment persistence** — images and PDFs produced by tools persist across turns via lightweight file references, reloaded from disk snapshots for bit-identical prompt caching
 - **Live context gauge** — the chat UI shows real-time token usage (e.g. "83.5k/100k") with color-coded warnings

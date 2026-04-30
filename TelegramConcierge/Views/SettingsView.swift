@@ -105,8 +105,8 @@ struct SettingsView: View {
     private let telegramService = TelegramBotService()
     private let defaultArchiveChunkSize = 10000
     private let minimumArchiveChunkSize = 5000
-    private let defaultMaxContextTokens = 100000
-    private let defaultTargetContextTokens = 50000
+    private let defaultMaxContextTokens = 200000
+    private let defaultTargetContextTokens = 70000
     private let defaultToolSpendLimitPerTurnUSD = 0.20
     private let minimumToolSpendLimitPerTurnUSD = 0.001
     

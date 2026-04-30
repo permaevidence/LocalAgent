@@ -47,8 +47,8 @@ class ConversationManager: ObservableObject {
     private let shouldResumePollingDefaultsKey = "should_resume_polling_on_launch"
     private let privacyModeDefaultsKey = "telegram_privacy_mode_enabled"
     private let systemPromptTimestampKey = "system_prompt_cache_epoch"
-    private let defaultMaxContextTokens = 100_000
-    private let defaultTargetContextTokens = 50_000
+    private let defaultMaxContextTokens = 200_000
+    private let defaultTargetContextTokens = 70_000
 
     // Frozen calendar/email context — populated on first turn of a session, refreshed
     // only on Watermark prune events or local-day rollover. Between refreshes, the
