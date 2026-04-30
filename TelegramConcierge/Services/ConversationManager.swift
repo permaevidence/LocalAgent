@@ -4079,9 +4079,10 @@ class ConversationManager: ObservableObject {
             for call in interaction.assistantMessage.toolCalls where call.function.name == "send_document_to_chat" {
                 guard let argsData = call.function.arguments.data(using: .utf8),
                       let args = try? JSONDecoder().decode(SendDocumentToChatArguments.self, from: argsData) else { continue }
-                let url = documentsDirectory.appendingPathComponent(args.documentFilename)
+                let url = URL(fileURLWithPath: args.filePath)
                 guard let data = try? Data(contentsOf: url) else { continue }
-                files.append((filename: args.documentFilename, data: data, mimeType: mimeTypeForAttachmentFile(args.documentFilename)))
+                let filename = url.lastPathComponent
+                files.append((filename: filename, data: data, mimeType: mimeTypeForAttachmentFile(filename)))
             }
         }
 

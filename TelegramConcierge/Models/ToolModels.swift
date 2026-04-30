@@ -634,19 +634,19 @@ enum AvailableTools {
     static let sendDocumentToChat = ToolDefinition(
         function: FunctionDefinition(
             name: "send_document_to_chat",
-            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image. Works with files stored in LocalAgent's documents folder, including PDFs, images, URL downloads, generated files, and email attachments. This sends the file to the user as an external side effect.",
+            description: "Send a document or file directly to the user via Telegram. Use when the user asks you to send/share a file, document, or image. Accepts any absolute file path on the filesystem. This sends the file to the user as an external side effect.",
             parameters: FunctionParameters(
                 properties: [
-                    "document_filename": ParameterProperty(
+                    "file_path": ParameterProperty(
                         type: "string",
-                        description: "Stored filename/basename in the LocalAgent documents folder (e.g. 'report.pdf'), not an absolute path. If list_recent_files gives a full path inside the documents folder, pass only the basename."
+                        description: "Absolute path to the file to send (e.g. '/tmp/photo.jpg', '/Users/alice/Documents/report.pdf')."
                     ),
                     "caption": ParameterProperty(
                         type: "string",
                         description: "Optional caption to include with the document."
                     )
                 ],
-                required: ["document_filename"]
+                required: ["file_path"]
             )
         )
     )

@@ -2117,16 +2117,17 @@ extension ToolExecutor {
               let args = try? JSONDecoder().decode(SendDocumentToChatArguments.self, from: argsData) else {
             return "{\"error\": \"Failed to parse send_document_to_chat arguments\"}"
         }
-        
-        // Find the document file
-        let documentURL = documentsDirectory.appendingPathComponent(args.documentFilename)
+
+        // Resolve absolute path directly
+        let documentURL = URL(fileURLWithPath: args.filePath)
         guard FileManager.default.fileExists(atPath: documentURL.path) else {
-            return "{\"error\": \"Document not found: \(args.documentFilename). Use glob or list_dir to find available files.\"}"
+            return "{\"error\": \"File not found: \(args.filePath). Use glob or list_dir to verify the path.\"}"
         }
-        
+
         do {
             let documentData = try Data(contentsOf: documentURL)
-            recordDocumentOpened(filename: args.documentFilename)
+            let filename = documentURL.lastPathComponent
+            recordDocumentOpened(filename: filename)
             
             // Determine MIME type from extension
             let ext = documentURL.pathExtension.lowercased()
@@ -2163,18 +2164,18 @@ extension ToolExecutor {
             // Store the document for sending after the tool response
             ToolExecutor.pendingDocuments.append((
                 data: documentData,
-                filename: args.documentFilename,
+                filename: filename,
                 mimeType: mimeType,
                 caption: args.caption
             ))
-            
-            print("[ToolExecutor] Queued document for sending: \(args.documentFilename) (\(documentData.count) bytes)")
-            
+
+            print("[ToolExecutor] Queued document for sending: \(args.filePath) (\(documentData.count) bytes)")
+
             let result = SendDocumentToChatResult(
                 success: true,
-                documentFilename: args.documentFilename,
+                filePath: args.filePath,
                 sizeBytes: documentData.count,
-                message: "Document '\(args.documentFilename)' will be sent to the chat."
+                message: "File '\(filename)' will be sent to the chat."
             )
             
             let encoder = JSONEncoder()
@@ -2192,24 +2193,24 @@ extension ToolExecutor {
 // MARK: - Send Document to Chat Types
 
 struct SendDocumentToChatArguments: Codable {
-    let documentFilename: String
+    let filePath: String
     let caption: String?
-    
+
     enum CodingKeys: String, CodingKey {
-        case documentFilename = "document_filename"
+        case filePath = "file_path"
         case caption
     }
 }
 
 struct SendDocumentToChatResult: Codable {
     let success: Bool
-    let documentFilename: String
+    let filePath: String
     let sizeBytes: Int
     let message: String
-    
+
     enum CodingKeys: String, CodingKey {
         case success, message
-        case documentFilename = "document_filename"
+        case filePath = "file_path"
         case sizeBytes = "size_bytes"
     }
 }
