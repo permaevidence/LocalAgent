@@ -361,12 +361,32 @@ actor OpenRouterService {
         """
     }
     
+    /// Message kinds that the Watermark pruner will collapse into a one-line
+    /// metadata stub before they ever reach an archive chunk.  For chunking
+    /// threshold decisions we should count the *stub* cost, not the full body.
+    private static let compressibleKinds: Set<MessageKind> = [
+        .emailArrived, .subagentComplete, .reminderFired
+    ]
+
     /// Estimate token cost for archiving/chunking decisions.
     /// Counts only the TEXT footprint: message content + small breadcrumb cost per
     /// attachment (filename + description hint). Does NOT count inline media bytes
     /// or tool interactions — those are managed by the Watermark pruner separately.
+    ///
+    /// For compressible synthetic messages (emails, subagent completions, reminders)
+    /// we count the *post-compaction stub* size (~50 tokens) instead of the full
+    /// body, because the pruner will compact them before they'd enter a chunk.
     func estimateTokens(for message: Message) -> Int {
-        var tokens = message.content.count / 4
+        var tokens: Int
+        if Self.compressibleKinds.contains(message.kind),
+           !message.content.hasPrefix("[Email archived]"),
+           !message.content.hasPrefix("[Subagent archived]"),
+           !message.content.hasPrefix("[Reminder archived]") {
+            // Not yet compacted — count the stub size, not the full body.
+            tokens = 50
+        } else {
+            tokens = message.content.count / 4
+        }
 
         // All attachments (primary + referenced): 50 tokens each for the text breadcrumb
         let breadcrumbCount = message.imageFileNames.count
