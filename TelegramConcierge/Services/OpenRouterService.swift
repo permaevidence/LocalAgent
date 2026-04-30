@@ -365,7 +365,7 @@ actor OpenRouterService {
     /// metadata stub before they ever reach an archive chunk.  For chunking
     /// threshold decisions we should count the *stub* cost, not the full body.
     private static let compressibleKinds: Set<MessageKind> = [
-        .emailArrived, .subagentComplete, .reminderFired
+        .emailArrived, .subagentComplete, .reminderFired, .bashComplete
     ]
 
     /// Estimate token cost for archiving/chunking decisions.
@@ -381,7 +381,8 @@ actor OpenRouterService {
         if Self.compressibleKinds.contains(message.kind),
            !message.content.hasPrefix("[Email archived]"),
            !message.content.hasPrefix("[Subagent archived]"),
-           !message.content.hasPrefix("[Reminder archived]") {
+           !message.content.hasPrefix("[Reminder archived]"),
+           !message.content.hasPrefix("[Bash archived]") {
             // Not yet compacted — count the stub size, not the full body.
             tokens = 50
         } else {

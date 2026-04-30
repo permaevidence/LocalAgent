@@ -2428,9 +2428,9 @@ class ConversationManager: ObservableObject {
         }
 
         // Parallel pass: collapse stale synthetic user messages (emails, subagent
-        // completions, reminders) into one-line metadata stubs. This is the same
-        // cache-invalidation event as the tool-interaction collapse, so piggy-backing
-        // avoids extra cache misses. `.userText` and `.bashComplete` are skipped.
+        // completions, reminders, bash completions) into one-line metadata stubs.
+        // This is the same cache-invalidation event as the tool-interaction collapse,
+        // so piggy-backing avoids extra cache misses. Only `.userText` is skipped.
         let compressedCount = pruneCompressibleUserMessages(upToIndex: messages.count)
 
         if prunedToolCount > 0 {
@@ -2670,10 +2670,10 @@ class ConversationManager: ObservableObject {
     private static let compressibleSyntheticTailProtection = 4
 
     /// The set of message kinds that the Watermark pruner is allowed to collapse
-    /// into a one-line stub. Hard constraint: `.userText` and `.bashComplete`
-    /// are deliberately NOT in this set.
+    /// into a one-line stub. Hard constraint: `.userText` is deliberately NOT in
+    /// this set — everything else is synthetic and safe to compact.
     private static let compressibleSyntheticKinds: Set<MessageKind> = [
-        .emailArrived, .subagentComplete, .reminderFired
+        .emailArrived, .subagentComplete, .reminderFired, .bashComplete
     ]
 
     /// Replace the `content` of stale synthetic user messages (emails, subagent
@@ -2703,7 +2703,8 @@ class ConversationManager: ObservableObject {
             // Safety: never compress twice. Cheap prefix check matches the stub format.
             if msg.content.hasPrefix("[Email archived]")
                 || msg.content.hasPrefix("[Subagent archived]")
-                || msg.content.hasPrefix("[Reminder archived]") {
+                || msg.content.hasPrefix("[Reminder archived]")
+                || msg.content.hasPrefix("[Bash archived]") {
                 continue
             }
 
@@ -2712,7 +2713,8 @@ class ConversationManager: ObservableObject {
             case .emailArrived:     stub = Self.compactEmailStub(from: msg.content)
             case .subagentComplete: stub = Self.compactSubagentStub(from: msg.content)
             case .reminderFired:    stub = Self.compactReminderStub(from: msg.content)
-            case .userText, .bashComplete:
+            case .bashComplete:     stub = Self.compactBashStub(from: msg.content)
+            case .userText:
                 continue // defensive — filtered above
             }
 
@@ -2832,6 +2834,35 @@ class ConversationManager: ObservableObject {
             return "[Reminder archived] (compressed; prompt no longer in context)"
         }
         return "[Reminder archived] \(snippet)"
+    }
+
+    /// Extract `handle:`, `command:`, and `status:` from a `[BACKGROUND BASH COMPLETE]`
+    /// or `[BASH WATCH MATCH]` block and build a one-line stub.
+    private static func compactBashStub(from body: String) -> String {
+        var handle: String?
+        var command: String?
+        var status: String?
+        var pattern: String?
+
+        for rawLine in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("--- stdout") || line.hasPrefix("--- stderr") || line.hasPrefix("matches (") { break }
+            if let value = keyValue(line, key: "handle") { handle = value }
+            else if let value = keyValue(line, key: "command") { command = String(value.prefix(80)) }
+            else if let value = keyValue(line, key: "status") { status = value }
+            else if let value = keyValue(line, key: "pattern") { pattern = value }
+        }
+
+        var parts = ["[Bash archived]"]
+        if let handle = handle { parts.append("handle: \(handle)") }
+        if let command = command { parts.append("cmd: \(command)") }
+        if let status = status { parts.append("status: \(status)") }
+        if let pattern = pattern { parts.append("pattern: \(pattern)") }
+        if parts.count == 1 {
+            return "[Bash archived] (compressed; output no longer in context)"
+        }
+        return parts.joined(separator: ", ")
+            .replacingOccurrences(of: "[Bash archived],", with: "[Bash archived]")
     }
 
     /// Parse a `key: value` line case-sensitively. Returns nil if the line does
