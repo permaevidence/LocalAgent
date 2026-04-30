@@ -1,6 +1,6 @@
 # LocalAgent
 
-A native macOS application that turns any LLM into an autonomous personal agent. It connects to you via Telegram, manages your files, browses the web, generates images, transcribes voice messages, orchestrates subagents, integrates with external tool servers via MCP, and remembers everything across sessions — powered by any model available through OpenRouter or running locally via LM Studio.
+A native macOS application that turns any LLM into an autonomous personal agent. It connects to you via Telegram, manages your files, browses the web, generates images, transcribes voice messages, orchestrates subagents, integrates with external tool servers via MCP, and remembers everything across sessions — powered by any model available through OpenRouter or running locally via any OpenAI-compatible inference server.
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2014+-blue" alt="macOS 14+">
@@ -14,7 +14,7 @@ A native macOS application that turns any LLM into an autonomous personal agent.
 
 ### LLM Provider Flexibility
 - **OpenRouter** — access Gemini, Claude, GPT, DeepSeek, Qwen, Grok, and hundreds more through a single API key
-- **Local inference** via LM Studio — run models on your own hardware with automatic KV cache preservation
+- **Local inference** — run models on your own hardware via any OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp, etc.) with automatic KV cache preservation
 - **Configurable reasoning effort** — adjust thinking depth per model
 - **Provider enforcement** — pin requests to specific providers with strict routing (no silent fallbacks)
 
@@ -281,7 +281,7 @@ This project is open source and available under the [MIT License](LICENSE).
 ## Acknowledgments
 
 - [OpenRouter](https://openrouter.ai) — unified LLM API gateway
-- [LM Studio](https://lmstudio.ai) — local model inference
+- [LM Studio](https://lmstudio.ai) — local model inference (one of many compatible providers)
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device speech recognition
 - [Serper](https://serper.dev) — Google Search API
 - [Jina AI](https://jina.ai) — web content extraction
