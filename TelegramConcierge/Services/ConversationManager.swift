@@ -2432,8 +2432,10 @@ class ConversationManager: ObservableObject {
         }
 
         // Compress synthetic messages up to the same boundary the pruning loop
-        // reached. Messages beyond that point are still "hot" and stay inflated.
-        let compressedCount = pruneCompressibleUserMessages(upToIndex: pruningBoundary)
+        // reached, but never the triggering message — it will be compressed on
+        // the next pruning event after the model has seen and responded to it.
+        let safeBoundary = min(pruningBoundary, max(messages.count - 1, 0))
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: safeBoundary)
 
         if prunedToolCount > 0 {
             pruneOldCompactToolLogs()
@@ -2570,8 +2572,10 @@ class ConversationManager: ObservableObject {
         }
 
         // Compress synthetic messages up to the same boundary the pruning loop
-        // reached. Messages beyond that point are still "hot" and stay inflated.
-        let compressedCount = pruneCompressibleUserMessages(upToIndex: pruningBoundary)
+        // reached, but never the triggering message — it will be compressed on
+        // the next pruning event after the model has seen and responded to it.
+        let safeBoundary = min(pruningBoundary, max(messages.count - 1, 0))
+        let compressedCount = pruneCompressibleUserMessages(upToIndex: safeBoundary)
         if compressedCount > 0 {
             // Mirror the compressed content into the in-flight messagesForLLM slice so
             // the current turn sees the stubbed form too.
