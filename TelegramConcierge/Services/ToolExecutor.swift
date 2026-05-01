@@ -6,6 +6,12 @@ import Foundation
 
 /// Central dispatcher that routes tool calls to their implementations
 actor ToolExecutor {
+    enum OutputMode {
+        case mainAgent
+        case subagent
+    }
+
+    private let outputMode: OutputMode
     private let webOrchestrator = WebOrchestrator()
     private let archiveService = ConversationArchiveService()
     private var openRouterService: OpenRouterService?
@@ -19,6 +25,14 @@ actor ToolExecutor {
 
     private static let runningProcessLock = NSLock()
     private static var runningProcesses: [ObjectIdentifier: Process] = [:]
+
+    init(outputMode: OutputMode = .mainAgent) {
+        self.outputMode = outputMode
+    }
+
+    private var allowsUserVisibleToolOutputs: Bool {
+        outputMode == .mainAgent
+    }
 
     // MARK: - Configuration
 
@@ -41,7 +55,7 @@ actor ToolExecutor {
     /// run on a separate actor queue, eliminating serialization contention
     /// with the parent agent's tool execution.
     func makeChildExecutor() async -> ToolExecutor {
-        let child = ToolExecutor()
+        let child = ToolExecutor(outputMode: .subagent)
         await child.configure(
             openRouterKey: configuredOpenRouterKey,
             serperKey: configuredSerperKey,
@@ -1288,6 +1302,8 @@ struct DeleteContactsResult: Codable {
 // MARK: - Image Generation Tool
 
 extension ToolExecutor {
+    private static let pendingToolOutputsLock = NSLock()
+
     /// Store for generated images to be sent after tool execution
     private static var pendingImages: [(data: Data, mimeType: String, prompt: String)] = []
     
@@ -1303,6 +1319,8 @@ extension ToolExecutor {
     
     /// Get and clear pending images
     static func getPendingImages() -> [(data: Data, mimeType: String, prompt: String)] {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         let images = pendingImages
         pendingImages = []
         return images
@@ -1310,6 +1328,8 @@ extension ToolExecutor {
     
     /// Get and clear pending documents
     static func getPendingDocuments() -> [(data: Data, filename: String, mimeType: String, caption: String?)] {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         let documents = pendingDocuments
         pendingDocuments = []
         return documents
@@ -1317,6 +1337,8 @@ extension ToolExecutor {
     
     /// Get and clear transient downloaded attachment bytes
     static func getPendingFilesForDescription() -> [(filename: String, data: Data, mimeType: String)] {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         let files = pendingFilesForDescription
         pendingFilesForDescription = []
         return files
@@ -1324,6 +1346,8 @@ extension ToolExecutor {
     
     /// Get and clear downloaded filenames to store in Message history
     static func getPendingDownloadedFilenames() -> [String] {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         let filenames = pendingDownloadedFilenames
         pendingDownloadedFilenames = []
         return filenames
@@ -1331,14 +1355,30 @@ extension ToolExecutor {
     
     /// Clear all pending tool outputs (used for cancellation / interruption)
     static func clearPendingToolOutputs() {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         pendingImages = []
         pendingDocuments = []
         pendingFilesForDescription = []
         pendingDownloadedFilenames = []
     }
+
+    private static func queuePendingImage(data: Data, mimeType: String, prompt: String) {
+        pendingToolOutputsLock.lock()
+        pendingImages.append((data, mimeType, prompt))
+        pendingToolOutputsLock.unlock()
+    }
+
+    private static func queuePendingDocument(data: Data, filename: String, mimeType: String, caption: String?) {
+        pendingToolOutputsLock.lock()
+        pendingDocuments.append((data: data, filename: filename, mimeType: mimeType, caption: caption))
+        pendingToolOutputsLock.unlock()
+    }
     
     /// Queue a downloaded/generated filename for history and drainable transient bytes
     static func queueFileForDescription(filename: String, data: Data, mimeType: String) {
+        pendingToolOutputsLock.lock()
+        defer { pendingToolOutputsLock.unlock() }
         pendingFilesForDescription.append((filename: filename, data: data, mimeType: mimeType))
         // Also track filename for Message history
         pendingDownloadedFilenames.append(filename)
@@ -1428,11 +1468,12 @@ extension ToolExecutor {
                 // Continue anyway - we can still send to Telegram and inject multimodally
             }
             
-            // Store the image for sending to Telegram after the tool response
-            ToolExecutor.pendingImages.append((imageData, mimeType, args.prompt))
-            
-            // Queue file for description generation (like email attachments)
-            ToolExecutor.queueFileForDescription(filename: fileName, data: imageData, mimeType: mimeType)
+            if allowsUserVisibleToolOutputs {
+                // Main-agent generated images are sent after the turn and tracked in
+                // conversation history. Subagents only return the file path/result.
+                ToolExecutor.queuePendingImage(data: imageData, mimeType: mimeType, prompt: args.prompt)
+                ToolExecutor.queueFileForDescription(filename: fileName, data: imageData, mimeType: mimeType)
+            }
             
             let isEdit = sourceImageData != nil
             
@@ -2144,6 +2185,10 @@ extension ToolExecutor {
             return "{\"error\": \"Failed to parse send_document_to_chat arguments\"}"
         }
 
+        guard allowsUserVisibleToolOutputs else {
+            return "{\"error\": \"send_document_to_chat is only available to the main agent. Subagents should return file paths in their final result instead.\"}"
+        }
+
         // Resolve absolute path directly
         let documentURL = URL(fileURLWithPath: args.filePath)
         guard FileManager.default.fileExists(atPath: documentURL.path) else {
@@ -2187,13 +2232,13 @@ extension ToolExecutor {
                 mimeType = "application/octet-stream"
             }
             
-            // Store the document for sending after the tool response
-            ToolExecutor.pendingDocuments.append((
+            // Store the document for sending after the main-agent tool response.
+            ToolExecutor.queuePendingDocument(
                 data: documentData,
                 filename: filename,
                 mimeType: mimeType,
                 caption: args.caption
-            ))
+            )
 
             print("[ToolExecutor] Queued document for sending: \(args.filePath) (\(documentData.count) bytes)")
 
