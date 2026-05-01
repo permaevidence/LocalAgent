@@ -2242,12 +2242,12 @@ struct SettingsView: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if provider == .lmStudio {
             request.setValue("Bearer lm-studio", forHTTPHeaderField: "Authorization")
-            request.timeoutInterval = 300
+            request.timeoutInterval = 1200
         } else {
             request.setValue("Bearer \(trimmedOpenRouterAPIKey)", forHTTPHeaderField: "Authorization")
             request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
-            request.timeoutInterval = 120
+            request.timeoutInterval = 360
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestPayload)
         

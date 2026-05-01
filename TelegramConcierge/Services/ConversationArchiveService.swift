@@ -1387,7 +1387,7 @@ actor ConversationArchiveService {
             request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
         }
-        request.timeoutInterval = usingLMStudio ? 300 : 120
+        request.timeoutInterval = usingLMStudio ? 1200 : 360
         request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)

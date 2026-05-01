@@ -1307,8 +1307,8 @@ actor OpenRouterService {
             request.setValue("LocalAgent/1.0", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("Telegram Concierge Bot", forHTTPHeaderField: "X-Title")
         }
-        // LMStudio local inference can be slow for large models
-        request.timeoutInterval = usingLMStudio ? 300 : 120
+        // Local inference and large reasoning models can legitimately take a long time.
+        request.timeoutInterval = usingLMStudio ? 1200 : 360
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -1549,7 +1549,7 @@ actor OpenRouterService {
             urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = usingLMStudioForDescriptions ? 300 : 120
+        urlRequest.timeoutInterval = usingLMStudioForDescriptions ? 1200 : 360
         urlRequest.httpBody = try JSONEncoder().encode(request)
         
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
