@@ -12,12 +12,20 @@ actor ToolExecutor {
     private var subagentImagesDirectory: URL?
     private var subagentDocumentsDirectory: URL?
 
+    // Stored so child executors can be configured identically.
+    private var configuredOpenRouterKey: String = ""
+    private var configuredSerperKey: String = ""
+    private var configuredJinaKey: String = ""
+
     private static let runningProcessLock = NSLock()
     private static var runningProcesses: [ObjectIdentifier: Process] = [:]
 
     // MARK: - Configuration
 
     func configure(openRouterKey: String, serperKey: String, jinaKey: String) async {
+        self.configuredOpenRouterKey = openRouterKey
+        self.configuredSerperKey = serperKey
+        self.configuredJinaKey = jinaKey
         await webOrchestrator.configure(openRouterKey: openRouterKey, serperKey: serperKey, jinaKey: jinaKey)
         Task { await archiveService.configure(apiKey: openRouterKey) }
     }
@@ -27,6 +35,24 @@ actor ToolExecutor {
         self.openRouterService = service
         self.subagentImagesDirectory = imagesDirectory
         self.subagentDocumentsDirectory = documentsDirectory
+    }
+
+    /// Creates an independent ToolExecutor for a subagent so its tool calls
+    /// run on a separate actor queue, eliminating serialization contention
+    /// with the parent agent's tool execution.
+    func makeChildExecutor() async -> ToolExecutor {
+        let child = ToolExecutor()
+        await child.configure(
+            openRouterKey: configuredOpenRouterKey,
+            serperKey: configuredSerperKey,
+            jinaKey: configuredJinaKey
+        )
+        if let ors = openRouterService,
+           let imgDir = subagentImagesDirectory,
+           let docDir = subagentDocumentsDirectory {
+            await child.configureOpenRouter(ors, imagesDirectory: imgDir, documentsDirectory: docDir)
+        }
+        return child
     }
     
     nonisolated func cancelAllRunningProcesses() async {
@@ -2433,12 +2459,14 @@ extension ToolExecutor {
             runInBackground: runInBg
         )
 
+        let childExecutor = await makeChildExecutor()
+
         if runInBg {
             let handle = await SubagentBackgroundRegistry.shared.spawn(
                 invocation: invocation,
                 parentTools: parentTools,
                 openRouterService: openRouter,
-                toolExecutor: self,
+                toolExecutor: childExecutor,
                 imagesDirectory: imagesDir,
                 documentsDirectory: documentsDir
             )
@@ -2460,7 +2488,7 @@ extension ToolExecutor {
             invocation: invocation,
             sessionId: args.session_id,
             openRouterService: openRouter,
-            toolExecutor: self,
+            toolExecutor: childExecutor,
             imagesDirectory: imagesDir,
             documentsDirectory: documentsDir,
             parentTools: parentTools
@@ -2497,12 +2525,14 @@ extension ToolExecutor {
             runInBackground: runInBg
         )
 
+        let childExecutor = await makeChildExecutor()
+
         if runInBg {
             let handle = await SubagentBackgroundRegistry.shared.spawn(
                 invocation: invocation,
                 parentTools: parentTools,
                 openRouterService: openRouter,
-                toolExecutor: self,
+                toolExecutor: childExecutor,
                 imagesDirectory: imagesDir,
                 documentsDirectory: documentsDir
             )
@@ -2525,7 +2555,7 @@ extension ToolExecutor {
             invocation: invocation,
             sessionId: args.session_id,
             openRouterService: openRouter,
-            toolExecutor: self,
+            toolExecutor: childExecutor,
             imagesDirectory: imagesDir,
             documentsDirectory: documentsDir,
             parentTools: parentTools
