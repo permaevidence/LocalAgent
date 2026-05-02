@@ -41,9 +41,9 @@ enum BashTools {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
-        // Inject user-defined service keys as environment variables.
         var env = ProcessInfo.processInfo.environment
-        for (k, v) in KeychainHelper.serviceKeyEnvironment() { env[k] = v }
+        let serviceKeyEnv = KeychainHelper.serviceKeyEnvironment()
+        for (k, v) in serviceKeyEnv { env[k] = v }
         process.environment = env
 
         let outPipe = Pipe()
@@ -74,12 +74,15 @@ enum BashTools {
 
         let stdoutData = (try? outPipe.fileHandleForReading.readToEnd()) ?? Data()
         let stderrData = (try? errPipe.fileHandleForReading.readToEnd()) ?? Data()
-        let (stdoutText, stdoutTruncated) = truncate(data: stdoutData)
-        let (stderrText, stderrTruncated) = truncate(data: stderrData)
+        let redactor = SecretRedactor(environment: serviceKeyEnv)
+        let stdoutRaw = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderrRaw = String(data: stderrData, encoding: .utf8) ?? ""
+        let (stdoutText, stdoutTruncated) = truncate(text: redactor.redact(stdoutRaw))
+        let (stderrText, stderrTruncated) = truncate(text: redactor.redact(stderrRaw))
 
         return OpResult(content: jsonString([
             "success": !timedOut,
-            "command": command,
+            "command": redactor.redact(command),
             "exit_code": Int(process.terminationStatus),
             "timed_out": timedOut,
             "stdout": stdoutText,
@@ -87,7 +90,7 @@ enum BashTools {
             "stdout_truncated": stdoutTruncated,
             "stderr_truncated": stderrTruncated,
             "timeout_ms": timeout,
-            "description": description ?? ""
+            "description": redactor.redact(description ?? "")
         ]))
     }
 
@@ -98,6 +101,7 @@ enum BashTools {
         workdir: String? = nil,
         description: String? = nil
     ) async -> OpResult {
+        let redactor = SecretRedactor()
         do {
             let handle = try await BackgroundProcessRegistry.shared.start(
                 command: command,
@@ -109,8 +113,8 @@ enum BashTools {
                 "handle": handle.id,
                 "pid": handle.pid,
                 "status": "running",
-                "command": command,
-                "description": description ?? "",
+                "command": redactor.redact(command),
+                "description": redactor.redact(description ?? ""),
                 "message": "Process started in background. Use bash_manage(mode='output', handle='\(handle.id)') to peek at output, bash_manage(mode='input', handle='\(handle.id)', text='...') to send stdin, bash_manage(mode='kill', handle='\(handle.id)') to stop. You will be notified automatically when it exits."
             ]))
         } catch {
@@ -122,9 +126,10 @@ enum BashTools {
         guard let snapshot = await BackgroundProcessRegistry.shared.snapshot(handleId: handle) else {
             return OpResult(content: jsonError("unknown background handle: \(handle)"))
         }
+        let redactor = SecretRedactor()
         let newStdout = snapshot.stdout.suffixFromByte(since)
-        let (outText, outTrunc) = truncate(data: Data(newStdout.utf8))
-        let (errText, errTrunc) = truncate(data: Data(snapshot.stderr.utf8))
+        let (outText, outTrunc) = truncate(text: newStdout)
+        let (errText, errTrunc) = truncate(text: snapshot.stderr)
         var payload: [String: Any] = [
             "success": true,
             "handle": handle,
@@ -135,7 +140,7 @@ enum BashTools {
             "stderr_truncated": errTrunc,
             "stdout_total_bytes": snapshot.stdout.utf8.count,
             "running_for_seconds": Int(snapshot.runningFor),
-            "command": snapshot.command
+            "command": redactor.redact(snapshot.command)
         ]
         if let code = snapshot.exitCode { payload["exit_code"] = code }
         return OpResult(content: jsonString(payload))
@@ -174,9 +179,37 @@ enum BashTools {
 
     // MARK: - Helpers
 
-    private static func truncate(data: Data) -> (String, Bool) {
+    fileprivate struct SecretRedactor {
+        private let replacements: [(secret: String, placeholder: String)]
+
+        init(environment: [String: String] = KeychainHelper.serviceKeyEnvironment()) {
+            self.replacements = environment
+                .filter { !$0.value.isEmpty }
+                .sorted { $0.value.count > $1.value.count }
+                .map { (secret: $0.value, placeholder: "[REDACTED:\($0.key)]") }
+        }
+
+        func redact(_ text: String) -> String {
+            guard !replacements.isEmpty, !text.isEmpty else { return text }
+            var redacted = text
+            for replacement in replacements {
+                redacted = redacted.replacingOccurrences(
+                    of: replacement.secret,
+                    with: replacement.placeholder
+                )
+            }
+            return redacted
+        }
+    }
+
+    fileprivate static func redactServiceKeys(in text: String) -> String {
+        SecretRedactor().redact(text)
+    }
+
+    private static func truncate(text: String) -> (String, Bool) {
+        let data = Data(text.utf8)
         if data.count <= outputCapBytes {
-            return (String(data: data, encoding: .utf8) ?? "", false)
+            return (text, false)
         }
         let trimmed = data.prefix(outputCapBytes)
         let text = (String(data: trimmed, encoding: .utf8) ?? "") + "\n… [output capped at \(outputCapBytes) bytes]"
@@ -348,9 +381,10 @@ actor BackgroundProcessRegistry {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
-        // Inject user-defined service keys as environment variables.
         var env = ProcessInfo.processInfo.environment
-        for (k, v) in KeychainHelper.serviceKeyEnvironment() { env[k] = v }
+        let serviceKeyEnv = KeychainHelper.serviceKeyEnvironment()
+        let redactor = BashTools.SecretRedactor(environment: serviceKeyEnv)
+        for (k, v) in serviceKeyEnv { env[k] = v }
         process.environment = env
 
         let outPipe = Pipe()
@@ -376,8 +410,10 @@ actor BackgroundProcessRegistry {
         outPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+            let redacted = redactor.redact(s)
             ioQ.async {
-                entry.stdout.append(s)
+                entry.stdout.append(redacted)
+                entry.stdout = redactor.redact(entry.stdout)
                 let cap = BashTools.outputCapBytes * 4
                 if entry.stdout.utf8.count > cap {
                     entry.stdout = String(entry.stdout.suffix(cap))
@@ -389,7 +425,7 @@ actor BackgroundProcessRegistry {
                 if !lines.isEmpty {
                     Task {
                         await BackgroundProcessRegistry.shared.evaluateWatches(
-                            handleId: entryId, stream: "stdout", lines: lines
+                            handleId: entryId, stream: "stdout", lines: lines.map { redactor.redact($0) }
                         )
                     }
                 }
@@ -398,8 +434,10 @@ actor BackgroundProcessRegistry {
         errPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+            let redacted = redactor.redact(s)
             ioQ.async {
-                entry.stderr.append(s)
+                entry.stderr.append(redacted)
+                entry.stderr = redactor.redact(entry.stderr)
                 let cap = BashTools.outputCapBytes * 4
                 if entry.stderr.utf8.count > cap {
                     entry.stderr = String(entry.stderr.suffix(cap))
@@ -410,7 +448,7 @@ actor BackgroundProcessRegistry {
                 if !lines.isEmpty {
                     Task {
                         await BackgroundProcessRegistry.shared.evaluateWatches(
-                            handleId: entryId, stream: "stderr", lines: lines
+                            handleId: entryId, stream: "stderr", lines: lines.map { redactor.redact($0) }
                         )
                     }
                 }
@@ -427,10 +465,12 @@ actor BackgroundProcessRegistry {
             let residualErr = errPipe.fileHandleForReading.availableData
             ioQ.async {
                 if !residualOut.isEmpty, let s = String(data: residualOut, encoding: .utf8) {
-                    entry.stdout.append(s)
+                    entry.stdout.append(redactor.redact(s))
+                    entry.stdout = redactor.redact(entry.stdout)
                 }
                 if !residualErr.isEmpty, let s = String(data: residualErr, encoding: .utf8) {
-                    entry.stderr.append(s)
+                    entry.stderr.append(redactor.redact(s))
+                    entry.stderr = redactor.redact(entry.stderr)
                 }
                 let code = proc.terminationStatus
                 let reason = proc.terminationReason
@@ -522,6 +562,7 @@ actor BackgroundProcessRegistry {
     func liveSummaryText() -> String? {
         let rows = liveSummary()
         guard !rows.isEmpty else { return nil }
+        let redactor = BashTools.SecretRedactor()
         var lines: [String] = ["Running background bash:"]
         for r in rows {
             let secs = r.runningFor
@@ -533,11 +574,12 @@ actor BackgroundProcessRegistry {
                 let s = secs % 60
                 dur = "\(m)m \(s)s"
             }
-            let cmd = r.command.count > 60
-                ? String(r.command.prefix(60)) + "…"
-                : r.command
+            let safeCommand = redactor.redact(r.command)
+            let cmd = safeCommand.count > 60
+                ? String(safeCommand.prefix(60)) + "…"
+                : safeCommand
             if let desc = r.description, !desc.isEmpty {
-                lines.append("- \(r.id) [\"\(cmd)\", \(desc), running \(dur)]")
+                lines.append("- \(r.id) [\"\(cmd)\", \(redactor.redact(desc)), running \(dur)]")
             } else {
                 lines.append("- \(r.id) [\"\(cmd)\", running \(dur)]")
             }
@@ -584,15 +626,16 @@ actor BackgroundProcessRegistry {
         let errTail: String = e.stderr.utf8.count <= tailBytes
             ? e.stderr
             : "…[earlier output truncated]\n" + String(e.stderr.suffix(tailBytes))
+        let redactor = BashTools.SecretRedactor()
 
         pendingCompletions.append(Completion(
             handleId: e.id,
-            command: e.command,
-            description: e.description,
+            command: redactor.redact(e.command),
+            description: e.description.map { redactor.redact($0) },
             exitCode: exitCode,
             status: statusAfter,
-            stdoutTail: outTail,
-            stderrTail: errTail,
+            stdoutTail: redactor.redact(outTail),
+            stderrTail: redactor.redact(errTail),
             durationSeconds: duration
         ))
 
@@ -604,7 +647,7 @@ actor BackgroundProcessRegistry {
                 pendingMatchEvents.append(WatchMatch(
                     watchId: w.id,
                     handle: id,
-                    pattern: w.patternSource,
+                    pattern: redactor.redact(w.patternSource),
                     line: "[watch auto-unsubscribed — process exited]",
                     stream: "system",
                     matchedAt: Date(),
@@ -660,6 +703,7 @@ actor BackgroundProcessRegistry {
     /// times out.
     func evaluateWatches(handleId: String, stream: String, lines: [String]) {
         guard var current = watches[handleId], !current.isEmpty else { return }
+        let redactor = BashTools.SecretRedactor()
         var changed = false
         for (wIdx, w) in current.enumerated() where current.indices.contains(wIdx) {
             // Snapshot for closure capture inside the timed match.
@@ -675,8 +719,8 @@ actor BackgroundProcessRegistry {
                     pendingMatchEvents.append(WatchMatch(
                         watchId: watchRef.id,
                         handle: handleId,
-                        pattern: watchRef.patternSource,
-                        line: line,
+                        pattern: redactor.redact(watchRef.patternSource),
+                        line: redactor.redact(line),
                         stream: stream,
                         matchedAt: Date(),
                         autoUnsubscribed: reachedLimit,
@@ -695,7 +739,7 @@ actor BackgroundProcessRegistry {
                     pendingMatchEvents.append(WatchMatch(
                         watchId: watchRef.id,
                         handle: handleId,
-                        pattern: watchRef.patternSource,
+                        pattern: redactor.redact(watchRef.patternSource),
                         line: "[watch auto-unsubscribed — regex match exceeded 10ms timeout (possible catastrophic backtracking)]",
                         stream: "system",
                         matchedAt: Date(),

@@ -101,6 +101,7 @@ struct SettingsView: View {
     @State private var showingAddKey: Bool = false
     @State private var keyToDelete: ServiceKey?
     @State private var showingDeleteKeyConfirmation: Bool = false
+    @State private var serviceKeyError: String?
 
     // Calendar export/import
     @State private var isExportingCalendar: Bool = false
@@ -134,6 +135,23 @@ struct SettingsView: View {
             return value
         }
         return defaultToolSpendLimitPerTurnUSD
+    }
+
+    private var normalizedNewServiceKeyName: String {
+        newKeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isNewServiceKeyNameValid: Bool {
+        !normalizedNewServiceKeyName.isEmpty
+            && normalizedNewServiceKeyName.unicodeScalars.allSatisfy(isServiceKeyNameScalar)
+    }
+
+    private var newServiceKeyNameExists: Bool {
+        serviceKeys.contains { $0.name == normalizedNewServiceKeyName }
+    }
+
+    private var newServiceKeyEnvironmentName: String {
+        KeychainHelper.serviceKeyEnvironmentName(for: normalizedNewServiceKeyName)
     }
     
     var body: some View {
@@ -646,7 +664,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(key.name)
+                                Text("$\(KeychainHelper.serviceKeyEnvironmentName(for: key.name))")
                                     .font(.system(.body, design: .monospaced))
                                 if !key.description.isEmpty {
                                     Text(key.description)
@@ -672,17 +690,23 @@ struct SettingsView: View {
 
                 if showingAddKey {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("ENV_VAR_NAME (e.g. VERCEL_TOKEN)", text: $newKeyName)
+                        TextField("Name suffix (e.g. VERCEL)", text: $newKeyName)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                             .disableAutocorrection(true)
                             .onChange(of: newKeyName) { _ in
-                                // Enforce uppercase and underscores only
-                                newKeyName = newKeyName
-                                    .uppercased()
-                                    .replacingOccurrences(of: " ", with: "_")
-                                    .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                                serviceKeyError = nil
+                                let normalized = normalizeServiceKeyName(newKeyName)
+                                if normalized != newKeyName {
+                                    newKeyName = normalized
+                                }
                             }
+
+                        if isNewServiceKeyNameValid {
+                            Text("Available in bash as `$\(newServiceKeyEnvironmentName)`")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
 
                         TextField("Description (optional)", text: $newKeyDescription)
                             .textFieldStyle(.roundedBorder)
@@ -695,6 +719,7 @@ struct SettingsView: View {
                                 newKeyName = ""
                                 newKeyValue = ""
                                 newKeyDescription = ""
+                                serviceKeyError = nil
                                 showingAddKey = false
                             }
                             Spacer()
@@ -702,11 +727,17 @@ struct SettingsView: View {
                                 saveNewServiceKey()
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(newKeyName.isEmpty || newKeyValue.isEmpty || serviceKeys.contains(where: { $0.name == newKeyName }))
+                            .disabled(!isNewServiceKeyNameValid || newKeyValue.isEmpty || newServiceKeyNameExists)
                         }
 
-                        if serviceKeys.contains(where: { $0.name == newKeyName }) {
+                        if newServiceKeyNameExists {
                             Text("A key with this name already exists.")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+
+                        if let serviceKeyError {
+                            Text(serviceKeyError)
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
@@ -714,13 +745,14 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 } else {
                     Button {
+                        serviceKeyError = nil
                         showingAddKey = true
                     } label: {
                         Label("Add Key", systemImage: "plus.circle")
                     }
                 }
 
-                Text("Keys are stored in the macOS Keychain and injected as environment variables into every bash subprocess. The agent sees only the variable names, never the values.")
+                Text("Keys are stored in the macOS Keychain and injected into bash with the `\(KeychainHelper.serviceKeyEnvironmentPrefix)` prefix. The agent sees only the variable names, never the values.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } header: {
@@ -1946,26 +1978,54 @@ struct SettingsView: View {
     }
     
     private func saveNewServiceKey() {
-        let name = newKeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = normalizedNewServiceKeyName
         let value = newKeyValue
         let desc = newKeyDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !value.isEmpty else { return }
+        guard isNewServiceKeyNameValid, !value.isEmpty, !newServiceKeyNameExists else { return }
 
-        let entry = ServiceKey(name: name, description: desc)
-        serviceKeys.append(entry)
-        KeychainHelper.saveServiceKeys(serviceKeys)
-        KeychainHelper.saveServiceKeyValue(name: name, value: value)
+        do {
+            try KeychainHelper.saveServiceKeyValue(name: name, value: value)
 
-        newKeyName = ""
-        newKeyValue = ""
-        newKeyDescription = ""
-        showingAddKey = false
+            let entry = ServiceKey(name: name, description: desc)
+            serviceKeys.append(entry)
+            KeychainHelper.saveServiceKeys(serviceKeys)
+
+            newKeyName = ""
+            newKeyValue = ""
+            newKeyDescription = ""
+            serviceKeyError = nil
+            showingAddKey = false
+        } catch {
+            serviceKeyError = "Could not save key to Keychain: \(error.localizedDescription)"
+        }
     }
 
     private func deleteServiceKey(_ key: ServiceKey) {
         KeychainHelper.deleteServiceKeyValue(name: key.name)
         serviceKeys.removeAll { $0.name == key.name }
         KeychainHelper.saveServiceKeys(serviceKeys)
+    }
+
+    private func normalizeServiceKeyName(_ rawName: String) -> String {
+        var result = ""
+        for scalar in rawName
+            .uppercased()
+            .replacingOccurrences(of: " ", with: "_")
+            .unicodeScalars where isServiceKeyNameScalar(scalar) {
+            result.unicodeScalars.append(scalar)
+        }
+        return result
+    }
+
+    private func isServiceKeyNameScalar(_ scalar: UnicodeScalar) -> Bool {
+        switch scalar.value {
+        case 65...90, 48...57:
+            return true
+        case 95:
+            return true
+        default:
+            return false
+        }
     }
 
     private func saveArchiveChunkSize() {

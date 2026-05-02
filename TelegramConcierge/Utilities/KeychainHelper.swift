@@ -189,17 +189,23 @@ extension KeychainHelper {
 // MARK: - User-defined Service Keys
 
 /// A user-defined API key for an external service (Vercel, Supabase, etc.).
-/// The `name` doubles as the environment-variable name injected into bash
-/// subprocesses (e.g. "VERCEL_TOKEN" → `$VERCEL_TOKEN`).
+/// The `name` is the user-facing suffix; bash receives it with
+/// `serviceKeyEnvironmentPrefix` prepended (e.g. "VERCEL" -> "LOCALAGENT_KEY_VERCEL").
 struct ServiceKey: Codable, Identifiable, Equatable {
     var id: String { name }
-    let name: String        // env-var name, e.g. "VERCEL_TOKEN"
+    let name: String        // env-var suffix, e.g. "VERCEL"
     var description: String // human label, e.g. "Vercel deploy token"
 }
 
 extension KeychainHelper {
+    static let serviceKeyEnvironmentPrefix = "LOCALAGENT_KEY_"
+
     private static let serviceKeysMetadataDefaultsKey = "localagent.service_keys_metadata"
     private static let serviceKeyPrefix = "servicekey_"
+
+    static func serviceKeyEnvironmentName(for name: String) -> String {
+        serviceKeyEnvironmentPrefix + name
+    }
 
     /// Load the list of registered service keys (metadata only, no secrets).
     static func loadServiceKeys() -> [ServiceKey] {
@@ -222,8 +228,8 @@ extension KeychainHelper {
     }
 
     /// Store a service key's secret value in the Keychain.
-    static func saveServiceKeyValue(name: String, value: String) {
-        try? save(key: serviceKeyPrefix + name, value: value)
+    static func saveServiceKeyValue(name: String, value: String) throws {
+        try save(key: serviceKeyPrefix + name, value: value)
     }
 
     /// Delete a service key's secret from the Keychain.
@@ -232,12 +238,12 @@ extension KeychainHelper {
     }
 
     /// Returns all service keys as a dictionary suitable for merging into
-    /// a subprocess environment: `["VERCEL_TOKEN": "sk-...", ...]`.
+    /// a subprocess environment: `["LOCALAGENT_KEY_VERCEL": "sk-...", ...]`.
     static func serviceKeyEnvironment() -> [String: String] {
         var env: [String: String] = [:]
         for key in loadServiceKeys() {
             if let value = loadServiceKeyValue(name: key.name), !value.isEmpty {
-                env[key.name] = value
+                env[serviceKeyEnvironmentName(for: key.name)] = value
             }
         }
         return env
