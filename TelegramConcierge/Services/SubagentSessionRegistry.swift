@@ -71,16 +71,23 @@ actor SubagentSessionRegistry {
         return (id, session)
     }
 
+    /// Content extracted from a session that exceeds the token budget.
+    /// Passed to SubagentRunner for summarization before the trimmed
+    /// session is used.
+    struct SessionOverflow {
+        let trimmedMessages: [Message]
+        let trimmedToolInteractions: [ToolInteraction]
+    }
+
     /// Prepare a session for resumption by appending a new user message.
     /// Returns the updated session (with the new message + prior assistant
     /// text converted to a message), or nil if the session_id is unknown.
     ///
-    /// On resume, estimates total token count and trims oldest messages +
-    /// tool interactions if the session exceeds the configurable budget
-    /// (default 100k tokens). Trimming drops from the front, keeping the
-    /// most recent context. A future version will replace this with
-    /// summarization-based compaction.
-    func prepareResume(sessionId: String, continuationPrompt: String) -> Session? {
+    /// When the session exceeds the token budget, the oldest content is
+    /// extracted into `overflow` so the caller can summarize it before use.
+    /// The session stored on disk is already trimmed; the caller is
+    /// responsible for prepending the summary as the first message.
+    func prepareResume(sessionId: String, continuationPrompt: String) -> (session: Session, overflow: SessionOverflow?)? {
         guard var session = sessions[sessionId] else { return nil }
 
         // If the prior run ended with a text response, inject it as an
@@ -95,13 +102,23 @@ actor SubagentSessionRegistry {
         session.messages.append(userMsg)
         session.lastUsed = Date()
 
-        // Trim if over budget.
+        // Trim if over budget, capturing what was removed.
         let budget = Self.tokenBudget()
-        trimIfNeeded(&session, budget: budget)
+        let overflow = trimIfNeeded(&session, budget: budget)
 
         sessions[sessionId] = session
         persist(session)
-        return session
+        return (session, overflow)
+    }
+
+    /// Inject a summary as the first user message in a resumed session.
+    /// Called by SubagentRunner after summarizing the overflow content.
+    func injectSummary(sessionId: String, summary: String) {
+        guard var session = sessions[sessionId] else { return }
+        let summaryMsg = Message(role: .user, content: summary, timestamp: session.created)
+        session.messages.insert(summaryMsg, at: 0)
+        sessions[sessionId] = session
+        persist(session)
     }
 
     // MARK: - Context trimming
@@ -125,27 +142,39 @@ actor SubagentSessionRegistry {
         return chars / 4
     }
 
-    /// Drop oldest messages and tool interactions until we're under budget.
-    /// Keeps at least the last message (the new user prompt) and the last
-    /// 3 tool interactions so the subagent has recent context.
-    private func trimIfNeeded(_ session: inout Session, budget: Int) {
+    /// Extract oldest messages and tool interactions until the session fits
+    /// under budget. Returns the extracted content as overflow (nil if no
+    /// trimming was needed). Keeps at least the last 2 messages and last
+    /// 3 tool interactions.
+    private func trimIfNeeded(_ session: inout Session, budget: Int) -> SessionOverflow? {
         let estimated = estimateTokens(session)
-        guard estimated > budget else { return }
+        guard estimated > budget else { return nil }
 
         let minKeepInteractions = 3
         let minKeepMessages = 2  // at least last assistant + new user prompt
 
-        // Trim tool interactions from the front first (they're the biggest).
+        var trimmedInteractions: [ToolInteraction] = []
+        var trimmedMessages: [Message] = []
+
+        // Trim tool interactions from the front first (the biggest).
         while estimateTokens(session) > budget,
               session.toolInteractions.count > minKeepInteractions {
-            session.toolInteractions.removeFirst()
+            trimmedInteractions.append(session.toolInteractions.removeFirst())
         }
 
         // If still over, trim older messages from the front.
         while estimateTokens(session) > budget,
               session.messages.count > minKeepMessages {
-            session.messages.removeFirst()
+            trimmedMessages.append(session.messages.removeFirst())
         }
+
+        if trimmedInteractions.isEmpty && trimmedMessages.isEmpty {
+            return nil
+        }
+        return SessionOverflow(
+            trimmedMessages: trimmedMessages,
+            trimmedToolInteractions: trimmedInteractions
+        )
     }
 
     private static func tokenBudget() -> Int {

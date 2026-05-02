@@ -100,12 +100,14 @@ actor SubagentRunner {
         let isNew: Bool
         var messagesForLLM: [Message]
         var priorToolInteractions: [ToolInteraction]
+        var overflow: SubagentSessionRegistry.SessionOverflow? = nil
 
-        if let sid = sessionId, let session = await registry.prepareResume(sessionId: sid, continuationPrompt: invocation.taskPrompt) {
+        if let sid = sessionId, let result = await registry.prepareResume(sessionId: sid, continuationPrompt: invocation.taskPrompt) {
             resolvedSessionId = sid
             isNew = false
-            messagesForLLM = session.messages
-            priorToolInteractions = session.toolInteractions
+            messagesForLLM = result.session.messages
+            priorToolInteractions = result.session.toolInteractions
+            overflow = result.overflow
         } else {
             let (newId, session) = await registry.create(
                 subagentType: invocation.subagentType,
@@ -183,10 +185,28 @@ actor SubagentRunner {
             effectiveReasoningOverride = nil
         }
 
-        // 5. Capture a pre-run snapshot of the FilesLedger to diff after the run.
+        // 5. Summarize overflow from session resume (if any).
+        if let overflow = overflow {
+            let summary = await summarizeOverflow(
+                overflow,
+                openRouterService: openRouterService,
+                imagesDirectory: imagesDirectory,
+                documentsDirectory: documentsDirectory,
+                modelOverride: effectiveModelOverride,
+                providerOverride: effectiveProviderOverride,
+                reasoningEffortOverride: effectiveReasoningOverride
+            )
+            if let summary {
+                let summaryMsg = Message(role: .user, content: summary, timestamp: Date(timeIntervalSince1970: 0))
+                messagesForLLM.insert(summaryMsg, at: 0)
+                await registry.injectSummary(sessionId: resolvedSessionId, summary: summary)
+            }
+        }
+
+        // 6. Capture a pre-run snapshot of the FilesLedger to diff after the run.
         let preSnapshot = await FilesLedgerDiff.snapshot()
 
-        // 6. Tool loop
+        // 7. Tool loop
         var toolInteractions: [ToolInteraction] = priorToolInteractions
         var toolsCalledOrdered: [String] = []
         var seenToolNames = Set<String>()
@@ -302,14 +322,14 @@ actor SubagentRunner {
             runError = "Subagent exhausted maxTurns (\(maxTurns)) without returning a final text message"
         }
 
-        // 7. Diff FilesLedger for files touched during the run.
+        // 8. Diff FilesLedger for files touched during the run.
         let postSnapshot = await FilesLedgerDiff.snapshot()
         let filesTouched = FilesLedgerDiff.diff(pre: preSnapshot, post: postSnapshot).allTouched
 
-        // 8. Cap the final message at 32 KB (runaway-protection backstop).
+        // 9. Cap the final message at 32 KB (runaway-protection backstop).
         let cappedFinal = Self.capToBytes(finalText, limit: Self.finalMessageByteCap)
 
-        // 9. Commit run state to the session registry so the session is resumable.
+        // 10. Commit run state to the session registry so the session is resumable.
         let newInteractions = Array(toolInteractions.dropFirst(priorToolInteractions.count))
         await registry.commitRun(
             sessionId: resolvedSessionId,
@@ -330,6 +350,102 @@ actor SubagentRunner {
             spendUSD: totalSpendUSD,
             error: runError
         )
+    }
+
+    // MARK: - Session Overflow Summarization
+
+    /// Summarize content that was trimmed from a session on resume.
+    /// Returns a structured summary string, or nil if summarization fails
+    /// (in which case the subagent simply loses the old context — same as before).
+    private func summarizeOverflow(
+        _ overflow: SubagentSessionRegistry.SessionOverflow,
+        openRouterService: OpenRouterService,
+        imagesDirectory: URL,
+        documentsDirectory: URL,
+        modelOverride: String?,
+        providerOverride: [String]?,
+        reasoningEffortOverride: String?
+    ) async -> String? {
+        // Build a text representation of the trimmed content.
+        var transcript = ""
+
+        for msg in overflow.trimmedMessages {
+            let role = msg.role == .user ? "USER" : "ASSISTANT"
+            transcript += "[\(role)] \(msg.content)\n\n"
+        }
+
+        for interaction in overflow.trimmedToolInteractions {
+            if let reasoning = interaction.assistantMessage.reasoning {
+                transcript += "[THINKING] \(reasoning)\n"
+            }
+            for tc in interaction.assistantMessage.toolCalls {
+                transcript += "[TOOL CALL] \(tc.function.name)(\(tc.function.arguments))\n"
+            }
+            for result in interaction.results {
+                // Cap individual tool results to prevent the summarization prompt
+                // itself from being enormous.
+                let capped = result.content.count > 4000
+                    ? String(result.content.prefix(4000)) + "\n[...truncated]"
+                    : result.content
+                transcript += "[TOOL RESULT] \(capped)\n"
+            }
+            transcript += "\n"
+        }
+
+        guard !transcript.isEmpty else { return nil }
+
+        // Cap the total transcript to ~60k chars (~15k tokens) to keep the
+        // summarization call itself within reasonable bounds.
+        let maxTranscriptChars = 60_000
+        if transcript.count > maxTranscriptChars {
+            transcript = String(transcript.prefix(maxTranscriptChars)) + "\n\n[...older content truncated]"
+        }
+
+        let summaryPrompt = """
+        You are summarizing the earlier portion of a coding agent's work session that is being \
+        evicted from context to free up space. The agent will continue working with only this \
+        summary as reference for what happened before.
+
+        Produce a detailed, structured summary that preserves:
+        1. WHAT was accomplished — every significant action, decision, and outcome
+        2. FILES touched — exact file paths and what was done to each (created, edited, read, deleted)
+        3. KEY findings — errors encountered, solutions applied, important values/configs discovered
+        4. CURRENT STATE — where the work left off, what was in progress, any pending items
+        5. CONTEXT — any user requirements, constraints, or preferences that were established
+
+        Be thorough — information not in this summary is permanently lost. Use exact file paths, \
+        function names, and error messages. Do not generalize when specifics are available.
+
+        Format the summary as a clear, scannable document with headers and bullet points.
+
+        === TRANSCRIPT TO SUMMARIZE ===
+        \(transcript)
+        """
+
+        let summaryMessages = [Message(role: .user, content: summaryPrompt, timestamp: Date())]
+
+        do {
+            let response = try await openRouterService.generateResponse(
+                messages: summaryMessages,
+                imagesDirectory: imagesDirectory,
+                documentsDirectory: documentsDirectory,
+                tools: [],
+                modelOverride: modelOverride,
+                providerOverride: providerOverride,
+                reasoningEffortOverride: reasoningEffortOverride
+            )
+
+            switch response {
+            case .text(let content, _, _, _):
+                return "[SESSION HISTORY SUMMARY — Earlier work in this session was summarized to free context space. Details below are from the evicted portion.]\n\n\(content)"
+            case .toolCalls:
+                // Shouldn't happen with tools=[], but handle gracefully.
+                return nil
+            }
+        } catch {
+            print("[SubagentRunner] Failed to summarize session overflow: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Turn Token Budget
