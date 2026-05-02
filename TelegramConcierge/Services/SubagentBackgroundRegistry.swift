@@ -29,6 +29,7 @@ actor SubagentBackgroundRegistry {
     private var running: [String: Handle] = [:]
     private var pendingCompletions: [Completion] = []
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var executors: [String: ToolExecutor] = [:]  // for force-killing subprocesses
 
     private init() {}
 
@@ -58,6 +59,8 @@ actor SubagentBackgroundRegistry {
             summary: "spawn subagent \(id) (\(invocation.subagentType))",
             detail: invocation.description
         )
+
+        executors[id] = toolExecutor
 
         let task = Task.detached { [weak self] in
             let runner = SubagentRunner()
@@ -116,11 +119,18 @@ actor SubagentBackgroundRegistry {
         return lines.joined(separator: "\n")
     }
 
-    /// Best-effort cancellation. `SubagentRunner.run` checks `Task.isCancelled` between turns,
-    /// so cancellation takes effect at the next loop iteration.
+    /// Cancels a running subagent. Sets the cooperative cancellation flag AND
+    /// terminates any running subprocesses owned by the subagent's executor,
+    /// ensuring it exits even if stuck on blocking I/O.
     func cancel(id: String) -> Bool {
         guard let task = tasks[id] else { return false }
         task.cancel()
+        // Force-kill any subprocesses (bash, MCP) the subagent's executor owns.
+        if let executor = executors[id] {
+            Task.detached {
+                await executor.cancelAllRunningProcesses()
+            }
+        }
         return true
     }
 
@@ -133,6 +143,13 @@ actor SubagentBackgroundRegistry {
         for (_, task) in tasks {
             task.cancel()
         }
+        // Force-kill all subprocesses owned by subagent executors.
+        let execs = Array(executors.values)
+        Task.detached {
+            for executor in execs {
+                await executor.cancelAllRunningProcesses()
+            }
+        }
         return count
     }
 
@@ -141,6 +158,7 @@ actor SubagentBackgroundRegistry {
     private func markCompleted(id: String, result: SubagentRunner.RunResult) {
         guard let handle = running.removeValue(forKey: id) else { return }
         tasks.removeValue(forKey: id)
+        executors.removeValue(forKey: id)
         pendingCompletions.append(Completion(
             handle: handle,
             result: result,

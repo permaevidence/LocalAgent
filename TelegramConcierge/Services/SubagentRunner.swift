@@ -5,6 +5,13 @@ import Foundation
 /// Runs a single subagent task to completion with an isolated message history
 /// and a filtered tool list. Mirrors Claude Code's Agent/Task tool behavior.
 actor SubagentRunner {
+    /// If no progress (LLM response or tool completion) occurs within this
+    /// interval, the subagent is considered stuck and is force-killed.
+    private static let stalenessTimeout: TimeInterval = 20 * 60  // 20 minutes
+
+    /// Tracks the last time a meaningful operation completed. Reset after each
+    /// LLM response or tool execution batch.
+    private var lastProgressDate = Date()
     struct Invocation {
         let subagentType: String
         let description: String
@@ -196,6 +203,8 @@ actor SubagentRunner {
             turnsUsed = round
             do {
                 try Task.checkCancellation()
+                try checkStaleness()
+
                 let response = try await openRouterService.generateResponse(
                     messages: messagesForLLM,
                     imagesDirectory: imagesDirectory,
@@ -213,6 +222,7 @@ actor SubagentRunner {
                     providerOverride: effectiveProviderOverride,
                     reasoningEffortOverride: effectiveReasoningOverride
                 )
+                markProgress()  // LLM responded — subagent is alive
 
                 switch response {
                 case .text(let content, _, _, let spend):
@@ -244,10 +254,11 @@ actor SubagentRunner {
 
                     var toolResults: [ToolResultMessage] = []
                     if !executableCalls.isEmpty {
-                        let executed = try await toolExecutor.executeParallel(executableCalls)
+                        let executed = try await executeWithTimeout(executableCalls, using: toolExecutor)
                         toolResults.append(contentsOf: executed)
                     }
                     toolResults.append(contentsOf: blockedResults)
+                    markProgress()  // Tools completed — subagent is alive
 
                     // Accumulate any tool-internal spend (e.g. web_search nested API calls).
                     for r in toolResults { if let s = r.spendUSD { totalSpendUSD += s } }
@@ -269,6 +280,9 @@ actor SubagentRunner {
                 }
             } catch is CancellationError {
                 runError = "Subagent cancelled"
+                break loop
+            } catch let e as SubagentStalenessError {
+                runError = e.localizedDescription
                 break loop
             } catch {
                 runError = "Subagent error: \(error.localizedDescription)"
@@ -310,6 +324,47 @@ actor SubagentRunner {
         )
     }
 
+    // MARK: - Progress Watchdog
+
+    private func markProgress() {
+        lastProgressDate = Date()
+    }
+
+    private func checkStaleness() throws {
+        let elapsed = Date().timeIntervalSince(lastProgressDate)
+        if elapsed > Self.stalenessTimeout {
+            throw SubagentStalenessError(staleDuration: elapsed)
+        }
+    }
+
+    /// Races a tool execution batch against the staleness timeout.
+    /// If tools don't complete within the timeout, throws `SubagentStalenessError`
+    /// and cancels the in-flight tool tasks (best-effort cleanup).
+    private func executeWithTimeout(
+        _ calls: [ToolCall],
+        using executor: ToolExecutor
+    ) async throws -> [ToolResultMessage] {
+        try await withThrowingTaskGroup(of: [ToolResultMessage]?.self) { group in
+            group.addTask {
+                try await executor.executeParallel(calls)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(Self.stalenessTimeout * 1_000_000_000))
+                return nil  // sentinel: timeout expired
+            }
+
+            guard let first = try await group.next(),
+                  let results = first else {
+                // Timeout fired first — cancel remaining tool work.
+                group.cancelAll()
+                throw SubagentStalenessError(staleDuration: Self.stalenessTimeout)
+            }
+            // Tools finished first — cancel the sleeping timer.
+            group.cancelAll()
+            return results
+        }
+    }
+
     // MARK: - Helpers
 
     private static func capToBytes(_ s: String, limit: Int) -> String {
@@ -330,4 +385,13 @@ actor SubagentRunner {
         return marker
     }
 
+}
+
+// MARK: - Staleness Error
+
+struct SubagentStalenessError: Error, LocalizedError {
+    let staleDuration: TimeInterval
+    var errorDescription: String? {
+        "Subagent killed: no progress for \(Int(staleDuration / 60)) minutes (stuck operation)"
+    }
 }
