@@ -23,8 +23,13 @@ actor ToolExecutor {
     private var configuredSerperKey: String = ""
     private var configuredJinaKey: String = ""
 
+    private struct RunningProcessEntry {
+        let owner: ObjectIdentifier
+        let process: Process
+    }
+
     private static let runningProcessLock = NSLock()
-    private static var runningProcesses: [ObjectIdentifier: Process] = [:]
+    private static var runningProcesses: [ObjectIdentifier: RunningProcessEntry] = [:]
 
     init(outputMode: OutputMode = .mainAgent) {
         self.outputMode = outputMode
@@ -70,7 +75,7 @@ actor ToolExecutor {
     }
     
     nonisolated func cancelAllRunningProcesses() async {
-        let processes = Self.snapshotRunningProcesses()
+        let processes = Self.snapshotRunningProcesses(owner: ObjectIdentifier(self))
         guard !processes.isEmpty else { return }
         
         print("[ToolExecutor] Cancelling \(processes.count) running subprocess(es)")
@@ -104,21 +109,27 @@ actor ToolExecutor {
         }
     }
     
-    private static func registerRunningProcess(_ process: Process) {
+    private nonisolated func registerRunningProcess(_ process: Process) {
+        Self.registerRunningProcess(process, owner: ObjectIdentifier(self))
+    }
+
+    private nonisolated static func registerRunningProcess(_ process: Process, owner: ObjectIdentifier) {
         runningProcessLock.lock()
-        runningProcesses[ObjectIdentifier(process)] = process
+        runningProcesses[ObjectIdentifier(process)] = RunningProcessEntry(owner: owner, process: process)
         runningProcessLock.unlock()
     }
     
-    private static func unregisterRunningProcess(_ process: Process) {
+    private nonisolated static func unregisterRunningProcess(_ process: Process) {
         runningProcessLock.lock()
         runningProcesses.removeValue(forKey: ObjectIdentifier(process))
         runningProcessLock.unlock()
     }
     
-    private static func snapshotRunningProcesses() -> [Process] {
+    private nonisolated static func snapshotRunningProcesses(owner: ObjectIdentifier) -> [Process] {
         runningProcessLock.lock()
-        let processes = Array(runningProcesses.values)
+        let processes = runningProcesses.values.compactMap { entry in
+            entry.owner == owner ? entry.process : nil
+        }
         runningProcessLock.unlock()
         return processes
     }
@@ -1578,7 +1589,7 @@ extension ToolExecutor {
         
         do {
             try process.run()
-            ToolExecutor.registerRunningProcess(process)
+            registerRunningProcess(process)
             defer { ToolExecutor.unregisterRunningProcess(process) }
             
             while process.isRunning {
@@ -1736,7 +1747,7 @@ extension ToolExecutor {
                 
                 do {
                     try process.run()
-                    ToolExecutor.registerRunningProcess(process)
+                    self.registerRunningProcess(process)
                     DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds) {
                         if process.isRunning {
                             process.terminate()
@@ -1806,7 +1817,7 @@ extension ToolExecutor {
                     
                     do {
                         try process.run()
-                        ToolExecutor.registerRunningProcess(process)
+                        self.registerRunningProcess(process)
                         DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds) {
                             if process.isRunning {
                                 process.terminate()
@@ -2065,7 +2076,7 @@ extension ToolExecutor {
             
             do {
                 try process.run()
-                ToolExecutor.registerRunningProcess(process)
+                self.registerRunningProcess(process)
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds) {
                     if process.isRunning {
                         process.terminate()

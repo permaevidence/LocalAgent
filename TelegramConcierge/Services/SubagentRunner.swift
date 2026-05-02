@@ -338,30 +338,56 @@ actor SubagentRunner {
     }
 
     /// Races a tool execution batch against the staleness timeout.
-    /// If tools don't complete within the timeout, throws `SubagentStalenessError`
-    /// and cancels the in-flight tool tasks (best-effort cleanup).
+    /// Uses unstructured tasks so timeout can return even when tool execution is
+    /// blocked in non-cooperative I/O and would prevent a task group from exiting.
     private func executeWithTimeout(
         _ calls: [ToolCall],
         using executor: ToolExecutor
     ) async throws -> [ToolResultMessage] {
-        try await withThrowingTaskGroup(of: [ToolResultMessage]?.self) { group in
-            group.addTask {
-                try await executor.executeParallel(calls)
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(Self.stalenessTimeout * 1_000_000_000))
-                return nil  // sentinel: timeout expired
-            }
+        let raceSlot = ToolExecutionTimeoutRaceSlot()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    Task {
+                        await executor.cancelAllRunningProcesses()
+                    }
+                    return
+                }
 
-            guard let first = try await group.next(),
-                  let results = first else {
-                // Timeout fired first — cancel remaining tool work.
-                group.cancelAll()
-                throw SubagentStalenessError(staleDuration: Self.stalenessTimeout)
+                let race = ToolExecutionTimeoutRace(continuation: continuation)
+                raceSlot.set(race)
+
+                let executionTask = Task {
+                    do {
+                        let results = try await executor.executeParallel(calls)
+                        race.resolve(.success(results))
+                    } catch {
+                        race.resolve(.failure(error))
+                    }
+                }
+                race.setExecutionTask(executionTask)
+
+                let timeoutTask = Task {
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(Self.stalenessTimeout * 1_000_000_000))
+                    } catch {
+                        return
+                    }
+                    race.cancelExecution()
+                    Task {
+                        await executor.cancelAllRunningProcesses()
+                    }
+                    race.resolve(.failure(SubagentStalenessError(staleDuration: Self.stalenessTimeout)))
+                }
+                race.setTimeoutTask(timeoutTask)
             }
-            // Tools finished first — cancel the sleeping timer.
-            group.cancelAll()
-            return results
+        } onCancel: {
+            raceSlot.cancelExecution()
+            raceSlot.resolve(.failure(CancellationError()))
+            Task {
+                await executor.cancelAllRunningProcesses()
+            }
         }
     }
 
@@ -393,5 +419,111 @@ struct SubagentStalenessError: Error, LocalizedError {
     let staleDuration: TimeInterval
     var errorDescription: String? {
         "Subagent killed: no progress for \(Int(staleDuration / 60)) minutes (stuck operation)"
+    }
+}
+
+private final class ToolExecutionTimeoutRace {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<[ToolResultMessage], Error>?
+    private var executionTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var resolved = false
+
+    init(continuation: CheckedContinuation<[ToolResultMessage], Error>) {
+        self.continuation = continuation
+    }
+
+    func setExecutionTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = resolved
+        if !resolved {
+            executionTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func setTimeoutTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = resolved
+        if !resolved {
+            timeoutTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func cancelExecution() {
+        lock.lock()
+        let task = executionTask
+        lock.unlock()
+        task?.cancel()
+    }
+
+    func resolve(_ result: Result<[ToolResultMessage], Error>) {
+        lock.lock()
+        guard !resolved else {
+            lock.unlock()
+            return
+        }
+        resolved = true
+        let continuation = continuation
+        self.continuation = nil
+        let timeoutTask = timeoutTask
+        let executionTask = executionTask
+        lock.unlock()
+
+        timeoutTask?.cancel()
+        if case .failure(let error) = result, error is SubagentStalenessError {
+            executionTask?.cancel()
+        }
+
+        switch result {
+        case .success(let results):
+            continuation?.resume(returning: results)
+        case .failure(let error):
+            continuation?.resume(throwing: error)
+        }
+    }
+}
+
+private final class ToolExecutionTimeoutRaceSlot {
+    private let lock = NSLock()
+    private var race: ToolExecutionTimeoutRace?
+    private var cancellationRequested = false
+
+    func set(_ race: ToolExecutionTimeoutRace) {
+        lock.lock()
+        let shouldCancel = cancellationRequested
+        if !shouldCancel {
+            self.race = race
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            race.cancelExecution()
+            race.resolve(.failure(CancellationError()))
+        }
+    }
+
+    func cancelExecution() {
+        lock.lock()
+        cancellationRequested = true
+        let race = race
+        lock.unlock()
+        race?.cancelExecution()
+    }
+
+    func resolve(_ result: Result<[ToolResultMessage], Error>) {
+        lock.lock()
+        let race = race
+        lock.unlock()
+        race?.resolve(result)
     }
 }
