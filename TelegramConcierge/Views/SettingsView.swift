@@ -93,7 +93,15 @@ struct SettingsView: View {
     @State private var pendingImportURL: URL?
     @State private var showingMindFilePicker: Bool = false
     
-    // Clear contacts
+    // Service keys
+    @State private var serviceKeys: [ServiceKey] = []
+    @State private var newKeyName: String = ""
+    @State private var newKeyValue: String = ""
+    @State private var newKeyDescription: String = ""
+    @State private var showingAddKey: Bool = false
+    @State private var keyToDelete: ServiceKey?
+    @State private var showingDeleteKeyConfirmation: Bool = false
+
     // Calendar export/import
     @State private var isExportingCalendar: Bool = false
     @State private var isImportingCalendar: Bool = false
@@ -625,10 +633,104 @@ struct SettingsView: View {
             } header: {
                 Label("Image Generation (Gemini)", systemImage: "photo.badge.plus")
             }
-            
+
+            // MARK: - Service Keys
+            Section {
+                if serviceKeys.isEmpty && !showingAddKey {
+                    Text("No service keys configured. Add API keys for external services like Vercel, Supabase, or any CLI tool that reads credentials from environment variables.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                ForEach(serviceKeys) { key in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(key.name)
+                                    .font(.system(.body, design: .monospaced))
+                                if !key.description.isEmpty {
+                                    Text(key.description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Text("••••••••")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Button(role: .destructive) {
+                                keyToDelete = key
+                                showingDeleteKeyConfirmation = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+
+                if showingAddKey {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("ENV_VAR_NAME (e.g. VERCEL_TOKEN)", text: $newKeyName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                            .disableAutocorrection(true)
+                            .onChange(of: newKeyName) { _ in
+                                // Enforce uppercase and underscores only
+                                newKeyName = newKeyName
+                                    .uppercased()
+                                    .replacingOccurrences(of: " ", with: "_")
+                                    .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                            }
+
+                        TextField("Description (optional)", text: $newKeyDescription)
+                            .textFieldStyle(.roundedBorder)
+
+                        SecureField("Secret value", text: $newKeyValue)
+                            .textFieldStyle(.roundedBorder)
+
+                        HStack {
+                            Button("Cancel") {
+                                newKeyName = ""
+                                newKeyValue = ""
+                                newKeyDescription = ""
+                                showingAddKey = false
+                            }
+                            Spacer()
+                            Button("Save") {
+                                saveNewServiceKey()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(newKeyName.isEmpty || newKeyValue.isEmpty || serviceKeys.contains(where: { $0.name == newKeyName }))
+                        }
+
+                        if serviceKeys.contains(where: { $0.name == newKeyName }) {
+                            Text("A key with this name already exists.")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    Button {
+                        showingAddKey = true
+                    } label: {
+                        Label("Add Key", systemImage: "plus.circle")
+                    }
+                }
+
+                Text("Keys are stored in the macOS Keychain and injected as environment variables into every bash subprocess. The agent sees only the variable names, never the values.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Label("Service Keys", systemImage: "key.fill")
+            }
+
         }
         .formStyle(.grouped)
         .padding(.horizontal)
+        .onAppear { serviceKeys = KeychainHelper.loadServiceKeys() }
         .onChange(of: serperApiKey) { _ in autoSave { saveWebSearchSection() } }
         .onChange(of: jinaApiKey) { _ in autoSave { saveWebSearchSection() } }
         .onChange(of: geminiApiKey) { _ in autoSave { saveImageGenSection() } }
@@ -636,6 +738,19 @@ struct SettingsView: View {
         .onChange(of: geminiImageInputCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputTextCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
         .onChange(of: geminiImageOutputImageCostPerMillionTokensUSD) { _ in autoSave { saveImageGenSection() } }
+        .alert("Delete Service Key?", isPresented: $showingDeleteKeyConfirmation) {
+            Button("Cancel", role: .cancel) { keyToDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let key = keyToDelete {
+                    deleteServiceKey(key)
+                }
+                keyToDelete = nil
+            }
+        } message: {
+            if let key = keyToDelete {
+                Text("Remove \(key.name)? The secret will be deleted from the Keychain.")
+            }
+        }
     }
 
     // MARK: - Data Tab
@@ -1830,6 +1945,29 @@ struct SettingsView: View {
         }
     }
     
+    private func saveNewServiceKey() {
+        let name = newKeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = newKeyValue
+        let desc = newKeyDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !value.isEmpty else { return }
+
+        let entry = ServiceKey(name: name, description: desc)
+        serviceKeys.append(entry)
+        KeychainHelper.saveServiceKeys(serviceKeys)
+        KeychainHelper.saveServiceKeyValue(name: name, value: value)
+
+        newKeyName = ""
+        newKeyValue = ""
+        newKeyDescription = ""
+        showingAddKey = false
+    }
+
+    private func deleteServiceKey(_ key: ServiceKey) {
+        KeychainHelper.deleteServiceKeyValue(name: key.name)
+        serviceKeys.removeAll { $0.name == key.name }
+        KeychainHelper.saveServiceKeys(serviceKeys)
+    }
+
     private func saveArchiveChunkSize() {
         // Validate and save archive chunk size (empty = default)
         let normalizedChunkSize = archiveChunkSize.trimmingCharacters(in: .whitespacesAndNewlines)

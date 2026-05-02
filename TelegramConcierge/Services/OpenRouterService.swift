@@ -844,6 +844,19 @@ actor OpenRouterService {
                 prompt += section
             }
 
+            // Service keys — tell the agent which env vars are available in bash.
+            let serviceKeys = KeychainHelper.loadServiceKeys().filter {
+                KeychainHelper.loadServiceKeyValue(name: $0.name) != nil
+            }
+            if !serviceKeys.isEmpty {
+                var section = "\n\n**Service API keys** (available as environment variables in bash — use `$NAME` in commands, never hardcode values):\n"
+                for key in serviceKeys {
+                    let desc = key.description.isEmpty ? "" : " — \(key.description)"
+                    section += "- `$\(key.name)`\(desc)\n"
+                }
+                prompt += section
+            }
+
             prompt += """
 
             🕐 **Today is \(currentDate). Check conversation timestamps for the current time.**

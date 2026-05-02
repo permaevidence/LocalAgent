@@ -41,6 +41,11 @@ enum BashTools {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
+        // Inject user-defined service keys as environment variables.
+        var env = ProcessInfo.processInfo.environment
+        for (k, v) in KeychainHelper.serviceKeyEnvironment() { env[k] = v }
+        process.environment = env
+
         let outPipe = Pipe()
         let errPipe = Pipe()
         process.standardOutput = outPipe
@@ -342,6 +347,11 @@ actor BackgroundProcessRegistry {
             }
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
+
+        // Inject user-defined service keys as environment variables.
+        var env = ProcessInfo.processInfo.environment
+        for (k, v) in KeychainHelper.serviceKeyEnvironment() { env[k] = v }
+        process.environment = env
 
         let outPipe = Pipe()
         let errPipe = Pipe()

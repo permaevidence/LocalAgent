@@ -186,6 +186,64 @@ extension KeychainHelper {
     static let defaultSubagentTurnTokenBudget = 200000
 }
 
+// MARK: - User-defined Service Keys
+
+/// A user-defined API key for an external service (Vercel, Supabase, etc.).
+/// The `name` doubles as the environment-variable name injected into bash
+/// subprocesses (e.g. "VERCEL_TOKEN" → `$VERCEL_TOKEN`).
+struct ServiceKey: Codable, Identifiable, Equatable {
+    var id: String { name }
+    let name: String        // env-var name, e.g. "VERCEL_TOKEN"
+    var description: String // human label, e.g. "Vercel deploy token"
+}
+
+extension KeychainHelper {
+    private static let serviceKeysMetadataDefaultsKey = "localagent.service_keys_metadata"
+    private static let serviceKeyPrefix = "servicekey_"
+
+    /// Load the list of registered service keys (metadata only, no secrets).
+    static func loadServiceKeys() -> [ServiceKey] {
+        guard let data = UserDefaults.standard.data(forKey: serviceKeysMetadataDefaultsKey),
+              let keys = try? JSONDecoder().decode([ServiceKey].self, from: data) else {
+            return []
+        }
+        return keys
+    }
+
+    /// Persist the metadata list (names + descriptions) to UserDefaults.
+    static func saveServiceKeys(_ keys: [ServiceKey]) {
+        guard let data = try? JSONEncoder().encode(keys) else { return }
+        UserDefaults.standard.set(data, forKey: serviceKeysMetadataDefaultsKey)
+    }
+
+    /// Read a service key's secret value from the Keychain.
+    static func loadServiceKeyValue(name: String) -> String? {
+        load(key: serviceKeyPrefix + name)
+    }
+
+    /// Store a service key's secret value in the Keychain.
+    static func saveServiceKeyValue(name: String, value: String) {
+        try? save(key: serviceKeyPrefix + name, value: value)
+    }
+
+    /// Delete a service key's secret from the Keychain.
+    static func deleteServiceKeyValue(name: String) {
+        try? delete(key: serviceKeyPrefix + name)
+    }
+
+    /// Returns all service keys as a dictionary suitable for merging into
+    /// a subprocess environment: `["VERCEL_TOKEN": "sk-...", ...]`.
+    static func serviceKeyEnvironment() -> [String: String] {
+        var env: [String: String] = [:]
+        for key in loadServiceKeys() {
+            if let value = loadServiceKeyValue(name: key.name), !value.isEmpty {
+                env[key.name] = value
+            }
+        }
+        return env
+    }
+}
+
 // MARK: - OpenRouter Spend Ledger (UserDefaults-backed)
 extension KeychainHelper {
     private static let openRouterSpendLedgerDefaultsKey = "openrouter_spend_ledger_v1"
