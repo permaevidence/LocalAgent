@@ -183,7 +183,7 @@ extension KeychainHelper {
 
     // Subagent per-turn context budget (prompt_tokens ceiling during a single run)
     static let subagentTurnTokenBudgetKey = "subagent_turn_token_budget"
-    static let defaultSubagentTurnTokenBudget = 100000
+    static let defaultSubagentTurnTokenBudget = 200000
 }
 
 // MARK: - OpenRouter Spend Ledger (UserDefaults-backed)

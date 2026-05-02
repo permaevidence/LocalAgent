@@ -493,7 +493,7 @@ struct AgentsSettingsView: View {
                 cardTitle("Turn context budget", systemImage: "gauge.with.needle",
                           subtitle: "Maximum prompt tokens a subagent can consume during a single run. When exceeded, the subagent is forced to wrap up and return its results. Applies globally to all subagents.")
                 HStack(spacing: 10) {
-                    TextField("100000", text: $turnTokenBudget)
+                    TextField("200000", text: $turnTokenBudget)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 160)
                         .font(.body.monospacedDigit())
@@ -507,7 +507,7 @@ struct AgentsSettingsView: View {
                         .font(.body)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("default 100,000")
+                    Text("default 200,000")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
