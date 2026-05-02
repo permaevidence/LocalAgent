@@ -195,11 +195,26 @@ extension KeychainHelper {
 ///            ("VERCEL_TOKEN", "SUPABASE"). Used for Keychain storage and fallback
 ///            global env vars (`LOCALAGENT_KEY_VERCEL_TOKEN`).
 /// - `description`: optional extra context.
-struct ServiceKey: Codable, Identifiable, Equatable {
+struct ServiceKey: Identifiable, Equatable, Codable {
     var id: String { name }
     let name: String        // normalized key, e.g. "VERCEL_TOKEN"
     let label: String       // user-friendly name, e.g. "Vercel Token"
     var description: String // optional description
+
+    init(name: String, label: String, description: String) {
+        self.name = name
+        self.label = label
+        self.description = description
+    }
+
+    // Backward-compatible decoding: keys saved before the `label` field
+    // was added only have `name` + `description`. Fall back to `name`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? name
+        description = try container.decode(String.self, forKey: .description)
+    }
 
     /// Derive a safe env-var-style key from an arbitrary user label.
     static func normalizeName(from label: String) -> String {

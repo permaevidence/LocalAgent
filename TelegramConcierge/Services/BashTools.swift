@@ -49,15 +49,13 @@ enum BashTools {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
-        // Build environment: inherit app env + global fallback + per-command secrets.
+        // Only per-command secrets are injected into this process.
+        // The redactor still knows ALL secrets for comprehensive output scrubbing.
         var env = ProcessInfo.processInfo.environment
-        let globalKeyEnv = KeychainHelper.serviceKeyEnvironment()
-        for (k, v) in globalKeyEnv { env[k] = v }
         for (k, v) in perCommandEnv { env[k] = v }
         process.environment = env
 
-        // Redactor covers both global and per-command secrets.
-        let allSecrets = globalKeyEnv.merging(perCommandEnv) { _, new in new }
+        let allSecrets = KeychainHelper.serviceKeyEnvironment().merging(perCommandEnv) { _, new in new }
         let redactor = SecretRedactor(environment: allSecrets)
 
         let outPipe = Pipe()
@@ -406,13 +404,14 @@ actor BackgroundProcessRegistry {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
-        // Build env: inherit app env + global fallback keys + per-command secrets.
+        // Only per-command secrets are injected into this process.
         var env = ProcessInfo.processInfo.environment
-        let globalKeyEnv = KeychainHelper.serviceKeyEnvironment()
-        let allSecrets = globalKeyEnv.merging(perCommandEnv) { _, new in new }
-        let redactor = BashTools.SecretRedactor(environment: allSecrets)
-        for (k, v) in allSecrets { env[k] = v }
+        for (k, v) in perCommandEnv { env[k] = v }
         process.environment = env
+
+        // Redactor still knows ALL secrets for comprehensive output scrubbing.
+        let allSecrets = KeychainHelper.serviceKeyEnvironment().merging(perCommandEnv) { _, new in new }
+        let redactor = BashTools.SecretRedactor(environment: allSecrets)
 
         let outPipe = Pipe()
         let errPipe = Pipe()
