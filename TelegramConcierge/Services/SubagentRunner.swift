@@ -382,24 +382,12 @@ actor SubagentRunner {
                 transcript += "[TOOL CALL] \(tc.function.name)(\(tc.function.arguments))\n"
             }
             for result in interaction.results {
-                // Cap individual tool results to prevent the summarization prompt
-                // itself from being enormous.
-                let capped = result.content.count > 4000
-                    ? String(result.content.prefix(4000)) + "\n[...truncated]"
-                    : result.content
-                transcript += "[TOOL RESULT] \(capped)\n"
+                transcript += "[TOOL RESULT] \(result.content)\n"
             }
             transcript += "\n"
         }
 
         guard !transcript.isEmpty else { return nil }
-
-        // Cap the total transcript to ~60k chars (~15k tokens) to keep the
-        // summarization call itself within reasonable bounds.
-        let maxTranscriptChars = 60_000
-        if transcript.count > maxTranscriptChars {
-            transcript = String(transcript.prefix(maxTranscriptChars)) + "\n\n[...older content truncated]"
-        }
 
         let summaryPrompt = """
         You are summarizing the earlier portion of a coding agent's work session that is being \
