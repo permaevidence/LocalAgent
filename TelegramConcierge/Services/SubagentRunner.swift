@@ -198,6 +198,8 @@ actor SubagentRunner {
         let maxTurns = AgentTurnOverrides.override(forAgent: subagentType.name)
             ?? subagentType.defaultMaxTurns
         let turnStartDate = Date()
+        let turnTokenBudget = Self.turnTokenBudget()
+        var lastPromptTokens: Int? = nil
 
         loop: for round in 1...maxTurns {
             turnsUsed = round
@@ -205,11 +207,13 @@ actor SubagentRunner {
                 try Task.checkCancellation()
                 try checkStaleness()
 
+                // If context already exceeds the turn budget, force a final response.
+                let forceFinish = lastPromptTokens.map { $0 >= turnTokenBudget } ?? false
                 let response = try await openRouterService.generateResponse(
                     messages: messagesForLLM,
                     imagesDirectory: imagesDirectory,
                     documentsDirectory: documentsDirectory,
-                    tools: filteredTools,
+                    tools: forceFinish ? [] : filteredTools,
                     toolResultMessages: toolInteractions.isEmpty ? nil : toolInteractions,
                     calendarContext: nil,
                     emailContext: nil,
@@ -217,7 +221,9 @@ actor SubagentRunner {
                     totalChunkCount: 0,
                     currentUserMessageId: syntheticUser.id,
                     turnStartDate: turnStartDate,
-                    finalResponseInstruction: subagentType.systemPromptSuffix,
+                    finalResponseInstruction: forceFinish
+                        ? "[CONTEXT BUDGET EXHAUSTED] Your context has reached the token limit for this turn. Provide your final answer NOW — summarize your progress and state what remains."
+                        : subagentType.systemPromptSuffix,
                     modelOverride: effectiveModelOverride,
                     providerOverride: effectiveProviderOverride,
                     reasoningEffortOverride: effectiveReasoningOverride
@@ -225,13 +231,15 @@ actor SubagentRunner {
                 markProgress()  // LLM responded — subagent is alive
 
                 switch response {
-                case .text(let content, _, _, let spend):
+                case .text(let content, let promptTk, _, let spend):
                     if let spend { totalSpendUSD += spend }
+                    if let pt = promptTk { lastPromptTokens = pt }
                     finalText = content
                     break loop
 
-                case .toolCalls(let assistantMessage, let calls, _, _, let spend):
+                case .toolCalls(let assistantMessage, let calls, let promptTk, _, let spend):
                     if let spend { totalSpendUSD += spend }
+                    if let pt = promptTk { lastPromptTokens = pt }
 
                     // Filter out any tool calls the subagent is not allowed to make.
                     var executableCalls: [ToolCall] = []
@@ -322,6 +330,16 @@ actor SubagentRunner {
             spendUSD: totalSpendUSD,
             error: runError
         )
+    }
+
+    // MARK: - Turn Token Budget
+
+    private static func turnTokenBudget() -> Int {
+        if let raw = KeychainHelper.load(key: KeychainHelper.subagentTurnTokenBudgetKey),
+           let parsed = Int(raw), parsed > 0 {
+            return parsed
+        }
+        return KeychainHelper.defaultSubagentTurnTokenBudget
     }
 
     // MARK: - Progress Watchdog

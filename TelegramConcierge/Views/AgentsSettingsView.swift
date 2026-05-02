@@ -48,6 +48,7 @@ struct AgentsSettingsView: View {
     @State private var showingDeleteConfirmation: Bool = false
     @State private var pendingDeleteName: String? = nil
     @State private var sessionTokenBudget: String = ""
+    @State private var turnTokenBudget: String = ""
 
     // Per-agent model override draft state — updated when the user types.
     // Keyed by agent name so switching agents preserves unsaved drafts per-agent.
@@ -78,6 +79,7 @@ struct AgentsSettingsView: View {
                 if selectedAgent != "main" { modelCard }
                 mcpCard
                 maxTurnsCard
+                if selectedAgent != "main" { turnContextBudgetCard }
                 if selectedAgent != "main" { sessionMemoryCard }
             }
             .padding(.horizontal, 16)
@@ -87,6 +89,8 @@ struct AgentsSettingsView: View {
         .task {
             sessionTokenBudget = KeychainHelper.load(key: KeychainHelper.subagentSessionTokenBudgetKey)
                 ?? String(KeychainHelper.defaultSubagentSessionTokenBudget)
+            turnTokenBudget = KeychainHelper.load(key: KeychainHelper.subagentTurnTokenBudgetKey)
+                ?? String(KeychainHelper.defaultSubagentTurnTokenBudget)
             await reload()
         }
         .sheet(isPresented: $showingEditorSheet) {
@@ -476,6 +480,36 @@ struct AgentsSettingsView: View {
                         }
                         .padding(.top, 4)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Turn context budget card
+
+    private var turnContextBudgetCard: some View {
+        cardContainer {
+            VStack(alignment: .leading, spacing: 10) {
+                cardTitle("Turn context budget", systemImage: "gauge.with.needle",
+                          subtitle: "Maximum prompt tokens a subagent can consume during a single run. When exceeded, the subagent is forced to wrap up and return its results. Applies globally to all subagents.")
+                HStack(spacing: 10) {
+                    TextField("100000", text: $turnTokenBudget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 160)
+                        .font(.body.monospacedDigit())
+                        .onChange(of: turnTokenBudget) { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                            if let val = Int(trimmed), val > 0 {
+                                try? KeychainHelper.save(key: KeychainHelper.subagentTurnTokenBudgetKey, value: trimmed)
+                            }
+                        }
+                    Text("tokens")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("default 100,000")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
         }

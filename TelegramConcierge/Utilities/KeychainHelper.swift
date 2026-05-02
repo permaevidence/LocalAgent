@@ -180,6 +180,10 @@ extension KeychainHelper {
     // Subagent Session Settings
     static let subagentSessionTokenBudgetKey = "subagent_session_token_budget"
     static let defaultSubagentSessionTokenBudget = 100000
+
+    // Subagent per-turn context budget (prompt_tokens ceiling during a single run)
+    static let subagentTurnTokenBudgetKey = "subagent_turn_token_budget"
+    static let defaultSubagentTurnTokenBudget = 100000
 }
 
 // MARK: - OpenRouter Spend Ledger (UserDefaults-backed)
