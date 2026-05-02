@@ -143,13 +143,14 @@ extension ToolExecutor {
         }
         let workdir = args.string("workdir")
         let description = args.string("description")
+        let serviceKeyEnv = args.stringDict("service_key_env")
         let runInBackground = args.bool("run_in_background") ?? false
         if runInBackground {
-            let result = await BashTools.runBackground(command: command, workdir: workdir, description: description)
+            let result = await BashTools.runBackground(command: command, workdir: workdir, description: description, serviceKeyEnv: serviceKeyEnv)
             return result.content
         } else {
             let timeoutMs = args.int("timeout_ms")
-            let result = await BashTools.runForeground(command: command, timeoutMs: timeoutMs, workdir: workdir, description: description)
+            let result = await BashTools.runForeground(command: command, timeoutMs: timeoutMs, workdir: workdir, description: description, serviceKeyEnv: serviceKeyEnv)
             return result.content
         }
     }
@@ -337,6 +338,16 @@ extension ToolExecutor {
                 default: return nil
                 }
             }
+            return nil
+        }
+
+        func stringDict(_ key: String) -> [String: String]? {
+            if let dict = raw[key] as? [String: String], !dict.isEmpty { return dict }
+            // Models sometimes emit the object as a JSON string.
+            if let s = raw[key] as? String,
+               let data = s.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+               !dict.isEmpty { return dict }
             return nil
         }
 

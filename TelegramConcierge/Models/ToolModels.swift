@@ -825,7 +825,8 @@ enum AvailableTools {
                     "timeout_ms": ParameterProperty(type: "integer", description: "Optional foreground timeout in milliseconds (max 600000). Ignored when run_in_background=true."),
                     "workdir": ParameterProperty(type: "string", description: "Optional absolute working directory. Must exist."),
                     "description": ParameterProperty(type: "string", description: "Short 5-10 word description of what the command does (for your own future reference in background mode)."),
-                    "run_in_background": ParameterProperty(type: "boolean", description: "Optional. When true, spawn detached and return a handle immediately.")
+                    "run_in_background": ParameterProperty(type: "boolean", description: "Optional. When true, spawn detached and return a handle immediately."),
+                    "service_key_env": ParameterProperty(type: "object", description: "Optional per-command secret injection. Maps the CLI-expected env-var name to the friendly service key label. Example: {\"VERCEL_TOKEN\": \"Vercel Token\"} — the app resolves the label to the real secret and injects VERCEL_TOKEN=<secret> into this command's environment only. The secret never appears in the conversation.")
                 ],
                 required: ["command"]
             )

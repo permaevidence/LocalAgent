@@ -137,21 +137,20 @@ struct SettingsView: View {
         return defaultToolSpendLimitPerTurnUSD
     }
 
-    private var normalizedNewServiceKeyName: String {
+    private var trimmedNewKeyLabel: String {
         newKeyName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var derivedInternalName: String {
+        ServiceKey.normalizeName(from: trimmedNewKeyLabel)
+    }
+
     private var isNewServiceKeyNameValid: Bool {
-        !normalizedNewServiceKeyName.isEmpty
-            && normalizedNewServiceKeyName.unicodeScalars.allSatisfy(isServiceKeyNameScalar)
+        !trimmedNewKeyLabel.isEmpty && !derivedInternalName.isEmpty
     }
 
     private var newServiceKeyNameExists: Bool {
-        serviceKeys.contains { $0.name == normalizedNewServiceKeyName }
-    }
-
-    private var newServiceKeyEnvironmentName: String {
-        KeychainHelper.serviceKeyEnvironmentName(for: normalizedNewServiceKeyName)
+        serviceKeys.contains { $0.name == derivedInternalName }
     }
     
     var body: some View {
@@ -655,7 +654,7 @@ struct SettingsView: View {
             // MARK: - Service Keys
             Section {
                 if serviceKeys.isEmpty && !showingAddKey {
-                    Text("No service keys configured. Add API keys for external services like Vercel, Supabase, or any CLI tool that reads credentials from environment variables.")
+                    Text("No service keys configured. Add API keys for external services (Vercel, Supabase, OpenAI, etc.). The agent can use them in bash commands without ever seeing the secret values.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -664,8 +663,8 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("$\(KeychainHelper.serviceKeyEnvironmentName(for: key.name))")
-                                    .font(.system(.body, design: .monospaced))
+                                Text(key.label)
+                                    .font(.body)
                                 if !key.description.isEmpty {
                                     Text(key.description)
                                         .font(.caption)
@@ -690,20 +689,15 @@ struct SettingsView: View {
 
                 if showingAddKey {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("Name suffix (e.g. VERCEL)", text: $newKeyName)
+                        TextField("Name (e.g. Vercel Token, Supabase API Key)", text: $newKeyName)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
                             .disableAutocorrection(true)
                             .onChange(of: newKeyName) { _ in
                                 serviceKeyError = nil
-                                let normalized = normalizeServiceKeyName(newKeyName)
-                                if normalized != newKeyName {
-                                    newKeyName = normalized
-                                }
                             }
 
                         if isNewServiceKeyNameValid {
-                            Text("Available in bash as `$\(newServiceKeyEnvironmentName)`")
+                            Text("Internal key: \(derivedInternalName)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -752,7 +746,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Keys are stored in the macOS Keychain and injected into bash with the `\(KeychainHelper.serviceKeyEnvironmentPrefix)` prefix. The agent sees only the variable names, never the values.")
+                Text("Keys are stored in the macOS Keychain. The agent injects them per-command via `service_key_env` — only the requested key is exposed to each subprocess.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } header: {
@@ -1978,15 +1972,16 @@ struct SettingsView: View {
     }
     
     private func saveNewServiceKey() {
-        let name = normalizedNewServiceKeyName
+        let label = trimmedNewKeyLabel
+        let internalName = derivedInternalName
         let value = newKeyValue
         let desc = newKeyDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isNewServiceKeyNameValid, !value.isEmpty, !newServiceKeyNameExists else { return }
 
         do {
-            try KeychainHelper.saveServiceKeyValue(name: name, value: value)
+            try KeychainHelper.saveServiceKeyValue(name: internalName, value: value)
 
-            let entry = ServiceKey(name: name, description: desc)
+            let entry = ServiceKey(name: internalName, label: label, description: desc)
             serviceKeys.append(entry)
             KeychainHelper.saveServiceKeys(serviceKeys)
 
@@ -2004,28 +1999,6 @@ struct SettingsView: View {
         KeychainHelper.deleteServiceKeyValue(name: key.name)
         serviceKeys.removeAll { $0.name == key.name }
         KeychainHelper.saveServiceKeys(serviceKeys)
-    }
-
-    private func normalizeServiceKeyName(_ rawName: String) -> String {
-        var result = ""
-        for scalar in rawName
-            .uppercased()
-            .replacingOccurrences(of: " ", with: "_")
-            .unicodeScalars where isServiceKeyNameScalar(scalar) {
-            result.unicodeScalars.append(scalar)
-        }
-        return result
-    }
-
-    private func isServiceKeyNameScalar(_ scalar: UnicodeScalar) -> Bool {
-        switch scalar.value {
-        case 65...90, 48...57:
-            return true
-        case 95:
-            return true
-        default:
-            return false
-        }
     }
 
     private func saveArchiveChunkSize() {

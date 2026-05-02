@@ -27,9 +27,17 @@ enum BashTools {
         command: String,
         timeoutMs: Int? = nil,
         workdir: String? = nil,
-        description: String? = nil
+        description: String? = nil,
+        serviceKeyEnv: [String: String]? = nil
     ) async -> OpResult {
         let timeout = min(max(timeoutMs ?? foregroundDefaultTimeoutMs, 100), foregroundMaxTimeoutMs)
+
+        // Resolve per-command service key mapping.
+        let (perCommandEnv, missingKeys) = resolvePerCommandKeys(serviceKeyEnv)
+        if !missingKeys.isEmpty {
+            return OpResult(content: jsonError("service_key_env: unknown keys: \(missingKeys.joined(separator: ", "))"))
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", command]
@@ -41,10 +49,16 @@ enum BashTools {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
+        // Build environment: inherit app env + global fallback + per-command secrets.
         var env = ProcessInfo.processInfo.environment
-        let serviceKeyEnv = KeychainHelper.serviceKeyEnvironment()
-        for (k, v) in serviceKeyEnv { env[k] = v }
+        let globalKeyEnv = KeychainHelper.serviceKeyEnvironment()
+        for (k, v) in globalKeyEnv { env[k] = v }
+        for (k, v) in perCommandEnv { env[k] = v }
         process.environment = env
+
+        // Redactor covers both global and per-command secrets.
+        let allSecrets = globalKeyEnv.merging(perCommandEnv) { _, new in new }
+        let redactor = SecretRedactor(environment: allSecrets)
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -74,7 +88,6 @@ enum BashTools {
 
         let stdoutData = (try? outPipe.fileHandleForReading.readToEnd()) ?? Data()
         let stderrData = (try? errPipe.fileHandleForReading.readToEnd()) ?? Data()
-        let redactor = SecretRedactor(environment: serviceKeyEnv)
         let stdoutRaw = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderrRaw = String(data: stderrData, encoding: .utf8) ?? ""
         let (stdoutText, stdoutTruncated) = truncate(text: redactor.redact(stdoutRaw))
@@ -99,14 +112,20 @@ enum BashTools {
     static func runBackground(
         command: String,
         workdir: String? = nil,
-        description: String? = nil
+        description: String? = nil,
+        serviceKeyEnv: [String: String]? = nil
     ) async -> OpResult {
+        let (perCommandEnv, missingKeys) = resolvePerCommandKeys(serviceKeyEnv)
+        if !missingKeys.isEmpty {
+            return OpResult(content: jsonError("service_key_env: unknown keys: \(missingKeys.joined(separator: ", "))"))
+        }
         let redactor = SecretRedactor()
         do {
             let handle = try await BackgroundProcessRegistry.shared.start(
                 command: command,
                 workdir: workdir,
-                description: description
+                description: description,
+                perCommandEnv: perCommandEnv
             )
             return OpResult(content: jsonString([
                 "success": true,
@@ -204,6 +223,12 @@ enum BashTools {
 
     fileprivate static func redactServiceKeys(in text: String) -> String {
         SecretRedactor().redact(text)
+    }
+
+    /// Resolve the agent's `service_key_env` mapping to real secrets.
+    private static func resolvePerCommandKeys(_ mapping: [String: String]?) -> (resolved: [String: String], missing: [String]) {
+        guard let mapping, !mapping.isEmpty else { return ([:], []) }
+        return KeychainHelper.resolveServiceKeyEnv(mapping)
     }
 
     private static func truncate(text: String) -> (String, Bool) {
@@ -355,7 +380,7 @@ actor BackgroundProcessRegistry {
 
     // MARK: Start
 
-    func start(command: String, workdir: String?, description: String?) throws -> Handle {
+    func start(command: String, workdir: String?, description: String?, perCommandEnv: [String: String] = [:]) throws -> Handle {
         let id = "bash_\(nextCounter)"
         nextCounter += 1
 
@@ -381,10 +406,12 @@ actor BackgroundProcessRegistry {
             process.currentDirectoryURL = URL(fileURLWithPath: expanded)
         }
 
+        // Build env: inherit app env + global fallback keys + per-command secrets.
         var env = ProcessInfo.processInfo.environment
-        let serviceKeyEnv = KeychainHelper.serviceKeyEnvironment()
-        let redactor = BashTools.SecretRedactor(environment: serviceKeyEnv)
-        for (k, v) in serviceKeyEnv { env[k] = v }
+        let globalKeyEnv = KeychainHelper.serviceKeyEnvironment()
+        let allSecrets = globalKeyEnv.merging(perCommandEnv) { _, new in new }
+        let redactor = BashTools.SecretRedactor(environment: allSecrets)
+        for (k, v) in allSecrets { env[k] = v }
         process.environment = env
 
         let outPipe = Pipe()

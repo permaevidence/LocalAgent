@@ -844,15 +844,17 @@ actor OpenRouterService {
                 prompt += section
             }
 
-            // Service keys — tell the agent which env vars are available in bash.
+            // Service keys — tell the agent which keys are available and how to use them.
             let serviceKeys = KeychainHelper.loadServiceKeys().filter {
                 KeychainHelper.loadServiceKeyValue(name: $0.name) != nil
             }
             if !serviceKeys.isEmpty {
-                var section = "\n\n**Service API keys** (available as environment variables in bash — use `$NAME` in commands, never hardcode values):\n"
+                var section = "\n\n**Service API keys** — inject per-command via the `service_key_env` parameter on the `bash` tool. Map the CLI-expected env-var name to the key label:\n"
+                section += "```json\nbash(command: \"vercel deploy --prod\", service_key_env: {\"VERCEL_TOKEN\": \"Vercel Token\"})\n```\n"
+                section += "The app resolves the label to the real secret and injects it into that command's environment only. The secret never enters this conversation.\n\nAvailable keys:\n"
                 for key in serviceKeys {
                     let desc = key.description.isEmpty ? "" : " — \(key.description)"
-                    section += "- `$\(KeychainHelper.serviceKeyEnvironmentName(for: key.name))`\(desc)\n"
+                    section += "- \"\(key.label)\"\(desc)\n"
                 }
                 prompt += section
             }

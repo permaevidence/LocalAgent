@@ -189,12 +189,27 @@ extension KeychainHelper {
 // MARK: - User-defined Service Keys
 
 /// A user-defined API key for an external service (Vercel, Supabase, etc.).
-/// The `name` is the user-facing suffix; bash receives it with
-/// `serviceKeyEnvironmentPrefix` prepended (e.g. "VERCEL" -> "LOCALAGENT_KEY_VERCEL").
+///
+/// - `label`: the user-friendly name they typed ("Vercel Token", "Supabase", …).
+/// - `name`:  normalized internal key derived from label at creation time
+///            ("VERCEL_TOKEN", "SUPABASE"). Used for Keychain storage and fallback
+///            global env vars (`LOCALAGENT_KEY_VERCEL_TOKEN`).
+/// - `description`: optional extra context.
 struct ServiceKey: Codable, Identifiable, Equatable {
     var id: String { name }
-    let name: String        // env-var suffix, e.g. "VERCEL"
-    var description: String // human label, e.g. "Vercel deploy token"
+    let name: String        // normalized key, e.g. "VERCEL_TOKEN"
+    let label: String       // user-friendly name, e.g. "Vercel Token"
+    var description: String // optional description
+
+    /// Derive a safe env-var-style key from an arbitrary user label.
+    static func normalizeName(from label: String) -> String {
+        label
+            .uppercased()
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "-", with: "_")
+            .unicodeScalars.filter { ($0.value >= 65 && $0.value <= 90) || ($0.value >= 48 && $0.value <= 57) || $0.value == 95 }
+            .reduce(into: "") { $0.unicodeScalars.append($1) }
+    }
 }
 
 extension KeychainHelper {
@@ -238,7 +253,8 @@ extension KeychainHelper {
     }
 
     /// Returns all service keys as a dictionary suitable for merging into
-    /// a subprocess environment: `["LOCALAGENT_KEY_VERCEL": "sk-...", ...]`.
+    /// a subprocess environment: `["LOCALAGENT_KEY_VERCEL_TOKEN": "sk-...", ...]`.
+    /// Used as the global fallback injection.
     static func serviceKeyEnvironment() -> [String: String] {
         var env: [String: String] = [:]
         for key in loadServiceKeys() {
@@ -247,6 +263,42 @@ extension KeychainHelper {
             }
         }
         return env
+    }
+
+    /// Resolve a per-command `service_key_env` mapping.
+    ///
+    /// Input:  `{"VERCEL_TOKEN": "Vercel Token"}` — maps desired env-var name
+    ///         to the friendly label the user gave the key.
+    /// Output: `{"VERCEL_TOKEN": "sk-real-secret-..."}` — resolved secrets.
+    ///
+    /// Unrecognised labels are silently skipped (the agent gets an error in
+    /// the tool result via BashTools).
+    static func resolveServiceKeyEnv(_ mapping: [String: String]) -> (resolved: [String: String], missing: [String]) {
+        let allKeys = loadServiceKeys()
+        var resolved: [String: String] = [:]
+        var missing: [String] = []
+        for (envVar, label) in mapping {
+            // Match by label (case-insensitive) first, fall back to internal name.
+            let match = allKeys.first { $0.label.lowercased() == label.lowercased() }
+                     ?? allKeys.first { $0.name.lowercased() == label.lowercased() }
+            if let key = match, let value = loadServiceKeyValue(name: key.name), !value.isEmpty {
+                resolved[envVar] = value
+            } else {
+                missing.append(label)
+            }
+        }
+        return (resolved, missing)
+    }
+
+    /// All secret values currently stored, for redaction purposes.
+    static func allServiceKeySecrets() -> [String: String] {
+        var secrets: [String: String] = [:]
+        for key in loadServiceKeys() {
+            if let value = loadServiceKeyValue(name: key.name), !value.isEmpty {
+                secrets[key.name] = value
+            }
+        }
+        return secrets
     }
 }
 
